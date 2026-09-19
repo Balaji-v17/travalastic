@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from './api';
 
@@ -5,14 +6,19 @@ const TOKEN_KEY = 'travalastic_token';
 
 /**
  * A thin fetch wrapper that automatically reads the stored JWT from
- * expo-secure-store and attaches Authorization: Bearer <token> when present.
+ * expo-secure-store (or localStorage on web) and attaches Authorization: Bearer <token> when present.
  *
  * @param {string} endpoint - Relative path (e.g. '/itinerary/generate') or full URL
  * @param {RequestInit} [options={}] - Standard fetch options
  * @returns {Promise<Response>}
  */
 export async function apiClient(endpoint, options = {}) {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+  const token =
+    Platform.OS === 'web'
+      ? (typeof localStorage !== 'undefined'
+          ? localStorage.getItem(TOKEN_KEY) || localStorage.getItem('userToken') || localStorage.getItem('token')
+          : null)
+      : await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
 
   const headers = {
     'Accept': 'application/json',

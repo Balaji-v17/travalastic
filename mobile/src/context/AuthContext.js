@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const TOKEN_KEY = 'travalastic_token';
@@ -18,13 +19,21 @@ export function AuthProvider({ children }) {
 
   const checkAuth = async () => {
     try {
-      const storedToken =
-        (await SecureStore.getItemAsync(TOKEN_KEY)) ||
-        (await SecureStore.getItemAsync('userToken')) ||
-        (await SecureStore.getItemAsync('token'));
+      let storedToken = null;
+      if (Platform.OS === 'web') {
+        storedToken =
+          localStorage.getItem(TOKEN_KEY) ||
+          localStorage.getItem('userToken') ||
+          localStorage.getItem('token');
+      } else {
+        storedToken =
+          (await SecureStore.getItemAsync(TOKEN_KEY)) ||
+          (await SecureStore.getItemAsync('userToken')) ||
+          (await SecureStore.getItemAsync('token'));
+      }
       setToken(storedToken || null);
     } catch (e) {
-      console.error('Failed to read auth token from SecureStore:', e);
+      console.error('Failed to read auth token from storage:', e);
       setToken(null);
     } finally {
       setIsLoading(false);
@@ -38,20 +47,28 @@ export function AuthProvider({ children }) {
   const signIn = async (newToken) => {
     try {
       if (newToken) {
-        await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+        if (Platform.OS === 'web') {
+          localStorage.setItem(TOKEN_KEY, newToken);
+        } else {
+          await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+        }
         setToken(newToken);
       }
     } catch (e) {
-      console.error('Failed to save auth token in SecureStore:', e);
+      console.error('Failed to save auth token in storage:', e);
     }
   };
 
   const signOut = async () => {
     try {
-      await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+      if (Platform.OS === 'web') {
+        localStorage.removeItem(TOKEN_KEY);
+      } else {
+        await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+      }
       setToken(null);
     } catch (e) {
-      console.error('Failed to remove auth token from SecureStore:', e);
+      console.error('Failed to remove auth token from storage:', e);
     }
   };
 

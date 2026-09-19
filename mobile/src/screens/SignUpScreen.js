@@ -44,7 +44,11 @@ export default function SignUpScreen({ navigation }) {
 
       if (response.ok && data.token) {
         // Securely store token
-        await SecureStore.setItemAsync('travalastic_token', data.token);
+        if (Platform.OS === 'web') {
+          localStorage.setItem('travalastic_token', data.token);
+        } else {
+          await SecureStore.setItemAsync('travalastic_token', data.token);
+        }
         // Navigate to HomeScreen
         navigation.navigate('Home');
       } else if (response.status === 409) {

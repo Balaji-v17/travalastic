@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ImageBackground,
   Linking,
+  Platform,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { colors, fonts, radii, spacing } from '../theme/tokens';
@@ -55,9 +56,13 @@ export default function HomeScreen({ navigation }) {
     try {
       // 1. Read token & derive user's capitalized email prefix
       const token =
-        (await SecureStore.getItemAsync('travalastic_token')) ||
-        (await SecureStore.getItemAsync('userToken')) ||
-        (await SecureStore.getItemAsync('token'));
+        Platform.OS === 'web'
+          ? localStorage.getItem('travalastic_token') ||
+            localStorage.getItem('userToken') ||
+            localStorage.getItem('token')
+          : (await SecureStore.getItemAsync('travalastic_token')) ||
+            (await SecureStore.getItemAsync('userToken')) ||
+            (await SecureStore.getItemAsync('token'));
 
       if (token) {
         const email = extractEmailFromToken(token);

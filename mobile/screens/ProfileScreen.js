@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { colors, fonts, spacing } from '../theme/tokens';
@@ -18,7 +19,11 @@ export default function ProfileScreen({ navigation }) {
     if (loggingOut) return;
     setLoggingOut(true);
     try {
-      await SecureStore.deleteItemAsync('travalastic_token').catch(() => {});
+      if (Platform.OS === 'web') {
+        localStorage.removeItem('travalastic_token');
+      } else {
+        await SecureStore.deleteItemAsync('travalastic_token').catch(() => {});
+      }
     } finally {
       setLoggingOut(false);
       navigation.reset({

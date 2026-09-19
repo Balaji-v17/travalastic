@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
 
@@ -39,13 +39,21 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
 
     async function checkToken() {
       try {
-        const token =
-          (await SecureStore.getItemAsync('travalastic_token')) ||
-          (await SecureStore.getItemAsync('userToken')) ||
-          (await SecureStore.getItemAsync('token'));
+        let token = null;
+        if (Platform.OS === 'web') {
+          token =
+            localStorage.getItem('travalastic_token') ||
+            localStorage.getItem('userToken') ||
+            localStorage.getItem('token');
+        } else {
+          token =
+            (await SecureStore.getItemAsync('travalastic_token')) ||
+            (await SecureStore.getItemAsync('userToken')) ||
+            (await SecureStore.getItemAsync('token'));
+        }
         setResolvedInitialRoute(token ? 'Home' : 'Login');
       } catch (e) {
-        console.error('RootNavigator: SecureStore token check failed:', e);
+        console.error('RootNavigator: token check failed:', e);
         setResolvedInitialRoute('Login');
       } finally {
         setCheckingAuth(false);

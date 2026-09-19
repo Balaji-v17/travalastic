@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
@@ -52,10 +53,18 @@ export default function App() {
   useEffect(() => {
     async function checkToken() {
       try {
-        const token =
-          (await SecureStore.getItemAsync('travalastic_token')) ||
-          (await SecureStore.getItemAsync('userToken')) ||
-          (await SecureStore.getItemAsync('token'));
+        let token = null;
+        if (Platform.OS === 'web') {
+          token =
+            localStorage.getItem('travalastic_token') ||
+            localStorage.getItem('userToken') ||
+            localStorage.getItem('token');
+        } else {
+          token =
+            (await SecureStore.getItemAsync('travalastic_token')) ||
+            (await SecureStore.getItemAsync('userToken')) ||
+            (await SecureStore.getItemAsync('token'));
+        }
         setIsAuthenticated(!!token);
       } catch (err) {
         console.error('App: Error checking auth token:', err);
