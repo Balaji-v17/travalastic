@@ -1,0 +1,24 @@
+[
+  {
+    "destination": "PLACEHOLDER_DESTINATION_A",
+    "budgetTier": "budget",
+    "name": "PLACEHOLDER — replace with real budget hotel name",
+    "priceRangeINR": "PLACEHOLDER",
+    "rating": 0
+  },
+  {
+    "destination": "PLACEHOLDER_DESTINATION_A",
+    "budgetTier": "mid",
+    "name": "PLACEHOLDER — replace with real mid-range hotel name",
+    "priceRangeINR": "PLACEHOLDER",
+    "rating": 0
+  },
+  {
+    "destination": "PLACEHOLDER_DESTINATION_A",
+    "budgetTier": "luxury",
+    "name": "PLACEHOLDER — replace with real luxury hotel name",
+    "priceRangeINR": "PLACEHOLDER",
+    "rating": 0
+  }
+]
+

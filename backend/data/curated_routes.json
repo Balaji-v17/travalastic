@@ -1,0 +1,131 @@
+[
+  {
+    "mode": "train",
+    "origin": "Bengaluru",
+    "destination": "Goa",
+    "approxDurationHours": 15,
+    "frequency": "Daily",
+    "note": "Approximate duration range (14-16 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Mumbai",
+    "destination": "Pune",
+    "approxDurationHours": 3.5,
+    "frequency": "Multiple daily",
+    "note": "Approximate duration range (3-4 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Delhi",
+    "destination": "Agra",
+    "approxDurationHours": 2,
+    "frequency": "Multiple daily",
+    "note": "Approximate duration range (1.5-2.5 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Delhi",
+    "destination": "Jaipur",
+    "approxDurationHours": 4.5,
+    "frequency": "Daily",
+    "note": "Approximate duration range (4-5 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Chennai",
+    "destination": "Bengaluru",
+    "approxDurationHours": 5,
+    "frequency": "Multiple daily",
+    "note": "Approximate duration range (4.5-6 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Kolkata",
+    "destination": "Puri",
+    "approxDurationHours": 8,
+    "frequency": "Daily",
+    "note": "Approximate duration range (7.5-9 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Mumbai",
+    "destination": "Goa",
+    "approxDurationHours": 10,
+    "frequency": "Daily",
+    "note": "Approximate duration range (9-12 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "train",
+    "origin": "Delhi",
+    "destination": "Varanasi",
+    "approxDurationHours": 8,
+    "frequency": "Daily (Vande Bharat / Rajdhani)",
+    "note": "Approximate duration range (8-12 hrs) - needs verification with IRCTC before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Bengaluru",
+    "destination": "Goa",
+    "approxDurationHours": 13,
+    "frequency": "Daily overnight",
+    "note": "Approximate duration range (12-14 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Mumbai",
+    "destination": "Pune",
+    "approxDurationHours": 4,
+    "frequency": "Every 15-30 mins",
+    "note": "Approximate duration range (3.5-4.5 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Delhi",
+    "destination": "Jaipur",
+    "approxDurationHours": 5.5,
+    "frequency": "Hourly",
+    "note": "Approximate duration range (5-6.5 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Bengaluru",
+    "destination": "Mysuru",
+    "approxDurationHours": 3.5,
+    "frequency": "Frequent daily",
+    "note": "Approximate duration range (3-4 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Delhi",
+    "destination": "Manali",
+    "approxDurationHours": 14,
+    "frequency": "Daily overnight",
+    "note": "Approximate duration range (12-15 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Chennai",
+    "destination": "Puducherry",
+    "approxDurationHours": 3.5,
+    "frequency": "Frequent daily",
+    "note": "Approximate duration range (3-4 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Pune",
+    "destination": "Goa",
+    "approxDurationHours": 11,
+    "frequency": "Daily overnight",
+    "note": "Approximate duration range (10-12 hrs) - needs verification with bus operator before travel"
+  },
+  {
+    "mode": "bus",
+    "origin": "Hyderabad",
+    "destination": "Vijayawada",
+    "approxDurationHours": 6,
+    "frequency": "Multiple daily",
+    "note": "Approximate duration range (5.5-7 hrs) - needs verification with bus operator before travel"
+  }
+]
+

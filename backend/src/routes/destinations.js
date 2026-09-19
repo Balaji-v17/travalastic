@@ -1,55 +1,103 @@
-const express = require('express');
+import express from 'express';
+import { searchPlaces } from '../services/placesService.js';
+import { getPhotoForDestination } from '../services/pexelsService.js';
+
 const router = express.Router();
 
-router.get('/search', async (req, res) => {
+// Static list of 18 trending Indian destinations (fixed content)
+export const TRENDING_DESTINATIONS = [
+  'Goa',
+  'Jaipur',
+  'Kerala Backwaters',
+  'Ladakh',
+  'Rishikesh',
+  'Udaipur',
+  'Munnar',
+  'Varanasi',
+  'Manali',
+  'Andaman Islands',
+  'Hampi',
+  'Mysore',
+  'Darjeeling',
+  'Puducherry',
+  'Rann of Kutch',
+  'Meghalaya',
+  'Coorg',
+  'Amritsar',
+];
+
+// In-memory 24-hour cache for trending destinations
+let trendingCache = null;
+let trendingCacheExpiresAt = 0;
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
+const getTrendingDestinations = async (req, res) => {
+  try {
+    const now = Date.now();
+    if (trendingCache && now < trendingCacheExpiresAt) {
+      return res.status(200).json(trendingCache);
+    }
+
+    const results = await Promise.all(
+      TRENDING_DESTINATIONS.map(async (name) => {
+        const photoInfo = await getPhotoForDestination(name);
+        return {
+          name,
+          photoUrl: photoInfo.photoUrl,
+          photographerName: photoInfo.photographerName,
+          photographerUrl: photoInfo.photographerUrl,
+        };
+      })
+    );
+
+    trendingCache = results;
+    trendingCacheExpiresAt = now + TWENTY_FOUR_HOURS_MS;
+
+    return res.status(200).json(results);
+  } catch (error) {
+    console.error('Error in getTrendingDestinations:', error.message);
+    if (trendingCache) {
+      return res.status(200).json(trendingCache);
+    }
+    return res.status(500).json({ error: 'Failed to fetch trending destinations' });
+  }
+};
+
+// In-memory response cache with 5-minute TTL for search queries
+const destinationResponseCache = new Map();
+const DEST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const searchDestinations = async (req, res, next) => {
   const { q } = req.query;
 
-  if (!q) {
-    return res.status(400).json({ error: "Missing required query parameter 'q'" });
+  if (!q || typeof q !== 'string' || !q.trim()) {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+
+  const cacheKey = q.trim().toLowerCase();
+  const cached = destinationResponseCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return res.status(200).json(cached.data);
   }
 
   try {
-    // OpenStreetMap Nominatim API endpoint
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=10`;
+    const destinations = await searchPlaces(q);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        // Must be a unique email, not a placeholder
-        'User-Agent': 'Travalastic-MVP/1.0 (put-your-real-email@gmail.com)', 
-        'Referer': 'http://localhost:8000',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
+    destinationResponseCache.set(cacheKey, {
+      data: destinations,
+      expiresAt: Date.now() + DEST_CACHE_TTL_MS,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Nominatim API Error:', response.status, errorText);
-      return res.status(502).json({ error: "Failed to fetch data from OpenStreetMap API" });
-    }
-
-    const data = await response.json();
-
-    if (!Array.isArray(data) || data.length === 0) {
-      return res.json([]);
-    }
-
-    // Map Nominatim fields to match our expected frontend shape
-    const trimmedPlaces = data.map(place => ({
-      name: place.name || place.display_name.split(',')[0],
-      address: place.display_name || null,
-      latitude: parseFloat(place.lat) || null,
-      longitude: parseFloat(place.lon) || null,
-      // OpenStreetMap does not have user ratings, so we set it to null
-      rating: null 
-    }));
-
-    res.json(trimmedPlaces);
+    return res.status(200).json(destinations);
   } catch (error) {
-    console.error('Destination search error:', error);
-    res.status(502).json({ error: "Failed to communicate with OpenStreetMap API" });
+    console.error('Error in searchDestinations:', error.message);
+    return res.status(502).json({
+      error: error.message || 'Failed to fetch destinations from OpenStreetMap Nominatim API',
+    });
   }
-});
+};
 
-module.exports = router;
+router.get('/trending', getTrendingDestinations);
+router.get('/search', searchDestinations);
+
+export default router;
