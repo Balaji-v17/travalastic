@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
@@ -15,61 +16,46 @@ import { API_BASE_URL } from '../config/api';
 import { colors, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
 
-const CATEGORIES = [
-  { id: null, label: 'All Places', icon: '📍' },
-  { id: 'Temples', label: 'Temples', icon: '🛕' },
-  { id: 'Beaches', label: 'Beaches', icon: '🏖️' },
-  { id: 'Museums', label: 'Museums', icon: '🏛️' },
-  { id: 'Nightlife', label: 'Nightlife', icon: '🍸' },
-  { id: 'Nature', label: 'Nature', icon: '🌿' },
-];
-
-/**
- * Rewrites destination and category into the Nominatim query string.
- * e.g. "Temples" + "Goa" -> "temples in Goa"
- * If no category is selected, queries destination directly.
- */
-const buildRewrittenQuery = (destination, category) => {
-  const cleanDest = (destination || '').trim();
-  if (!cleanDest) return '';
-  if (category) {
-    return `${category.toLowerCase()} in ${cleanDest}`;
-  }
-  return cleanDest;
+const CATEGORY_ICONS = {
+  'All Places': '📍',
+  'Temples': '🛕',
+  'Beaches': '🏖️',
+  'Museums': '🏛️',
+  'Nightlife': '🍸',
+  'Hill Stations': '⛰️',
+  'Waterfalls': '🌊',
+  'Wildlife Sanctuary': '🦁',
+  'Forts': '🏰',
 };
 
 export default function ExploreScreen({ route }) {
   const [destination, setDestination] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null); // null = initial, [] = empty, array = places
+  const [activities, setActivities] = useState([]);
+  const [availableCategories, setAvailableCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('All Places');
+  const [hasSearched, setHasSearched] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [searchedQuery, setSearchedQuery] = useState('');
+  const [searchedDestination, setSearchedDestination] = useState('');
 
-  const toggleCategory = (categoryId) => {
-    setSelectedCategory((prev) => (prev === categoryId ? null : categoryId));
-    if (errorMessage) setErrorMessage('');
-  };
-
-  const executeSearch = async (destToSearch, catToSearch = selectedCategory) => {
+  const executeSearch = async (destToSearch) => {
     const cleanDest = (destToSearch !== undefined ? destToSearch : destination).trim();
     if (!cleanDest) {
-      setErrorMessage('Please enter a destination to explore (e.g. Goa, Paris, Tokyo).');
+      setErrorMessage('Please enter a destination to explore (e.g. Goa, Paris, Tokyo, Jaipur).');
       return;
     }
 
     Keyboard.dismiss();
     setErrorMessage('');
-
-    // Query rewriting: "Temples" + "Goa" becomes "temples in Goa"
-    const rewrittenQuery = buildRewrittenQuery(cleanDest, catToSearch);
-    setSearchedQuery(rewrittenQuery);
+    setSearchedDestination(cleanDest);
     setLoading(true);
-    setResults(null);
+    setActivities([]);
+    setAvailableCategories([]);
+    setSelectedCategory('All Places');
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/destinations/search?q=${encodeURIComponent(rewrittenQuery)}`,
+        `${API_BASE_URL}/destinations/search?q=${encodeURIComponent(cleanDest)}`,
         {
           method: 'GET',
           headers: {
@@ -84,21 +70,30 @@ export default function ExploreScreen({ route }) {
         setErrorMessage(
           data?.error || 'Failed to fetch attractions. Please wait a moment and try again.'
         );
-        setResults([]);
+        setActivities([]);
+        setAvailableCategories([]);
+        setHasSearched(true);
         return;
       }
 
-      if (Array.isArray(data)) {
-        setResults(data);
-      } else {
-        setResults([]);
-      }
+      // 1. State Updates: Safely extract data.results and data.availableCategories
+      const results = Array.isArray(data?.results)
+        ? data.results
+        : (Array.isArray(data?.destinations) ? data.destinations : (Array.isArray(data) ? data : []));
+      const categories = Array.isArray(data?.availableCategories) ? data.availableCategories : [];
+
+      setActivities(results);
+      setAvailableCategories(categories);
+      setSelectedCategory('All Places');
+      setHasSearched(true);
     } catch (error) {
       console.error('Explore activities search error:', error);
       setErrorMessage(
         'Unable to connect to destinations service. Please check your network connection.'
       );
-      setResults([]);
+      setActivities([]);
+      setAvailableCategories([]);
+      setHasSearched(true);
     } finally {
       setLoading(false);
     }
@@ -112,25 +107,77 @@ export default function ExploreScreen({ route }) {
     if (incomingDest && typeof incomingDest === 'string' && incomingDest.trim()) {
       const clean = incomingDest.trim();
       setDestination(clean);
-      executeSearch(clean, null);
+      executeSearch(clean);
     }
   }, [route?.params?.destination]);
 
-  const currentRewrittenPreview = destination.trim()
-    ? buildRewrittenQuery(destination.trim(), selectedCategory)
-    : null;
+  // 4. List Rendering: Derive filtered activities locally before rendering without network requests
+  const displayedActivities =
+    selectedCategory === 'All Places'
+      ? activities
+      : activities.filter((a) => a.category === selectedCategory);
 
-  const renderItem = ({ item }) => (
-    <View style={styles.resultCard}>
-      <View style={styles.resultHeader}>
-        <Text style={styles.pinIcon}>📍</Text>
-        <Text style={styles.resultName}>{item.name}</Text>
+  const isFallbackList =
+    activities &&
+    activities.length > 0 &&
+    (activities[0]?.isCurated === false ||
+      activities[0]?.source === 'nominatim' ||
+      activities[0]?.source === 'overpass');
+
+  const renderItem = ({ item }) => {
+    const isUncurated =
+      item.isCurated === false ||
+      item.source === 'nominatim' ||
+      item.source === 'overpass';
+
+    return (
+      <View style={[styles.resultCard, isUncurated && styles.resultCardUncurated]}>
+        <View style={styles.resultHeader}>
+          <Text style={styles.pinIcon}>{isUncurated ? '📍' : '✨'}</Text>
+          <View style={styles.resultTitleCol}>
+            <View style={styles.resultTitleRow}>
+              <Text style={[styles.resultName, isUncurated && styles.resultNameUncurated]}>
+                {item.name}
+              </Text>
+              {isUncurated ? (
+                <View style={styles.uncuratedPill}>
+                  <Text style={styles.uncuratedPillText}>
+                    {item.type || 'Nearby'}
+                  </Text>
+                </View>
+              ) : item.type ? (
+                <View style={styles.curatedPill}>
+                  <Text style={styles.curatedPillText}>{item.type}</Text>
+                </View>
+              ) : null}
+            </View>
+            {!isUncurated && item.rating != null && Number(item.rating) > 0 ? (
+              <Text style={styles.ratingText}>★ {item.rating} • Curated</Text>
+            ) : null}
+          </View>
+        </View>
+        {item.address ? (
+          <Text style={styles.resultAddress}>{item.address}</Text>
+        ) : null}
       </View>
-      {item.address ? (
-        <Text style={styles.resultAddress}>{item.address}</Text>
-      ) : null}
-    </View>
-  );
+    );
+  };
+
+  const renderFallbackHeader = () => {
+    if (isFallbackList) {
+      return (
+        <View style={styles.fallbackNoticeBanner}>
+          <Text style={styles.fallbackNoticeIcon}>ℹ️</Text>
+          <View style={styles.fallbackNoticeContent}>
+            <Text style={styles.fallbackNoticeTitle}>
+              No curated activities found for this destination — here's what we found nearby
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    return null;
+  };
 
   return (
     <KeyboardAvoidingView
@@ -143,9 +190,8 @@ export default function ExploreScreen({ route }) {
         subtitle="Discover top attractions anywhere"
       />
       <View style={styles.container}>
-        {/* Search & Filter Header */}
+        {/* Search Header - Destination Input + Search Button Only */}
         <View style={styles.headerCard}>
-          {/* Destination Text Input */}
           <Text style={styles.inputLabel}>Destination</Text>
           <View style={styles.searchBarRow}>
             <TextInput
@@ -177,38 +223,37 @@ export default function ExploreScreen({ route }) {
               )}
             </TouchableOpacity>
           </View>
-
-          {/* Category Chips Row */}
-          <Text style={styles.inputLabel}>Category</Text>
-          <View style={styles.chipsRow}>
-            {CATEGORIES.map((cat) => {
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.chip, isSelected && styles.chipActive]}
-                  onPress={() => toggleCategory(cat.id)}
-                  disabled={loading}
-                >
-                  <Text style={styles.chipIcon}>{cat.icon}</Text>
-                  <Text
-                    style={[styles.chipText, isSelected && styles.chipTextActive]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Query Rewrite Indicator */}
-          {currentRewrittenPreview ? (
-            <View style={styles.rewriteBadge}>
-              <Text style={styles.rewriteLabel}>Searching:</Text>
-              <Text style={styles.rewriteQueryText}>"{currentRewrittenPreview}"</Text>
-            </View>
-          ) : null}
         </View>
+
+        {/* 2 & 3. Dynamic Category Chips: Render dynamically using availableCategories. Prepend 'All Places'. Hide entirely if availableCategories is empty */}
+        {availableCategories && availableCategories.length > 0 ? (
+          <View style={styles.filterSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterChipsScroll}
+            >
+              {['All Places', ...availableCategories].map((catName) => {
+                const isSelected = selectedCategory === catName;
+                const icon = CATEGORY_ICONS[catName] || '✨';
+                return (
+                  <TouchableOpacity
+                    key={catName}
+                    style={[styles.chip, isSelected && styles.chipActive]}
+                    onPress={() => setSelectedCategory(catName)}
+                  >
+                    <Text style={styles.chipIcon}>{icon}</Text>
+                    <Text
+                      style={[styles.chipText, isSelected && styles.chipTextActive]}
+                    >
+                      {catName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {/* Error Banner */}
         {errorMessage ? (
@@ -226,39 +271,48 @@ export default function ExploreScreen({ route }) {
             <ActivityIndicator size="large" color={colors.accentPrimary} />
             <Text style={styles.stateTitle}>Searching activities...</Text>
             <Text style={styles.stateSubtitle}>
-              Querying destinations for "{searchedQuery}"
+              Querying destinations for "{searchedDestination}"
             </Text>
           </View>
         ) : null}
 
         {/* State: Empty Results */}
-        {!loading && !errorMessage && results !== null && results.length === 0 ? (
+        {!loading && !errorMessage && hasSearched && activities.length === 0 ? (
           <View style={styles.stateContainer}>
             <Text style={styles.stateIcon}>🔍</Text>
             <Text style={styles.stateTitle}>No Activities Found</Text>
             <Text style={styles.stateSubtitle}>
-              No places found matching "{searchedQuery}". Try another category chip or check your destination spelling.
+              No places found matching "{searchedDestination}". Please check your destination spelling or try another city.
             </Text>
           </View>
         ) : null}
 
         {/* State: Initial Idle Prompt */}
-        {!loading && !errorMessage && results === null ? (
+        {!loading && !errorMessage && !hasSearched ? (
           <View style={styles.stateContainer}>
             <Text style={styles.stateIcon}>🗺️</Text>
             <Text style={styles.stateTitle}>Find Things to Do</Text>
             <Text style={styles.stateSubtitle}>
-              Enter a city or region above and choose a category to discover points of interest.
+              Enter a city or region above to discover curated sights and nearby attractions.
             </Text>
           </View>
         ) : null}
 
-        {/* Results FlatList */}
-        {!loading && !errorMessage && results && results.length > 0 ? (
+        {/* 4. Results FlatList using displayedActivities */}
+        {!loading && !errorMessage && hasSearched && activities.length > 0 ? (
           <FlatList
-            data={results}
+            data={displayedActivities}
             keyExtractor={(item, index) => `${item.name}-${index}`}
             renderItem={renderItem}
+            ListHeaderComponent={renderFallbackHeader}
+            ListEmptyComponent={
+              <View style={styles.emptyFilteredContainer}>
+                <Text style={styles.emptyFilteredTitle}>No places matching "{selectedCategory}"</Text>
+                <Text style={styles.emptyFilteredSubtitle}>
+                  Try selecting "All Places" or another category chip above.
+                </Text>
+              </View>
+            }
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
@@ -279,7 +333,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing[8] || 8,
   },
   headerCard: {
-    marginBottom: spacing[16] || 16,
+    marginBottom: 8,
   },
   inputLabel: {
     fontSize: 12,
@@ -292,7 +346,6 @@ const styles = StyleSheet.create({
   searchBarRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 14,
   },
   input: {
     flex: 1,
@@ -322,11 +375,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  chipsRow: {
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterChipsScroll: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 10,
+    paddingVertical: 2,
   },
   chip: {
     flexDirection: 'row',
@@ -354,29 +409,6 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.textOnSurface,
     fontWeight: '700',
-  },
-  rewriteBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    marginTop: 4,
-    gap: 6,
-  },
-  rewriteLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '500',
-  },
-  rewriteQueryText: {
-    fontSize: 11,
-    color: colors.accentPrimary,
-    fontWeight: '600',
-    fontStyle: 'italic',
   },
   errorBanner: {
     backgroundColor: 'rgba(214, 90, 74, 0.15)',
@@ -424,6 +456,24 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     maxWidth: 280,
   },
+  emptyFilteredContainer: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  emptyFilteredTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  emptyFilteredSubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
   listContent: {
     paddingBottom: 24,
   },
@@ -456,6 +506,79 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
   },
+  resultNameUncurated: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  resultTitleCol: {
+    flex: 1,
+  },
+  resultTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  resultCardUncurated: {
+    backgroundColor: 'rgba(28, 39, 64, 0.6)',
+    borderColor: 'rgba(247, 243, 234, 0.1)',
+    borderStyle: 'dashed',
+  },
+  uncuratedPill: {
+    backgroundColor: 'rgba(247, 243, 234, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  uncuratedPillText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textMuted,
+  },
+  curatedPill: {
+    backgroundColor: 'rgba(232, 163, 61, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.accentPrimary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  curatedPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.accentPrimary,
+  },
+  ratingText: {
+    fontSize: 12,
+    color: colors.accentPrimary,
+    marginTop: 2,
+  },
+  fallbackNoticeBanner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(232, 163, 61, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 163, 61, 0.35)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    gap: 10,
+    alignItems: 'center',
+  },
+  fallbackNoticeIcon: {
+    fontSize: 20,
+  },
+  fallbackNoticeContent: {
+    flex: 1,
+  },
+  fallbackNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
   resultAddress: {
     fontSize: 13,
     color: colors.textMuted,
@@ -463,4 +586,3 @@ const styles = StyleSheet.create({
     paddingLeft: 24,
   },
 });
-

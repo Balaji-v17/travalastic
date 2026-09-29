@@ -98,15 +98,14 @@ export default function CabBookingScreen() {
         return;
       }
 
-      if (Array.isArray(data)) {
-        // Filter destinations that have valid latitude and longitude
-        const validPlaces = data.filter(
-          (p) => p.latitude != null && p.longitude != null
-        );
-        setSearchResults(validPlaces);
-      } else {
-        setSearchResults([]);
-      }
+      const rawList = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.destinations) ? data.destinations : []);
+      // Filter destinations that have valid latitude and longitude
+      const validPlaces = rawList.filter(
+        (p) => p.latitude != null && p.longitude != null
+      );
+      setSearchResults(validPlaces);
     } catch (error) {
       console.error('Destination search error:', error);
       setErrorMessage(

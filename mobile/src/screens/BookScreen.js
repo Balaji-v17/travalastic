@@ -46,6 +46,15 @@ const BOOKING_OPTIONS = [
     accent: '#000000',
     badge: 'Uber Deep Link',
   },
+  {
+    id: 'cars',
+    title: 'Cars',
+    icon: '🚙',
+    subtitle: 'Self-drive car rentals & deals on Rentalcars.com',
+    route: 'Cars',
+    accent: '#059669',
+    badge: 'Rentalcars.com',
+  },
 ];
 
 export default function BookScreen({ navigation }) {
@@ -60,7 +69,7 @@ export default function BookScreen({ navigation }) {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* 4 Cards */}
+        {/* 5 Cards */}
         <View style={styles.cardsGrid}>
           {BOOKING_OPTIONS.map((option) => {
             const isFlights = option.id === 'flights';

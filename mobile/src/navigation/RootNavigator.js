@@ -9,6 +9,7 @@ import HomeScreen from '../screens/HomeScreen';
 import FlightSearchScreen from '../screens/FlightSearchScreen';
 import HotelsScreen from '../screens/HotelsScreen';
 import CabBookingScreen from '../screens/CabBookingScreen';
+import CarsScreen from '../screens/CarsScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ExploreScreen from '../screens/ExploreScreen';
 import BookScreen from '../screens/BookScreen';
@@ -168,6 +169,28 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
         name="Uber"
         component={CabBookingScreen}
         options={{ title: 'Book a Cab' }}
+      />
+
+      {/* Rental Cars */}
+      <Stack.Screen
+        name="Cars"
+        component={CarsScreen}
+        options={{ title: 'Rental Cars' }}
+      />
+      <Stack.Screen
+        name="CarsScreen"
+        component={CarsScreen}
+        options={{ title: 'Rental Cars' }}
+      />
+      <Stack.Screen
+        name="CarRental"
+        component={CarsScreen}
+        options={{ title: 'Rental Cars' }}
+      />
+      <Stack.Screen
+        name="RentalCars"
+        component={CarsScreen}
+        options={{ title: 'Rental Cars' }}
       />
 
       {/* Flights */}

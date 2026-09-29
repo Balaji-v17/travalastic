@@ -43,13 +43,14 @@ if (cleanupInterval.unref) {
  * @param {string} query - Location or destination search query
  * @returns {Promise<Array<{name: string, address: string|null, latitude: number|null, longitude: number|null}>>}
  */
-export const searchPlaces = async (query) => {
+export const searchPlaces = async (query, options = {}) => {
   if (!query || typeof query !== 'string' || !query.trim()) {
     return [];
   }
 
   const trimmedQuery = query.trim();
-  const cacheKey = trimmedQuery.toLowerCase();
+  const countrycodes = options.countrycodes !== undefined ? options.countrycodes : 'in';
+  const cacheKey = `${trimmedQuery.toLowerCase()}_cc_${countrycodes}`;
 
   // Check cache
   const cached = cache.get(cacheKey);
@@ -57,7 +58,8 @@ export const searchPlaces = async (query) => {
     return cached.data;
   }
 
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmedQuery)}&format=jsonv2&addressdetails=1&limit=5`;
+  const countryFilter = countrycodes ? `&countrycodes=${encodeURIComponent(countrycodes)}` : '';
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmedQuery)}&format=jsonv2&addressdetails=1${countryFilter}&limit=5`;
 
   let response;
   try {
