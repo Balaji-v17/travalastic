@@ -6,6 +6,79 @@ import User from '../models/User.js';
 
 const router = express.Router();
 
+let regionNames;
+try {
+  regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+} catch {
+  regionNames = null;
+}
+
+const resolveCountryName = (countryCode) => {
+  if (!countryCode) return '';
+  if (regionNames) {
+    try {
+      const name = regionNames.of(countryCode);
+      if (name) return name;
+    } catch {
+      // fallback
+    }
+  }
+  return countryCode;
+};
+
+/**
+ * GET /flights/airports?query=<text>
+ * Calls Duffel's Place Suggestion API (places/suggestions?query=<text>)
+ * Returns a trimmed list: name, iataCode, cityName, country
+ */
+router.get('/airports', async (req, res, next) => {
+  try {
+    const { query } = req.query || {};
+
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(200).json([]);
+    }
+
+    if (!process.env.DUFFEL_API_KEY) {
+      return res.status(500).json({
+        error: 'DUFFEL_API_KEY is not configured in environment variables',
+      });
+    }
+
+    const trimmedQuery = query.trim();
+    const response = await duffel.suggestions.list({ query: trimmedQuery });
+    const suggestions = response?.data || [];
+
+    const map = new Map();
+    for (const item of suggestions) {
+      if (!item.iata_code || item.iata_code.length !== 3) continue;
+      const iataCode = item.iata_code.toUpperCase();
+      const isAirport = item.type === 'airport';
+
+      // Prefer airport over city record if both share the same IATA code
+      if (!map.has(iataCode) || (isAirport && map.get(iataCode).type !== 'airport')) {
+        map.set(iataCode, {
+          type: item.type,
+          name: item.name || item.city_name || iataCode,
+          iataCode,
+          cityName: item.city_name || item.city?.name || (item.type === 'city' ? item.name : '') || '',
+          country: resolveCountryName(item.iata_country_code || item.city?.iata_country_code || item.country_name),
+        });
+      }
+    }
+
+    const results = Array.from(map.values()).map(({ type, ...rest }) => rest);
+    return res.status(200).json(results);
+  } catch (error) {
+    console.error('Duffel place suggestions error:', error);
+    const errorMessage =
+      error?.errors?.[0]?.message ||
+      error?.message ||
+      'Failed to fetch airport suggestions from Duffel';
+    return res.status(502).json({ error: errorMessage });
+  }
+});
+
 /**
  * POST /flights/search
  * Body: { origin, destination, departureDate, passengers }

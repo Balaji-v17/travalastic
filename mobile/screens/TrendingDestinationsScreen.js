@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,8 +15,215 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
+import apiClient from '../config/apiClient';
 
-// Curated list of top domestic and international trending destinations
+// Rich curated metadata for trending domestic and international spots
+const CURATED_METADATA = {
+  // 18 Indian trending destinations
+  goa: {
+    country: 'India',
+    category: 'Beach',
+    tagline: 'Golden beaches & coastal nightlife',
+    photographerName: 'Sumit Kapai',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/4428289/pexels-photo-4428289.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  jaipur: {
+    country: 'India',
+    category: 'Heritage',
+    tagline: 'The Pink City of grand forts & palaces',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  kerala: {
+    country: 'India',
+    category: 'Nature',
+    tagline: 'Tranquil palm-fringed backwaters & lagoons',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  'kerala backwaters': {
+    country: 'India',
+    category: 'Nature',
+    tagline: 'Tranquil palm-fringed backwaters & lagoons',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  ladakh: {
+    country: 'India',
+    category: 'Adventure',
+    tagline: 'High-altitude desert & Pangong mountain lake',
+    photographerName: 'Aman',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  rishikesh: {
+    country: 'India',
+    category: 'Spiritual',
+    tagline: 'Yoga capital of the world on the sacred Ganges',
+    photographerName: 'Aman',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  udaipur: {
+    country: 'India',
+    category: 'Heritage',
+    tagline: 'City of Lakes and majestic royal palaces',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  munnar: {
+    country: 'India',
+    category: 'Hill Station',
+    tagline: 'Rolling tea gardens & misty green valleys',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  varanasi: {
+    country: 'India',
+    category: 'Spiritual',
+    tagline: 'Ancient ghats along the sacred Ganges river',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  manali: {
+    country: 'India',
+    category: 'Adventure',
+    tagline: 'Snow-capped peaks & Himalayan pine valleys',
+    photographerName: 'Aman',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  'andaman islands': {
+    country: 'India',
+    category: 'Islands',
+    tagline: 'Turquoise waters, coral reefs & white sands',
+    photographerName: 'Sumit Kapai',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/4428289/pexels-photo-4428289.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  hampi: {
+    country: 'India',
+    category: 'Heritage',
+    tagline: 'UNESCO ruins of the Vijayanagara Empire',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  mysore: {
+    country: 'India',
+    category: 'Culture',
+    tagline: 'Royal heritage, grand palaces & silk markets',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  darjeeling: {
+    country: 'India',
+    category: 'Hill Station',
+    tagline: 'Views of Kanchenjunga & emerald tea estates',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  puducherry: {
+    country: 'India',
+    category: 'Coastal',
+    tagline: 'French colonial charm, cafes & serene promenade',
+    photographerName: 'Sumit Kapai',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/4428289/pexels-photo-4428289.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  'rann of kutch': {
+    country: 'India',
+    category: 'Desert',
+    tagline: 'Endless white salt desert & starry nights',
+    photographerName: 'Aman',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  meghalaya: {
+    country: 'India',
+    category: 'Nature',
+    tagline: 'Living root bridges & cascading waterfalls',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  coorg: {
+    country: 'India',
+    category: 'Hill Station',
+    tagline: 'Coffee plantations & misty Western Ghats',
+    photographerName: 'Ajay Thomas',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  amritsar: {
+    country: 'India',
+    category: 'Spiritual',
+    tagline: 'The revered Golden Temple & vibrant heritage',
+    photographerName: 'Chitransh',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  // International popular destinations
+  bali: {
+    country: 'Indonesia',
+    category: 'Tropical',
+    tagline: 'Tropical temples, lush terraces & surf',
+    photographerName: 'Alex Azabache',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/2166559/pexels-photo-2166559.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  paris: {
+    country: 'France',
+    category: 'City & Art',
+    tagline: 'Iconic architecture, romance & cafe culture',
+    photographerName: 'Cyril Saulnier',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1850619/pexels-photo-1850619.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  tokyo: {
+    country: 'Japan',
+    category: 'Modern',
+    tagline: 'Neon-lit cityscapes & ancient tradition',
+    photographerName: 'Satoshi Hirayama',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/2506923/pexels-photo-2506923.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  'swiss alps': {
+    country: 'Switzerland',
+    category: 'Mountains',
+    tagline: 'Majestic snowy peaks & mountain chalets',
+    photographerName: 'Eberhard Grossgasteiger',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1486974/pexels-photo-1486974.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  rome: {
+    country: 'Italy',
+    category: 'History',
+    tagline: 'Ancient wonders & historic plazas',
+    photographerName: 'Mauricio Artieda',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/1797161/pexels-photo-1797161.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+  dubai: {
+    country: 'UAE',
+    category: 'Luxury',
+    tagline: 'Futuristic skylines & desert luxury',
+    photographerName: 'Aleksandar Pasaric',
+    fallbackPhotoUrl:
+      'https://images.pexels.com/photos/2044434/pexels-photo-2044434.jpeg?auto=compress&cs=tinysrgb&w=800',
+  },
+};
+
+// Fallback curated places for offline / cold initialization
 const TRENDING_PLACES = [
   {
     id: 'goa',
@@ -24,7 +231,6 @@ const TRENDING_PLACES = [
     country: 'India',
     tagline: 'Golden beaches & coastal nightlife',
     category: 'Beach',
-    query: 'Goa beach ocean sunset',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/4428289/pexels-photo-4428289.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Sumit Kapai',
@@ -35,7 +241,6 @@ const TRENDING_PLACES = [
     country: 'India',
     tagline: 'The Pink City of grand forts & palaces',
     category: 'Heritage',
-    query: 'Jaipur Hawa Mahal palace',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/3581368/pexels-photo-3581368.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Chitransh',
@@ -46,7 +251,6 @@ const TRENDING_PLACES = [
     country: 'India',
     tagline: 'Tranquil palm-fringed backwaters & lagoons',
     category: 'Nature',
-    query: 'Kerala backwaters houseboat',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/962464/pexels-photo-962464.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Ajay Thomas',
@@ -57,7 +261,6 @@ const TRENDING_PLACES = [
     country: 'India',
     tagline: 'High-altitude desert & Pangong mountain lake',
     category: 'Adventure',
-    query: 'Ladakh mountain lake landscape',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Aman',
@@ -68,7 +271,6 @@ const TRENDING_PLACES = [
     country: 'Indonesia',
     tagline: 'Tropical temples, lush terraces & surf',
     category: 'Tropical',
-    query: 'Bali tropical temple sunset',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/2166559/pexels-photo-2166559.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Alex Azabache',
@@ -79,7 +281,6 @@ const TRENDING_PLACES = [
     country: 'France',
     tagline: 'Iconic architecture, romance & cafe culture',
     category: 'City & Art',
-    query: 'Paris Eiffel Tower sunset cityscape',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/1850619/pexels-photo-1850619.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Cyril Saulnier',
@@ -90,7 +291,6 @@ const TRENDING_PLACES = [
     country: 'Japan',
     tagline: 'Neon-lit cityscapes & ancient tradition',
     category: 'Modern',
-    query: 'Tokyo skyline city night',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/2506923/pexels-photo-2506923.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Satoshi Hirayama',
@@ -101,7 +301,6 @@ const TRENDING_PLACES = [
     country: 'Switzerland',
     tagline: 'Majestic snowy peaks & mountain chalets',
     category: 'Mountains',
-    query: 'Swiss Alps snowy mountain peak',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/1486974/pexels-photo-1486974.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Eberhard Grossgasteiger',
@@ -112,7 +311,6 @@ const TRENDING_PLACES = [
     country: 'Italy',
     tagline: 'Ancient wonders & historic plazas',
     category: 'History',
-    query: 'Rome Colosseum architecture',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/1797161/pexels-photo-1797161.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Mauricio Artieda',
@@ -123,22 +321,48 @@ const TRENDING_PLACES = [
     country: 'UAE',
     tagline: 'Futuristic skylines & desert luxury',
     category: 'Luxury',
-    query: 'Dubai Burj Khalifa skyline',
     fallbackPhotoUrl:
       'https://images.pexels.com/photos/2044434/pexels-photo-2044434.jpeg?auto=compress&cs=tinysrgb&w=800',
     photographerName: 'Aleksandar Pasaric',
   },
 ];
 
+// Normalize destination object and merge with curated metadata when available
+const formatDestination = (item) => {
+  const rawName = item.name || '';
+  const lower = rawName.toLowerCase().trim();
+  const meta = CURATED_METADATA[lower] || {};
+
+  return {
+    id: item.id || lower.replace(/\s+/g, '-') || String(Math.random()),
+    name: rawName,
+    country: item.country || meta.country || 'Destination',
+    tagline: item.tagline || meta.tagline || `Discover top sights and activities in ${rawName}`,
+    category: item.category || meta.category || 'Explore',
+    photoUrl: item.photoUrl || meta.fallbackPhotoUrl || item.fallbackPhotoUrl || '',
+    fallbackPhotoUrl:
+      item.fallbackPhotoUrl ||
+      meta.fallbackPhotoUrl ||
+      'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=800',
+    photographerName: item.photographerName || meta.photographerName || '',
+    photographerUrl: item.photographerUrl || '',
+  };
+};
+
 export default function TrendingDestinationsScreen({ navigation }) {
-  const [destinations, setDestinations] = useState(TRENDING_PLACES);
+  const [curatedDestinations, setCuratedDestinations] = useState([]);
+  const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Fetch photos from Pexels API using standard Authorization header
-  const fetchPexelsPhotos = async (isPullToRefresh = false) => {
+  const debounceTimerRef = useRef(null);
+  const latestQueryRef = useRef('');
+
+  // Fetch curated trending destinations from GET /destinations/trending
+  const fetchCuratedDestinations = useCallback(async (isPullToRefresh = false) => {
     if (isPullToRefresh) {
       setRefreshing(true);
     } else {
@@ -146,112 +370,130 @@ export default function TrendingDestinationsScreen({ navigation }) {
     }
     setErrorMessage('');
 
-    const apiKey =
-      process.env.EXPO_PUBLIC_PEXELS_API_KEY ||
-      process.env.PEXELS_API_KEY ||
-      '';
-
-    // If API key is not configured, gracefully use high-res fallback photography
-    if (!apiKey) {
-      setDestinations(
-        TRENDING_PLACES.map((place) => ({
-          ...place,
-          photoUrl: place.fallbackPhotoUrl,
-        }))
-      );
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
     try {
-      const updatedList = await Promise.all(
-        TRENDING_PLACES.map(async (dest) => {
-          try {
-            const queryParam = encodeURIComponent(dest.query || dest.name);
-            const response = await fetch(
-              `https://api.pexels.com/v1/search?query=${queryParam}&per_page=1&orientation=landscape`,
-              {
-                method: 'GET',
-                headers: {
-                  Authorization: apiKey,
-                  Accept: 'application/json',
-                },
-              }
-            );
-
-            if (!response.ok) {
-              return {
-                ...dest,
-                photoUrl: dest.fallbackPhotoUrl,
-              };
-            }
-
-            const data = await response.json();
-            const photo = data?.photos?.[0];
-
-            if (photo) {
-              return {
-                ...dest,
-                photoUrl:
-                  photo.src?.large ||
-                  photo.src?.medium ||
-                  dest.fallbackPhotoUrl,
-                photographerName: photo.photographer || dest.photographerName,
-                photographerUrl: photo.photographer_url || '',
-              };
-            }
-
-            return {
-              ...dest,
-              photoUrl: dest.fallbackPhotoUrl,
-            };
-          } catch (itemErr) {
-            console.warn(`Pexels fetch failed for ${dest.name}:`, itemErr.message);
-            return {
-              ...dest,
-              photoUrl: dest.fallbackPhotoUrl,
-            };
-          }
-        })
-      );
-
-      setDestinations(updatedList);
+      const res = await apiClient('/destinations/trending');
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const formatted = data.map(formatDestination);
+        setCuratedDestinations(formatted);
+        setDestinations(formatted);
+      } else {
+        const fallback = TRENDING_PLACES.map(formatDestination);
+        setCuratedDestinations(fallback);
+        setDestinations(fallback);
+      }
     } catch (err) {
-      console.error('Error fetching trending photos from Pexels:', err);
-      setErrorMessage(
-        'Unable to reach Pexels photo service. Showing saved photography.'
-      );
-      setDestinations(
-        TRENDING_PLACES.map((p) => ({ ...p, photoUrl: p.fallbackPhotoUrl }))
-      );
+      console.warn('Failed to fetch trending from backend, using fallback:', err.message);
+      const fallback = TRENDING_PLACES.map(formatDestination);
+      setCuratedDestinations(fallback);
+      setDestinations(fallback);
+      if (isPullToRefresh) {
+        setErrorMessage('Unable to reach trending service. Showing saved destinations.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchPexelsPhotos();
-  }, []);
+    fetchCuratedDestinations();
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [fetchCuratedDestinations]);
+
+  // Execute debounced search lookup against GET /destinations/trending?query=<text>
+  const executeSearch = async (query) => {
+    try {
+      const res = await apiClient(`/destinations/trending?query=${encodeURIComponent(query)}`);
+      if (latestQueryRef.current !== query) {
+        return; // Ignore stale async responses
+      }
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      const data = await res.json();
+      if (latestQueryRef.current !== query) {
+        return;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        const formatted = data.map(formatDestination);
+        setDestinations(formatted);
+      } else {
+        setDestinations([]);
+      }
+    } catch (err) {
+      if (latestQueryRef.current === query) {
+        console.error('Error searching trending destinations:', err.message);
+        setErrorMessage('Unable to search destination photography. Please check your connection.');
+      }
+    } finally {
+      if (latestQueryRef.current === query) {
+        setIsSearching(false);
+      }
+    }
+  };
+
+  const handleSearchChange = (text) => {
+    setSearchFilter(text);
+    setErrorMessage('');
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    const trimmed = text.trim();
+    latestQueryRef.current = trimmed;
+
+    // Empty query: immediately show the curated grid as it currently works
+    if (!trimmed) {
+      setIsSearching(false);
+      setDestinations(curatedDestinations);
+      return;
+    }
+
+    // Debounce ~380ms after typing stops before calling the endpoint with the query
+    setIsSearching(true);
+    debounceTimerRef.current = setTimeout(() => {
+      executeSearch(trimmed);
+    }, 380);
+  };
+
+  const handleClearSearch = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setSearchFilter('');
+    latestQueryRef.current = '';
+    setIsSearching(false);
+    setErrorMessage('');
+    setDestinations(curatedDestinations);
+  };
+
+  const handleRefresh = () => {
+    const trimmed = searchFilter.trim();
+    if (trimmed) {
+      setIsSearching(true);
+      executeSearch(trimmed);
+    } else {
+      fetchCuratedDestinations(true);
+    }
+  };
 
   const handleDestinationPress = (destinationName) => {
     // Navigate to Explore screen with selected destination pre-filled
     navigation.navigate('Explore', { destination: destinationName });
   };
 
-  // Filtered by local search query
-  const filteredDestinations = destinations.filter((dest) => {
-    const q = searchFilter.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      dest.name.toLowerCase().includes(q) ||
-      dest.country.toLowerCase().includes(q) ||
-      dest.category.toLowerCase().includes(q)
-    );
-  });
-
   const renderDestinationCard = ({ item }) => {
+    const imageUri = item.photoUrl || item.fallbackPhotoUrl;
+
     return (
       <TouchableOpacity
         style={styles.cardWrapper}
@@ -259,7 +501,7 @@ export default function TrendingDestinationsScreen({ navigation }) {
         onPress={() => handleDestinationPress(item.name)}
       >
         <ImageBackground
-          source={{ uri: item.photoUrl || item.fallbackPhotoUrl }}
+          source={{ uri: imageUri }}
           style={styles.cardImageBg}
           imageStyle={styles.cardImage}
         >
@@ -323,23 +565,31 @@ export default function TrendingDestinationsScreen({ navigation }) {
       <View style={styles.container}>
         {/* Search / Filter Bar */}
         <View style={styles.searchBarContainer}>
-          <Ionicons
-            name="search-outline"
-            size={18}
-            color={colors.textMuted}
-            style={styles.searchIcon}
-          />
+          {isSearching ? (
+            <ActivityIndicator
+              size="small"
+              color={colors.accentPrimary}
+              style={styles.searchIcon}
+            />
+          ) : (
+            <Ionicons
+              name="search-outline"
+              size={18}
+              color={colors.textMuted}
+              style={styles.searchIcon}
+            />
+          )}
           <TextInput
             style={styles.searchInput}
-            placeholder="Filter trending destinations..."
+            placeholder="Search any destination (e.g. Paris, Tokyo, Goa)..."
             placeholderTextColor={colors.textMuted}
             value={searchFilter}
-            onChangeText={setSearchFilter}
+            onChangeText={handleSearchChange}
             autoCapitalize="words"
             clearButtonMode="while-editing"
           />
           {searchFilter ? (
-            <TouchableOpacity onPress={() => setSearchFilter('')}>
+            <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={colors.textMuted} />
             </TouchableOpacity>
           ) : null}
@@ -349,13 +599,13 @@ export default function TrendingDestinationsScreen({ navigation }) {
         {errorMessage ? (
           <View style={styles.errorBanner}>
             <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
-            <TouchableOpacity onPress={() => fetchPexelsPhotos()}>
+            <TouchableOpacity onPress={handleRefresh}>
               <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* Loading Indicator */}
+        {/* Loading Indicator for initial browse view */}
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.accentPrimary} />
@@ -363,10 +613,10 @@ export default function TrendingDestinationsScreen({ navigation }) {
             <Text style={styles.loadingSubtext}>Connecting to Pexels API</Text>
           </View>
         ) : (
-          /* 2-Column Grid of Trending Destinations */
+          /* 2-Column Grid of Curated or Live-searched Destinations */
           <FlatList
-            data={filteredDestinations}
-            keyExtractor={(item) => item.id}
+            data={destinations}
+            keyExtractor={(item, index) => item.id || `${item.name}-${index}`}
             renderItem={renderDestinationCard}
             numColumns={2}
             columnWrapperStyle={styles.columnWrapper}
@@ -375,19 +625,21 @@ export default function TrendingDestinationsScreen({ navigation }) {
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
-                onRefresh={() => fetchPexelsPhotos(true)}
+                onRefresh={handleRefresh}
                 tintColor={colors.accentPrimary}
                 colors={[colors.accentPrimary]}
               />
             }
             ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={styles.emptyTitle}>No matching destinations</Text>
-                <Text style={styles.emptySubtitle}>
-                  Try clearing your filter to view all trending places.
-                </Text>
-              </View>
+              !isSearching ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyIcon}>🔍</Text>
+                  <Text style={styles.emptyTitle}>No matching destinations</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Try searching for another city, country, or landmark.
+                  </Text>
+                </View>
+              ) : null
             }
           />
         )}
@@ -490,6 +742,7 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     flex: 1,
+    maxWidth: '48.5%',
     height: 230,
     borderRadius: 16,
     overflow: 'hidden',

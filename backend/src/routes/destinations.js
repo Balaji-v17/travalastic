@@ -76,29 +76,81 @@ let trendingCache = null;
 let trendingCacheExpiresAt = 0;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+// Per-query cache for off-list searches (same 24-hour TTL style)
+const trendingQueryCache = new Map();
+
+const ensureCuratedTrending = async () => {
+  const now = Date.now();
+  if (trendingCache && now < trendingCacheExpiresAt) {
+    return trendingCache;
+  }
+
+  const results = await Promise.all(
+    TRENDING_DESTINATIONS.map(async (name) => {
+      const photoInfo = await getPhotoForDestination(name);
+      return {
+        name,
+        photoUrl: photoInfo.photoUrl,
+        photographerName: photoInfo.photographerName,
+        photographerUrl: photoInfo.photographerUrl,
+      };
+    })
+  );
+
+  trendingCache = results;
+  trendingCacheExpiresAt = now + TWENTY_FOUR_HOURS_MS;
+  return results;
+};
+
 const getTrendingDestinations = async (req, res) => {
   try {
-    const now = Date.now();
-    if (trendingCache && now < trendingCacheExpiresAt) {
-      return res.status(200).json(trendingCache);
+    const rawQuery = (req.query.query || req.query.q || '').trim();
+
+    // 1. If query is empty/absent: return the existing cached curated list, unchanged
+    if (!rawQuery) {
+      const curated = await ensureCuratedTrending();
+      return res.status(200).json(curated);
     }
 
-    const results = await Promise.all(
-      TRENDING_DESTINATIONS.map(async (name) => {
-        const photoInfo = await getPhotoForDestination(name);
-        return {
-          name,
-          photoUrl: photoInfo.photoUrl,
-          photographerName: photoInfo.photographerName,
-          photographerUrl: photoInfo.photographerUrl,
-        };
-      })
-    );
+    const lowerQuery = rawQuery.toLowerCase();
+    const curated = await ensureCuratedTrending();
 
-    trendingCache = results;
-    trendingCacheExpiresAt = now + TWENTY_FOUR_HOURS_MS;
+    // 2. If query is present: first check if it matches (fuzzy/substring, case-insensitive)
+    // any cached trending destination's name — if so, return that one directly, no new Pexels call
+    const curatedMatches = curated.filter((dest) => {
+      const lowerName = dest.name.toLowerCase();
+      return lowerName.includes(lowerQuery) || lowerQuery.includes(lowerName);
+    });
 
-    return res.status(200).json(results);
+    if (curatedMatches.length > 0) {
+      return res.status(200).json(curatedMatches);
+    }
+
+    // 3. Check per-query cache for off-list queries
+    const cachedQuery = trendingQueryCache.get(lowerQuery);
+    if (cachedQuery && Date.now() < cachedQuery.expiresAt) {
+      return res.status(200).json(cachedQuery.data);
+    }
+
+    // 4. If it matches nothing in the curated list: make a live call to getPhotoForDestination(query)
+    // and return a single result for whatever was typed
+    const photoInfo = await getPhotoForDestination(rawQuery);
+    const singleResult = [
+      {
+        name: rawQuery,
+        photoUrl: photoInfo.photoUrl,
+        photographerName: photoInfo.photographerName,
+        photographerUrl: photoInfo.photographerUrl,
+      },
+    ];
+
+    // Cache that per-query result too (same style as the curated list)
+    trendingQueryCache.set(lowerQuery, {
+      data: singleResult,
+      expiresAt: Date.now() + TWENTY_FOUR_HOURS_MS,
+    });
+
+    return res.status(200).json(singleResult);
   } catch (error) {
     console.error('Error in getTrendingDestinations:', error.message);
     if (trendingCache) {

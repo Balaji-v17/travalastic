@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,7 +11,18 @@ import {
   Platform,
   Keyboard,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../config/api';
+
+/**
+ * Formats an airport suggestion to "Airport Name (IATA) — City, Country"
+ */
+const formatAirportLabel = (airport) => {
+  if (!airport) return '';
+  const locationParts = [airport.cityName, airport.country].filter(Boolean);
+  const locationStr = locationParts.length > 0 ? ` — ${locationParts.join(', ')}` : '';
+  return `${airport.name} (${airport.iataCode})${locationStr}`;
+};
 
 /**
  * Formats a Date object to YYYY-MM-DD
@@ -70,14 +81,142 @@ const formatDateSnippet = (isoString) => {
 };
 
 export default function FlightSearchScreen({ navigation }) {
-  const [origin, setOrigin] = useState('LHR');
-  const [destination, setDestination] = useState('JFK');
+  // Stored IATA codes (what gets sent to /flights/search) and input text
+  const [originIata, setOriginIata] = useState('LHR');
+  const [originText, setOriginText] = useState('Heathrow Airport (LHR) — London, United Kingdom');
+  const [originSuggestions, setOriginSuggestions] = useState([]);
+  const [originLoading, setOriginLoading] = useState(false);
+  const [originShowDropdown, setOriginShowDropdown] = useState(false);
+  const [originFocused, setOriginFocused] = useState(false);
+
+  const [destinationIata, setDestinationIata] = useState('JFK');
+  const [destinationText, setDestinationText] = useState('John F. Kennedy International Airport (JFK) — New York, United States');
+  const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+  const [destinationLoading, setDestinationLoading] = useState(false);
+  const [destinationShowDropdown, setDestinationShowDropdown] = useState(false);
+  const [destinationFocused, setDestinationFocused] = useState(false);
+
   const [departureDate, setDepartureDate] = useState(getInitialDepartureDate());
   const [passengers, setPassengers] = useState(1);
 
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null); // null = initial, [] = empty, array = flights
   const [errorMessage, setErrorMessage] = useState('');
+
+  const originTimerRef = useRef(null);
+  const destTimerRef = useRef(null);
+
+  // Debounced search for origin airports (~350ms)
+  const handleOriginChange = (text) => {
+    setOriginText(text);
+    // User typing: clear confirmed IATA code so free-text cannot be submitted directly
+    setOriginIata(null);
+    if (errorMessage) setErrorMessage('');
+
+    if (originTimerRef.current) {
+      clearTimeout(originTimerRef.current);
+    }
+
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setOriginSuggestions([]);
+      setOriginLoading(false);
+      setOriginShowDropdown(false);
+      return;
+    }
+
+    setOriginLoading(true);
+    setOriginShowDropdown(true);
+
+    originTimerRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/flights/airports?query=${encodeURIComponent(trimmed)}`
+        );
+        if (!response.ok) {
+          throw new Error('Failed to fetch airport suggestions');
+        }
+        const data = await response.json();
+        setOriginSuggestions(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Origin airport search error:', err);
+        setOriginSuggestions([]);
+      } finally {
+        setOriginLoading(false);
+      }
+    }, 350);
+  };
+
+  // Debounced search for destination airports (~350ms)
+  const handleDestinationChange = (text) => {
+    setDestinationText(text);
+    // User typing: clear confirmed IATA code so free-text cannot be submitted directly
+    setDestinationIata(null);
+    if (errorMessage) setErrorMessage('');
+
+    if (destTimerRef.current) {
+      clearTimeout(destTimerRef.current);
+    }
+
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setDestinationSuggestions([]);
+      setDestinationLoading(false);
+      setDestinationShowDropdown(false);
+      return;
+    }
+
+    setDestinationLoading(true);
+    setDestinationShowDropdown(true);
+
+    destTimerRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/flights/airports?query=${encodeURIComponent(trimmed)}`
+        );
+        if (!response.ok) {
+          throw new Error('Failed to fetch airport suggestions');
+        }
+        const data = await response.json();
+        setDestinationSuggestions(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Destination airport search error:', err);
+        setDestinationSuggestions([]);
+      } finally {
+        setDestinationLoading(false);
+      }
+    }, 350);
+  };
+
+  const handleSelectOrigin = (airport) => {
+    setOriginIata(airport.iataCode);
+    setOriginText(formatAirportLabel(airport));
+    setOriginShowDropdown(false);
+    setOriginSuggestions([]);
+    Keyboard.dismiss();
+    if (errorMessage) setErrorMessage('');
+  };
+
+  const handleSelectDestination = (airport) => {
+    setDestinationIata(airport.iataCode);
+    setDestinationText(formatAirportLabel(airport));
+    setDestinationShowDropdown(false);
+    setDestinationSuggestions([]);
+    Keyboard.dismiss();
+    if (errorMessage) setErrorMessage('');
+  };
+
+  const handleSwapAirports = () => {
+    const tempIata = originIata;
+    const tempText = originText;
+    setOriginIata(destinationIata);
+    setOriginText(destinationText);
+    setDestinationIata(tempIata);
+    setDestinationText(tempText);
+    setOriginShowDropdown(false);
+    setDestinationShowDropdown(false);
+    if (errorMessage) setErrorMessage('');
+  };
 
   // Quick helper to increment departure date
   const adjustDate = (days) => {
@@ -103,30 +242,32 @@ export default function FlightSearchScreen({ navigation }) {
 
   const handleSearch = async () => {
     Keyboard.dismiss();
+    setOriginShowDropdown(false);
+    setDestinationShowDropdown(false);
     setErrorMessage('');
 
-    const cleanOrigin = (origin || '').trim().toUpperCase();
-    const cleanDest = (destination || '').trim().toUpperCase();
-    const cleanDate = (departureDate || '').trim();
-
-    // 1. Validate 3-letter IATA codes client-side
-    const iataRegex = /^[A-Z]{3}$/;
-    if (!cleanOrigin || !iataRegex.test(cleanOrigin)) {
-      setErrorMessage('Origin must be a valid 3-letter IATA airport code (e.g. LHR, JFK, SFO).');
+    // 1. Strictly enforce selecting a suggested airport (no raw free-text IATA submission)
+    if (!originIata) {
+      setErrorMessage(
+        'Please search and select a valid Origin airport from the suggestions dropdown.'
+      );
       return;
     }
 
-    if (!cleanDest || !iataRegex.test(cleanDest)) {
-      setErrorMessage('Destination must be a valid 3-letter IATA airport code (e.g. JFK, LHR, CDG).');
+    if (!destinationIata) {
+      setErrorMessage(
+        'Please select a valid Destination airport from the suggestions dropdown.'
+      );
       return;
     }
 
-    if (cleanOrigin === cleanDest) {
-      setErrorMessage('Origin and destination cannot be the same airport code.');
+    if (originIata === destinationIata) {
+      setErrorMessage('Origin and destination cannot be the same airport.');
       return;
     }
 
     // 2. Validate departure date format and future constraint
+    const cleanDate = (departureDate || '').trim();
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!cleanDate || !dateRegex.test(cleanDate)) {
       setErrorMessage('Departure date must be in YYYY-MM-DD format.');
@@ -145,7 +286,7 @@ export default function FlightSearchScreen({ navigation }) {
       return;
     }
 
-    // 3. Perform network search
+    // 3. Perform network search using validated IATA codes
     setLoading(true);
     setResults(null);
 
@@ -157,8 +298,8 @@ export default function FlightSearchScreen({ navigation }) {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          origin: cleanOrigin,
-          destination: cleanDest,
+          origin: originIata,
+          destination: destinationIata,
           departureDate: cleanDate,
           passengers,
         }),
@@ -221,47 +362,238 @@ export default function FlightSearchScreen({ navigation }) {
             </View>
           ) : null}
 
-          {/* Airport Inputs */}
-          <View style={styles.airportRow}>
-            <View style={styles.airportCol}>
-              <Text style={styles.inputLabel}>Origin (IATA)</Text>
+          {/* Origin Autocomplete Input */}
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.inputLabel}>Origin Airport</Text>
+              {originIata ? (
+                <View style={styles.iataBadge}>
+                  <Text style={styles.iataBadgeText}>{originIata}</Text>
+                </View>
+              ) : (
+                <Text style={styles.hintRequired}>*Select from suggestions</Text>
+              )}
+            </View>
+
+            <View style={[styles.inputBox, originFocused && styles.inputBoxFocused]}>
+              <Ionicons name="airplane-outline" size={18} color="#E8A33D" style={styles.inputPrefixIcon} />
               <TextInput
-                style={styles.iataInput}
-                placeholder="LHR"
-                placeholderTextColor="#94a3b8"
-                value={origin}
-                onChangeText={(text) => {
-                  setOrigin(text.toUpperCase());
-                  if (errorMessage) setErrorMessage('');
+                style={styles.autocompleteInput}
+                placeholder="Search airport or city (e.g. London, LHR, Tokyo)"
+                placeholderTextColor="#666666"
+                value={originText}
+                onChangeText={handleOriginChange}
+                onFocus={() => {
+                  setOriginFocused(true);
+                  if (originText.trim().length >= 2 && originSuggestions.length > 0) {
+                    setOriginShowDropdown(true);
+                  }
                 }}
-                maxLength={3}
-                autoCapitalize="characters"
+                onBlur={() => {
+                  setOriginFocused(false);
+                  setTimeout(() => setOriginShowDropdown(false), 250);
+                }}
+                autoCapitalize="words"
                 autoCorrect={false}
                 editable={!loading}
               />
+              {originText.length > 0 && !loading && (
+                <TouchableOpacity
+                  style={styles.clearBtn}
+                  onPress={() => {
+                    setOriginText('');
+                    setOriginIata(null);
+                    setOriginSuggestions([]);
+                    setOriginShowDropdown(false);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close-circle" size={18} color="#8E8E93" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            <View style={styles.airportDivider}>
-              <Text style={styles.planeIcon}>✈️</Text>
+            {/* Origin Dropdown Suggestions */}
+            {originShowDropdown && (
+              <View style={styles.dropdownContainer}>
+                {originLoading ? (
+                  <View style={styles.dropdownLoadingRow}>
+                    <ActivityIndicator size="small" color="#E8A33D" />
+                    <Text style={styles.dropdownLoadingText}>Searching airports via Duffel…</Text>
+                  </View>
+                ) : originSuggestions.length === 0 ? (
+                  <View style={styles.dropdownEmptyRow}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#8E8E93" />
+                    <Text style={styles.dropdownEmptyText}>
+                      No matching airports found. Try another city or code.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    style={styles.dropdownScroll}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled={true}
+                  >
+                    {originSuggestions.map((item, index) => {
+                      const isSelected = originIata === item.iataCode;
+                      return (
+                        <TouchableOpacity
+                          key={`${item.iataCode}_${index}`}
+                          style={[
+                            styles.suggestionItem,
+                            isSelected && styles.suggestionItemSelected,
+                            index < originSuggestions.length - 1 && styles.suggestionBorder,
+                          ]}
+                          onPress={() => handleSelectOrigin(item)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.suggestionIconWrapper}>
+                            <Ionicons name="airplane" size={16} color="#E8A33D" />
+                          </View>
+                          <View style={styles.suggestionTextWrapper}>
+                            <View style={styles.suggestionMainRow}>
+                              <Text style={styles.suggestionName} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <View style={styles.suggestionCodeBadge}>
+                                <Text style={styles.suggestionCodeText}>{item.iataCode}</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.suggestionSub} numberOfLines={1}>
+                              {[item.cityName, item.country].filter(Boolean).join(', ')}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* Swap / Divider Button */}
+          <View style={styles.swapRow}>
+            <View style={styles.swapLine} />
+            <TouchableOpacity
+              style={styles.swapButton}
+              onPress={handleSwapAirports}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="swap-vertical" size={18} color="#E8A33D" />
+            </TouchableOpacity>
+            <View style={styles.swapLine} />
+          </View>
+
+          {/* Destination Autocomplete Input */}
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.inputLabel}>Destination Airport</Text>
+              {destinationIata ? (
+                <View style={styles.iataBadge}>
+                  <Text style={styles.iataBadgeText}>{destinationIata}</Text>
+                </View>
+              ) : (
+                <Text style={styles.hintRequired}>*Select from suggestions</Text>
+              )}
             </View>
 
-            <View style={styles.airportCol}>
-              <Text style={styles.inputLabel}>Destination (IATA)</Text>
+            <View style={[styles.inputBox, destinationFocused && styles.inputBoxFocused]}>
+              <Ionicons name="location-outline" size={18} color="#E8A33D" style={styles.inputPrefixIcon} />
               <TextInput
-                style={styles.iataInput}
-                placeholder="JFK"
-                placeholderTextColor="#94a3b8"
-                value={destination}
-                onChangeText={(text) => {
-                  setDestination(text.toUpperCase());
-                  if (errorMessage) setErrorMessage('');
+                style={styles.autocompleteInput}
+                placeholder="Search airport or city (e.g. New York, JFK, Paris)"
+                placeholderTextColor="#666666"
+                value={destinationText}
+                onChangeText={handleDestinationChange}
+                onFocus={() => {
+                  setDestinationFocused(true);
+                  if (destinationText.trim().length >= 2 && destinationSuggestions.length > 0) {
+                    setDestinationShowDropdown(true);
+                  }
                 }}
-                maxLength={3}
-                autoCapitalize="characters"
+                onBlur={() => {
+                  setDestinationFocused(false);
+                  setTimeout(() => setDestinationShowDropdown(false), 250);
+                }}
+                autoCapitalize="words"
                 autoCorrect={false}
                 editable={!loading}
               />
+              {destinationText.length > 0 && !loading && (
+                <TouchableOpacity
+                  style={styles.clearBtn}
+                  onPress={() => {
+                    setDestinationText('');
+                    setDestinationIata(null);
+                    setDestinationSuggestions([]);
+                    setDestinationShowDropdown(false);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close-circle" size={18} color="#8E8E93" />
+                </TouchableOpacity>
+              )}
             </View>
+
+            {/* Destination Dropdown Suggestions */}
+            {destinationShowDropdown && (
+              <View style={styles.dropdownContainer}>
+                {destinationLoading ? (
+                  <View style={styles.dropdownLoadingRow}>
+                    <ActivityIndicator size="small" color="#E8A33D" />
+                    <Text style={styles.dropdownLoadingText}>Searching airports via Duffel…</Text>
+                  </View>
+                ) : destinationSuggestions.length === 0 ? (
+                  <View style={styles.dropdownEmptyRow}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#8E8E93" />
+                    <Text style={styles.dropdownEmptyText}>
+                      No matching airports found. Try another city or code.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    style={styles.dropdownScroll}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled={true}
+                  >
+                    {destinationSuggestions.map((item, index) => {
+                      const isSelected = destinationIata === item.iataCode;
+                      return (
+                        <TouchableOpacity
+                          key={`${item.iataCode}_${index}`}
+                          style={[
+                            styles.suggestionItem,
+                            isSelected && styles.suggestionItemSelected,
+                            index < destinationSuggestions.length - 1 && styles.suggestionBorder,
+                          ]}
+                          onPress={() => handleSelectDestination(item)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.suggestionIconWrapper}>
+                            <Ionicons name="airplane" size={16} color="#E8A33D" />
+                          </View>
+                          <View style={styles.suggestionTextWrapper}>
+                            <View style={styles.suggestionMainRow}>
+                              <Text style={styles.suggestionName} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <View style={styles.suggestionCodeBadge}>
+                                <Text style={styles.suggestionCodeText}>{item.iataCode}</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.suggestionSub} numberOfLines={1}>
+                              {[item.cityName, item.country].filter(Boolean).join(', ')}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Departure Date */}
@@ -357,7 +689,7 @@ export default function FlightSearchScreen({ navigation }) {
             <Text style={styles.emptyIcon}>🛫</Text>
             <Text style={styles.emptyTitle}>No flights found for this route/date</Text>
             <Text style={styles.emptySubtitle}>
-              There are no available flights matching {origin} → {destination} on {departureDate}.
+              There are no available flights matching {originIata || 'Origin'} → {destinationIata || 'Destination'} on {departureDate}.
               In sandbox test mode, try popular test routes like LHR to JFK or adjust your date.
             </Text>
           </View>
@@ -401,7 +733,7 @@ export default function FlightSearchScreen({ navigation }) {
                   <View style={styles.flightTimeline}>
                     <View style={styles.timeBlock}>
                       <Text style={styles.timeText}>{depTime}</Text>
-                      <Text style={styles.airportCode}>{origin}</Text>
+                      <Text style={styles.airportCode}>{originIata || 'Origin'}</Text>
                       {depDate ? <Text style={styles.dateSnippet}>{depDate}</Text> : null}
                     </View>
 
@@ -421,7 +753,7 @@ export default function FlightSearchScreen({ navigation }) {
 
                     <View style={[styles.timeBlock, styles.timeBlockRight]}>
                       <Text style={styles.timeText}>{arrTime}</Text>
-                      <Text style={styles.airportCode}>{destination}</Text>
+                      <Text style={styles.airportCode}>{destinationIata || 'Destination'}</Text>
                     </View>
                   </View>
 
@@ -442,19 +774,22 @@ export default function FlightSearchScreen({ navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
   },
   container: {
     padding: 16,
     paddingBottom: 40,
+    backgroundColor: '#000000',
   },
   searchCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 20,
+    borderWidth: 1,
+    borderColor: '#27272A',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 2,
     marginBottom: 20,
@@ -462,12 +797,12 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 4,
   },
   subheading: {
     fontSize: 14,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     marginBottom: 16,
     lineHeight: 20,
   },
@@ -493,46 +828,188 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 12,
   },
-  airportRow: {
+  inputGroup: {
+    marginBottom: 10,
+    zIndex: 10,
+  },
+  labelRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  airportCol: {
-    flex: 1,
-  },
-  airportDivider: {
-    paddingHorizontal: 12,
-    paddingTop: 16,
-  },
-  planeIcon: {
-    fontSize: 18,
+    alignItems: 'center',
+    marginBottom: 6,
   },
   inputLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
+    color: 'rgba(247, 243, 234, 0.7)',
   },
-  iataInput: {
-    backgroundColor: '#f1f5f9',
+  iataBadge: {
+    backgroundColor: 'rgba(232, 163, 61, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 163, 61, 0.35)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  iataBadgeText: {
+    color: '#E8A33D',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  hintRequired: {
+    color: '#E8A33D',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#121212',
     borderRadius: 10,
-    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    paddingHorizontal: 12,
+  },
+  inputBoxFocused: {
+    borderColor: '#E8A33D',
+  },
+  inputPrefixIcon: {
+    marginRight: 10,
+  },
+  autocompleteInput: {
+    flex: 1,
     paddingVertical: 12,
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    textAlign: 'center',
-    letterSpacing: 2,
+    fontSize: 14,
+    color: '#F7F3EA',
+  },
+  clearBtn: {
+    padding: 4,
+    marginLeft: 6,
+  },
+  dropdownContainer: {
+    backgroundColor: '#161618',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2E2E33',
+    marginTop: 6,
+    maxHeight: 220,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  dropdownLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 10,
+  },
+  dropdownLoadingText: {
+    color: '#8E8E93',
+    fontSize: 13,
+  },
+  dropdownEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 8,
+  },
+  dropdownEmptyText: {
+    color: '#8E8E93',
+    fontSize: 13,
+    flex: 1,
+  },
+  dropdownScroll: {
+    maxHeight: 220,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+  },
+  suggestionItemSelected: {
+    backgroundColor: 'rgba(232, 163, 61, 0.12)',
+  },
+  suggestionBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#222226',
+  },
+  suggestionIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(232, 163, 61, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  suggestionTextWrapper: {
+    flex: 1,
+  },
+  suggestionMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  suggestionName: {
+    color: '#F7F3EA',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 8,
+  },
+  suggestionCodeBadge: {
+    backgroundColor: 'rgba(232, 163, 61, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  suggestionCodeText: {
+    color: '#E8A33D',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  suggestionSub: {
+    color: '#8E8E93',
+    fontSize: 12,
+  },
+  swapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+    marginBottom: 10,
+  },
+  swapLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#27272A',
+  },
+  swapButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#18181A',
+    borderWidth: 1,
+    borderColor: '#2E2E33',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 10,
   },
   dateInput: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#27272A',
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   presetRow: {
     flexDirection: 'row',
@@ -544,31 +1021,33 @@ const styles = StyleSheet.create({
   },
   presetLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   presetBadge: {
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#27272A',
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
   presetBadgeText: {
     fontSize: 12,
-    color: '#334155',
+    color: '#F7F3EA',
     fontWeight: '500',
   },
   stepperRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#27272A',
     padding: 12,
     borderRadius: 10,
     marginBottom: 18,
   },
   stepperSubtext: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   stepperControls: {
     flexDirection: 'row',
@@ -579,9 +1058,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: '#27272A',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -591,12 +1070,12 @@ const styles = StyleSheet.create({
   stepperBtnText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   stepperValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     minWidth: 20,
     textAlign: 'center',
   },
@@ -621,26 +1100,30 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     padding: 30,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27272A',
     alignItems: 'center',
   },
   loadingTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginTop: 12,
     marginBottom: 6,
   },
   loadingSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
     lineHeight: 18,
   },
   emptyCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27272A',
     padding: 28,
     alignItems: 'center',
     shadowColor: '#000',
@@ -656,13 +1139,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -672,20 +1155,20 @@ const styles = StyleSheet.create({
   resultsCount: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(247, 243, 234, 0.6)',
     marginBottom: 4,
   },
   flightCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 14,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: '#27272A',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -694,10 +1177,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#27272A',
   },
   airlineBadge: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: 'rgba(37, 99, 235, 0.15)',
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
@@ -705,7 +1188,7 @@ const styles = StyleSheet.create({
   airlineName: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1d4ed8',
+    color: '#60a5fa',
   },
   priceContainer: {
     alignItems: 'flex-end',
@@ -713,11 +1196,11 @@ const styles = StyleSheet.create({
   priceAmount: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   priceSubtext: {
     fontSize: 11,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   flightTimeline: {
     flexDirection: 'row',
@@ -735,17 +1218,17 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   airportCode: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     marginTop: 2,
   },
   dateSnippet: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.45)',
     marginTop: 2,
   },
   timelineMiddle: {
@@ -792,7 +1275,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#f8fafc',
+    borderTopColor: 'rgba(247, 243, 234, 0.1)',
   },
   selectOfferText: {
     fontSize: 13,
