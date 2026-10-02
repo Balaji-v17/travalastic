@@ -124,6 +124,19 @@ export const answerWithRAG = async (question, itinerary = {}) => {
     console.warn('Vector search error in qaNode:', err.message);
   }
 
+  const multiIntentInstructions = `
+MULTI-INTENT & COMBINED PLANNING QUERIES:
+If the user asks for an itinerary, travel ideas, or recommendations alongside hotel, room, or flight requests (e.g., "Provide a 2 days trip for Goa, search for budget rooms, and add a hidden gem"):
+1. Fulfill the primary request comprehensively: provide a detailed day-by-day plan, highlight sights and hidden gems, and suggest recommended areas to stay and types of budget accommodations (e.g., hostels, guesthouses, beach huts).
+2. Do NOT shut down the response or deflect simply because "rooms", "stays", "hotels", or "book" are mentioned.
+3. At the end of the response, always append this tip:
+"Tip: To reserve your flights or check live availability for stays, head over to the Book tab."
+
+FORMATTING & CHAT BUBBLE RULES:
+- STRICTLY AVOID Markdown tables (| Col 1 | Col 2 |) in chat replies. Tables are an awkward fit for narrow mobile chat bubbles and cause awkward horizontal clipping.
+- Prefer plain prose, clear headings (###), bold text (**bold**), or short bullet lists (• or -) to present details cleanly. Headings and bold text are supported, but do NOT use Markdown tables.
+`;
+
   // Formulate ChatGroq prompt
   let systemPrompt;
   if (groundingContext) {
@@ -132,10 +145,12 @@ Use the following relevant destination content to ground your answer:
 """
 ${groundingContext}
 """
-Incorporate the details naturally into your response.`;
+Incorporate the details naturally into your response.
+${multiIntentInstructions}`;
   } else {
     // Below threshold: skip retrieved content entirely and answer from general knowledge
-    systemPrompt = `You are an expert travel assistant for Travalastic. Answer the user's travel question accurately, helpfully, and concisely using your general travel knowledge.`;
+    systemPrompt = `You are an expert travel assistant for Travalastic. Answer the user's travel question accurately, helpfully, and concisely using your general travel knowledge.
+${multiIntentInstructions}`;
   }
 
   const destinationHint = itinerary?.destination ? `Trip Destination: ${itinerary.destination}\n` : '';
@@ -184,8 +199,16 @@ Incorporate the details naturally into your response.`;
     }
   }
 
+  let finalAnswer = responseText.trim();
+  const hasPlanningIntent = /\b(trip|itinerary|plan|days?|sights?|hidden gem|gems?|recommend|suggest|things to do|activities|explore|places|visit|advice)\b/i.test(question);
+  const mentionsRoomsOrStays = /\b(rooms?|stays?|hotels?|hostels?|accommodat\w+|flights?|tickets?|book\w*)\b/i.test(question);
+
+  if (hasPlanningIntent && mentionsRoomsOrStays && !finalAnswer.includes('Book tab')) {
+    finalAnswer = `${finalAnswer}\n\nTip: To reserve your flights or check live availability for stays, head over to the Book tab.`;
+  }
+
   return {
-    answer: responseText.trim(),
+    answer: finalAnswer,
     inJourney: false,
     grounded: !!groundingContext,
     similarityScore: topScore,

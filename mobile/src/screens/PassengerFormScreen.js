@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { API_BASE_URL } from '../config/api';
+import apiClient from '../config/apiClient';
 
 const TITLES = [
   { id: 'mr', label: 'Mr' },
@@ -123,7 +124,7 @@ export default function PassengerFormScreen({ route, navigation }) {
         title: p.title,
       }));
 
-      const bookResponse = await fetch(`${API_BASE_URL}/flights/book`, {
+      const bookResponse = await apiClient('/flights/book', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -261,7 +262,7 @@ export default function PassengerFormScreen({ route, navigation }) {
                   <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Jane"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="rgba(247, 243, 234, 0.4)"
                     value={passenger.givenName}
                     onChangeText={(val) => updatePassenger(index, 'givenName', val)}
                     autoCapitalize="words"
@@ -273,7 +274,7 @@ export default function PassengerFormScreen({ route, navigation }) {
                   <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Doe"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="rgba(247, 243, 234, 0.4)"
                     value={passenger.familyName}
                     onChangeText={(val) => updatePassenger(index, 'familyName', val)}
                     autoCapitalize="words"
@@ -289,7 +290,7 @@ export default function PassengerFormScreen({ route, navigation }) {
                   <TextInput
                     style={styles.textInput}
                     placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="rgba(247, 243, 234, 0.4)"
                     value={passenger.dateOfBirth}
                     onChangeText={(val) => updatePassenger(index, 'dateOfBirth', val)}
                     editable={!loading && !offerExpired}
@@ -345,19 +346,19 @@ export default function PassengerFormScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
   },
   container: {
     padding: 16,
     paddingBottom: 40,
   },
   summaryCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -368,28 +369,28 @@ const styles = StyleSheet.create({
   summaryAirline: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   summaryPrice: {
     fontSize: 17,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: '#60a5fa',
   },
   summaryOfferId: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.5)',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   sectionHeading: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 12,
     marginTop: 4,
   },
   expiredBanner: {
-    backgroundColor: '#fff1f2',
-    borderColor: '#fda4af',
+    backgroundColor: 'rgba(225, 29, 72, 0.15)',
+    borderColor: 'rgba(225, 29, 72, 0.4)',
     borderWidth: 1.5,
     borderRadius: 12,
     padding: 16,
@@ -399,12 +400,12 @@ const styles = StyleSheet.create({
   expiredTitle: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#be123c',
+    color: '#fb7185',
     marginBottom: 6,
   },
   expiredText: {
     fontSize: 13,
-    color: '#881337',
+    color: '#fda4af',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 12,
@@ -424,8 +425,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   errorBanner: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fca5a5',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+    borderColor: 'rgba(220, 38, 38, 0.5)',
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
@@ -435,26 +436,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 13,
     flex: 1,
     marginRight: 8,
   },
   dismissText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontWeight: '600',
     fontSize: 12,
   },
   passengerCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
   },
   cardBadgeRow: {
     flexDirection: 'row',
@@ -463,10 +466,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: 'rgba(247, 243, 234, 0.1)',
   },
   travelerBadge: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
@@ -474,17 +477,17 @@ const styles = StyleSheet.create({
   travelerBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1d4ed8',
+    color: '#60a5fa',
   },
   adultLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     fontWeight: '500',
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(247, 243, 234, 0.7)',
     marginBottom: 6,
     marginTop: 4,
   },
@@ -496,11 +499,11 @@ const styles = StyleSheet.create({
   chip: {
     flex: 1,
     paddingVertical: 8,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: 'rgba(247, 243, 234, 0.1)',
   },
   genderRow: {
     flexDirection: 'row',
@@ -509,11 +512,11 @@ const styles = StyleSheet.create({
   genderChip: {
     flex: 1,
     paddingVertical: 10,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: 'rgba(247, 243, 234, 0.1)',
   },
   chipActive: {
     backgroundColor: '#2563eb',
@@ -522,7 +525,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   chipTextActive: {
     color: '#ffffff',
@@ -536,30 +539,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textInput: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   loadingCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 14,
     padding: 24,
     alignItems: 'center',
     marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
   },
   loadingTitle: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginTop: 12,
     marginBottom: 4,
   },
   loadingSubtitle: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
   },
   submitButton: {
@@ -570,6 +577,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitButtonDisabled: {
+    backgroundColor: '#334155',
     opacity: 0.5,
   },
   submitButtonText: {

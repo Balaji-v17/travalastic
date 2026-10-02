@@ -254,11 +254,11 @@ export default function HomeScreen({ navigation }) {
                   >
                     {/* Bottom-anchored dark gradient overlay */}
                     <LinearGradient
-                      colors={['transparent', 'rgba(19, 27, 46, 0.95)']}
+                      colors={['transparent', 'rgba(0, 0, 0, 0.95)']}
                       style={styles.gradientOverlay}
                     >
                       <Text
-                        style={styles.destinationName}
+                        style={styles.trendingDestinationName}
                         numberOfLines={2}
                       >
                         {dest.name}
@@ -284,11 +284,11 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.quickActionsSection}>
           <Text style={styles.quickActionsHeading}>Quick actions</Text>
           <View style={styles.quickActionsGrid}>
-            {/* Search Destinations -> Explore tab */}
+            {/* Search Destinations -> TrendingDestinations screen */}
             <TouchableOpacity
               style={styles.actionTile}
               activeOpacity={0.8}
-              onPress={() => navigation.navigate('Explore')}
+              onPress={() => navigation.navigate('TrendingDestinations')}
             >
               <View style={styles.tileIconContainer}>
                 <Ionicons name="compass-outline" size={24} color={colors.accentPrimary} />
@@ -376,23 +376,25 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 11,
     fontFamily: fonts.mono,
-    fontWeight: '700',
-    color: colors.inkNavyMuted,
-    letterSpacing: 1.2,
+    fontWeight: '600',
+    color: '#64748B',
+    letterSpacing: 1,
   },
   destinationName: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: fonts.bodyBold,
     fontWeight: '700',
-    color: colors.textOnSurface,
-    marginBottom: spacing[8] || 8,
-    lineHeight: 30,
+    color: '#0F172A',
+    marginVertical: 4,
+    lineHeight: 32,
   },
   routeDateText: {
     fontSize: 14,
     fontFamily: fonts.mono,
-    color: colors.textOnSurface,
+    fontWeight: '500',
+    color: '#334155',
     letterSpacing: 0.5,
+    marginBottom: 12,
   },
   emptyTitle: {
     fontSize: 24,
@@ -442,7 +444,7 @@ const styles = StyleSheet.create({
     height: 1,
     borderStyle: 'dashed',
     borderWidth: 1,
-    borderColor: 'rgba(19, 27, 46, 0.25)',
+    borderColor: 'rgba(247, 243, 234, 0.25)',
     marginHorizontal: spacing[8] || 8,
   },
 
@@ -471,12 +473,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   startBtn: {
-    backgroundColor: colors.background,
+    backgroundColor: '#1A1A1A',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   startBtnText: {
     color: colors.textPrimary,
@@ -607,7 +611,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     padding: 10,
   },
-  destinationName: {
+  trendingDestinationName: {
     fontFamily: fonts.display,
     fontSize: 15,
     fontWeight: '600',
@@ -621,7 +625,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 180,
     borderRadius: radii.card || 16,
-    backgroundColor: 'rgba(28, 39, 64, 0.6)',
+    backgroundColor: '#1A1A1A',
   },
   attributionContainer: {
     marginTop: 8,

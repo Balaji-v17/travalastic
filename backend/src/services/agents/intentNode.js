@@ -40,48 +40,120 @@ export const createIntentClassifier = (
  * @returns {'edit_request' | 'general_question' | 'booking_question'}
  */
 export const classifyIntentFallback = (message = '') => {
-  const text = message.toLowerCase();
+  const text = message.toLowerCase().trim();
 
+  // Planning keywords indicating intent to create or receive travel plans / itinerary / recommendations
+  const planningKeywords = [
+    'trip',
+    'itinerary',
+    'plan',
+    'days trip',
+    'day trip',
+    'days in',
+    'days for',
+    'hidden gem',
+    'hidden gems',
+    'sights',
+    'sightseeing',
+    'attractions',
+    'places to visit',
+    'things to do',
+    'recommend',
+    'suggest',
+    'guide',
+    'explore',
+    'travel ideas',
+    'what to do',
+  ];
+
+  // Specific edit keywords for modifying existing itinerary days
   const editKeywords = [
-    'change',
     'modify',
     'swap',
-    'remove',
-    'delete',
-    'add',
-    'replace',
-    'switch',
-    'update',
-    'drop',
     'reschedule',
+    'instead of',
+    'change day',
+    'replace day',
+    'delete day',
+    'remove day',
+    'drop day',
+    'add a day',
     'day 1',
     'day 2',
     'day 3',
     'day 4',
     'day 5',
-    'instead of',
   ];
 
-  const bookingKeywords = [
+  // Words that indicate generating a new plan rather than editing an existing one
+  const newPlanVerbs = [
+    'provide',
+    'create',
+    'give me',
+    'build',
+    'make a',
+    'suggest',
+    'recommend',
+  ];
+
+  // Specific transactional booking phrases where user solely wants to execute a booking
+  const soleBookingKeywords = [
+    'book me',
+    'reserve me',
+    'buy ticket',
+    'purchase ticket',
+    'buy tickets',
+    'book ticket',
+    'book tickets',
+    'book a room right now',
+    'book hotel right now',
+    'book flight',
+    'book cab',
+    'book train',
+    'book bus',
+    'booking.com',
+    'duffel',
+    'irctc',
+    'redbus',
+    'uber',
+    'fare to',
+    'ticket fare',
+    'ticket price',
+  ];
+
+  const genericBookingKeywords = [
     'book',
     'reserve',
     'ticket',
     'reservation',
     'buy',
     'purchase',
-    'uber',
-    'irctc',
-    'redbus',
-    'booking.com',
-    'duffel',
     'fare',
   ];
 
-  if (editKeywords.some((kw) => text.includes(kw))) {
+  const hasPlanning = planningKeywords.some((kw) => text.includes(kw));
+  const hasNewPlanVerb = newPlanVerbs.some((v) => text.includes(v));
+  const hasEdit = editKeywords.some((kw) => text.includes(kw));
+
+  // If query asks for planning/itinerary/recommendations (even if rooms/hotels/booking mentioned):
+  if (hasPlanning || (hasNewPlanVerb && (text.includes('day') || text.includes('trip')))) {
+    // If explicitly targeting existing numbered days, prioritize edit_request
+    if (hasEdit && (text.includes('day 1') || text.includes('day 2') || text.includes('day 3') || text.includes('day 4') || text.includes('day 5'))) {
+      return 'edit_request';
+    }
+    return 'general_question';
+  }
+
+  if (hasEdit) {
     return 'edit_request';
   }
 
-  if (bookingKeywords.some((kw) => text.includes(kw))) {
+  // Refined Deflection Rule:
+  // Only classify as booking_question if the user's sole, direct intent is to perform an actual booking transaction
+  if (
+    soleBookingKeywords.some((kw) => text.includes(kw)) ||
+    genericBookingKeywords.some((kw) => text.includes(kw))
+  ) {
     return 'booking_question';
   }
 
@@ -104,7 +176,18 @@ export const classifyIntent = async (message) => {
     {
       role: 'system',
       content:
-        'You are an expert intent classifier for a travel itinerary assistant. Analyze the incoming user message and classify it into exactly one of three categories: "edit_request" (wants to change, add, delete, reschedule, or swap itinerary items), "general_question" (asking about weather, culture, travel advice, suggestions, or general travel info), or "booking_question" (asking how to book flights, hotels, trains, buses, cabs, or check ticket availability). Choose strictly from these three options.',
+        `You are an expert intent classifier for Travalastic, an AI travel assistant.
+Analyze the incoming user message and classify it into exactly one of three categories:
+
+1. "edit_request": The user specifically requests modifying, adding, deleting, swapping, or rescheduling activities, days, or accommodations in an existing itinerary (e.g., "Change day 2 to Chapora Fort", "Remove the morning museum on day 3").
+
+2. "general_question": The user asks for a trip plan, itinerary, recommendations, sights, attractions, hidden gems, weather, culture, travel advice, or general information.
+   MULTI-INTENT PLANNING RULE:
+   If the prompt asks for an itinerary, travel ideas, or recommendations ALONGSIDE hotel, room, or flight requests (e.g., "Provide a 2 days trip for Goa, search for budget rooms, and add a hidden gem", "Plan a weekend in Jaipur with budget stays"), you MUST classify this as "general_question" (or "edit_request" if explicitly modifying existing numbered days). Do NOT classify it as "booking_question" just because words like "rooms", "stays", "hotels", or "book" appear!
+
+3. "booking_question": The user's SOLE, DIRECT intent is to perform an actual booking transaction or purchase (e.g., "Book me a room in Goa right now", "Find me flight tickets to Delhi", "How do I purchase a ticket?", "Reserve a cab for me"). Only use this if there is NO itinerary planning or recommendation request.
+
+Choose strictly from these three options: edit_request, general_question, booking_question.`,
     },
     {
       role: 'user',

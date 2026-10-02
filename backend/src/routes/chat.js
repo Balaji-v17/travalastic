@@ -58,8 +58,20 @@ router.post('/message', authenticate, async (req, res, next) => {
     });
 
     // 4. Run intentNode to classify the message
-    const classification = await classifyIntent(message.trim());
-    const intent = classification?.intent || 'general_question';
+    const trimmedMessage = message.trim();
+    const classification = await classifyIntent(trimmedMessage);
+    let intent = classification?.intent || 'general_question';
+
+    // Multi-Intent Support & Refined Deflection Rule:
+    // Only redirect to the Book tab if the user's sole, direct intent is to perform an actual booking transaction.
+    // If the message contains planning, itinerary, sight-seeing, or recommendation requests alongside rooms/hotels/booking,
+    // fulfill the primary request and do not deflect.
+    const hasPlanningIntent = /\b(trip|itinerary|plan|days?|sights?|hidden gem|gems?|recommend|suggest|things to do|activities|explore|places|visit|advice)\b/i.test(trimmedMessage);
+    const mentionsRoomsOrStaysOrBooking = /\b(rooms?|stays?|hotels?|hostels?|accommodat\w+|flights?|tickets?|book\w*)\b/i.test(trimmedMessage);
+
+    if (intent === 'booking_question' && hasPlanningIntent) {
+      intent = 'general_question';
+    }
 
     let reply = '';
     let updatedItinerary = null;
@@ -69,7 +81,7 @@ router.post('/message', authenticate, async (req, res, next) => {
       const editResult = await editItinerary({
         itineraryId: itinerary._id,
         userId: req.userId,
-        editRequest: message.trim(),
+        editRequest: trimmedMessage,
       });
 
       if (editResult.success && editResult.itinerary) {
@@ -91,16 +103,29 @@ router.post('/message', authenticate, async (req, res, next) => {
         reply = editResult.error || 'Could not modify the itinerary with that request.';
       }
     } else if (intent === 'booking_question') {
+      // Sole direct booking transaction inquiry
       reply = 'You can search and book that from the Book tab.';
       updatedItinerary = null;
     } else {
-      // General question (or in-journey schedule question)
+      // General question, trip plan, recommendations, or in-journey schedule question
       const qaResult = await answerQuestion({
-        question: message.trim(),
+        question: trimmedMessage,
         itinerary,
       });
       reply = qaResult.answer || 'Here is the information you requested.';
       updatedItinerary = null;
+    }
+
+    // Call to Action for combined planning queries:
+    // When answering a combined planning query, append a gentle tip at the end:
+    // "Tip: To reserve your flights or check live availability for stays, head over to the Book tab."
+    const bookingTipCta = 'Tip: To reserve your flights or check live availability for stays, head over to the Book tab.';
+    if (
+      hasPlanningIntent &&
+      mentionsRoomsOrStaysOrBooking &&
+      !reply.includes('Book tab')
+    ) {
+      reply = `${reply}\n\n${bookingTipCta}`;
     }
 
     // 6. Append assistant reply to conversation history and persist

@@ -14,11 +14,12 @@ export default function MainTabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
+      sceneContainerStyle={{ backgroundColor: '#000000' }}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.inkNavy,
-          borderTopColor: 'transparent',
+          backgroundColor: '#000000',
+          borderTopColor: '#1E1E1E',
           elevation: 0,
           shadowOpacity: 0,
           height: 60,

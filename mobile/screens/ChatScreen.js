@@ -11,7 +11,9 @@ import {
   Platform,
   SafeAreaView,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 import apiClient from '../config/apiClient';
+import { colors, fonts } from '../theme/tokens';
 
 export default function ChatScreen({ route, navigation }) {
   const { itineraryId, onItineraryUpdated } = route.params || {};
@@ -127,9 +129,15 @@ export default function ChatScreen({ route, navigation }) {
             isUser ? styles.bubbleUser : styles.bubbleAssistant,
           ]}
         >
-          <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant]}>
-            {item.content}
-          </Text>
+          {isUser ? (
+            <Text style={[styles.bubbleText, styles.bubbleTextUser]}>
+              {item.text || item.content || ''}
+            </Text>
+          ) : (
+            <Markdown style={markdownStyles}>
+              {item.text || item.content || ''}
+            </Markdown>
+          )}
         </View>
       </View>
     );
@@ -188,7 +196,7 @@ export default function ChatScreen({ route, navigation }) {
           <TextInput
             style={styles.textInput}
             placeholder="Ask a question or request a change..."
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="rgba(247, 243, 234, 0.4)"
             value={inputText}
             onChangeText={(text) => {
               setInputText(text);
@@ -214,18 +222,165 @@ export default function ChatScreen({ route, navigation }) {
   );
 }
 
+const markdownStyles = StyleSheet.create({
+  body: {
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heading1: {
+    fontFamily: fonts.display,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  heading2: {
+    fontFamily: fonts.display,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  heading3: {
+    fontFamily: fonts.bodyBold,
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  strong: {
+    fontFamily: fonts.bodyBold,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  em: {
+    fontStyle: 'italic',
+    color: colors.textPrimary,
+    opacity: 0.85,
+  },
+  paragraph: {
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 0,
+    marginBottom: 8,
+  },
+  bullet_list: {
+    marginVertical: 4,
+  },
+  ordered_list: {
+    marginVertical: 4,
+  },
+  list_item: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 2,
+  },
+  bullet_list_icon: {
+    color: colors.accentPrimary,
+    marginRight: 6,
+    fontSize: 12,
+  },
+  ordered_list_icon: {
+    color: colors.accentPrimary,
+    marginRight: 6,
+    fontSize: 12,
+  },
+  table: {
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.2)',
+    borderRadius: 6,
+    marginVertical: 8,
+    backgroundColor: '#121212',
+    alignSelf: 'stretch',
+    maxWidth: '100%',
+  },
+  tr: {
+    borderBottomWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.1)',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  th: {
+    padding: 6,
+    backgroundColor: 'rgba(247, 243, 234, 0.08)',
+    fontFamily: fonts.bodyBold,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    fontSize: 11,
+    flex: 1,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+  },
+  td: {
+    padding: 6,
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
+    fontSize: 11,
+    flex: 1,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+  },
+  code_inline: {
+    fontFamily: fonts.mono || 'monospace',
+    backgroundColor: '#121212',
+    color: '#38bdf8',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    fontSize: 12,
+  },
+  code_block: {
+    fontFamily: fonts.mono || 'monospace',
+    backgroundColor: '#121212',
+    borderRadius: 6,
+    padding: 8,
+    marginVertical: 6,
+  },
+  fence: {
+    fontFamily: fonts.mono || 'monospace',
+    backgroundColor: '#121212',
+    borderRadius: 6,
+    padding: 8,
+    marginVertical: 6,
+  },
+  link: {
+    color: '#38bdf8',
+    textDecorationLine: 'underline',
+  },
+  hr: {
+    backgroundColor: 'rgba(247, 243, 234, 0.15)',
+    height: 1,
+    marginVertical: 8,
+  },
+  blockquote: {
+    backgroundColor: '#121212',
+    borderLeftColor: colors.accentPrimary,
+    borderLeftWidth: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 4,
+  },
+});
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#000000',
   },
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
   },
   errorBanner: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fca5a5',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+    borderColor: 'rgba(220, 38, 38, 0.5)',
     borderWidth: 1,
     borderRadius: 8,
     marginHorizontal: 16,
@@ -236,13 +391,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 13,
     flex: 1,
     marginRight: 8,
   },
   dismissError: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontWeight: '700',
     fontSize: 12,
   },
@@ -262,7 +417,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubble: {
-    maxWidth: '82%',
+    maxWidth: '88%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
@@ -272,17 +427,18 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleAssistant: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     borderBottomLeftRadius: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 1,
   },
   bubbleText: {
+    fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -290,7 +446,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   bubbleTextAssistant: {
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   typingBubble: {
     flexDirection: 'row',
@@ -299,7 +455,7 @@ const styles = StyleSheet.create({
   },
   typingText: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     fontStyle: 'italic',
   },
   inputBar: {
@@ -307,20 +463,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#000000',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: 'rgba(247, 243, 234, 0.15)',
     gap: 10,
   },
   textInput: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#1A1A1A',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     paddingHorizontal: 16,
     paddingVertical: 10,
     maxHeight: 100,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   sendButton: {
     backgroundColor: '#2563eb',
@@ -331,7 +489,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#94a3b8',
+    backgroundColor: '#334155',
     opacity: 0.7,
   },
   sendButtonText: {
@@ -352,13 +510,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 6,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 260,

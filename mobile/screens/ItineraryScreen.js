@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
 } from 'react-native';
+import { colors, fonts, spacing, radii } from '../theme/tokens';
 
 export default function ItineraryScreen({ route, navigation }) {
   const {
@@ -45,14 +46,17 @@ export default function ItineraryScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.wrapper}>
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Trip Summary Card */}
+        {/* Trip Summary Card (Ticket-paper treatment) */}
         <View style={styles.summaryCard}>
+          <View style={styles.badgeRow}>
+            <Text style={styles.badgeText}>TRIP SUMMARY</Text>
+          </View>
           <Text style={styles.destinationTitle}>
             {destination ? `Trip to ${destination} 🌴` : 'Your Travel Itinerary 🌴'}
           </Text>
           {startDate && endDate ? (
             <Text style={styles.dateRangeText}>
-              📅 {startDate} to {endDate} ({currentItinerary.length} Days)
+              📅 {startDate} — {endDate} ({currentItinerary.length} Days)
             </Text>
           ) : null}
 
@@ -177,77 +181,106 @@ export default function ItineraryScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
   },
   container: {
     padding: 16,
     paddingBottom: 40,
+    backgroundColor: colors.background,
   },
+  // Trip Summary Card: ticket-paper treatment matching Home's hero card (colors.surface #F7F3EA)
   summaryCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radii.card || 20,
     padding: 20,
     marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(19, 27, 46, 0.12)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 3,
   },
-  destinationTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#ffffff',
+  badgeRow: {
     marginBottom: 6,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontFamily: fonts.mono || 'monospace',
+    fontWeight: '600',
+    color: '#64748B',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  destinationTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    fontFamily: fonts.bodyBold,
+    color: '#0F172A',
+    marginBottom: 4,
+    lineHeight: 30,
   },
   dateRangeText: {
     fontSize: 14,
-    color: '#94a3b8',
+    fontFamily: fonts.body,
+    fontWeight: '500',
+    color: '#334155',
     marginBottom: 16,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(15, 23, 42, 0.06)',
     borderRadius: 12,
     padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
   },
   statItem: {
     flex: 1,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 11,
+    fontFamily: fonts.body,
+    fontWeight: '600',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 4,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: 'bold',
-    color: '#38bdf8',
+    fontFamily: fonts.bodyBold,
+    color: '#0F172A',
   },
   statTier: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#34d399',
+    fontWeight: '700',
+    fontFamily: fonts.bodyBold,
+    color: colors.accentSecondary || '#2F6E68',
   },
   sectionHeading: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0f172a',
+    fontFamily: fonts.display,
+    color: colors.textPrimary,
     marginBottom: 12,
   },
+  // Daily itinerary day-cards: colors.surfaceAlt background, colors.textPrimary text
   dayCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 14,
     padding: 16,
     marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   dayHeader: {
     flexDirection: 'row',
@@ -255,17 +288,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayBadge: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
+    backgroundColor: 'rgba(232, 163, 61, 0.15)',
+    borderColor: 'rgba(232, 163, 61, 0.3)',
     borderWidth: 1,
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
   dayBadgeText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
-    color: '#2563eb',
+    fontFamily: fonts.bodyBold,
+    color: colors.accentPrimary,
   },
   dayHeaderRight: {
     flexDirection: 'row',
@@ -275,42 +309,48 @@ const styles = StyleSheet.create({
   dayCostText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0f172a',
+    fontFamily: fonts.bodyBold,
+    color: colors.textPrimary,
   },
   chevronIcon: {
     fontSize: 12,
-    color: '#64748b',
+    color: colors.textMuted,
     marginLeft: 4,
   },
   stayContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.inputBackground || '#121212',
     borderRadius: 8,
     padding: 10,
     marginTop: 12,
     gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   stayLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#475569',
+    fontFamily: fonts.bodyBold,
+    color: colors.accentPrimary,
   },
   stayText: {
     fontSize: 13,
-    color: '#0f172a',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
     flex: 1,
   },
   activitiesContainer: {
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: colors.border,
   },
   activitiesLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748b',
+    fontFamily: fonts.bodyBold,
+    color: colors.textMuted,
     marginBottom: 8,
   },
   activityItem: {
@@ -320,40 +360,45 @@ const styles = StyleSheet.create({
   },
   bulletDot: {
     fontSize: 16,
-    color: '#2563eb',
+    color: colors.accentPrimary,
     marginRight: 8,
     lineHeight: 20,
   },
   activityText: {
     fontSize: 14,
-    color: '#334155',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
     lineHeight: 20,
     flex: 1,
   },
   emptyCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 14,
     padding: 24,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   emptyText: {
     fontSize: 15,
-    color: '#64748b',
+    fontFamily: fonts.body,
+    color: colors.textMuted,
     marginBottom: 16,
   },
   backButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 20,
   },
   backButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: '#000000',
+    fontFamily: fonts.bodyBold,
+    fontWeight: '700',
   },
   planAnotherButton: {
-    backgroundColor: '#f1f5f9',
-    borderColor: '#cbd5e1',
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 14,
@@ -361,24 +406,26 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   planAnotherButtonText: {
-    color: '#334155',
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
     fontSize: 15,
     fontWeight: '600',
   },
+  // "Ask AI" floating button: colors.accentPrimary
   floatingButton: {
     position: 'absolute',
     bottom: 24,
     right: 20,
-    backgroundColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    shadowColor: '#000',
+    shadowColor: colors.accentPrimary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -386,8 +433,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   floatingButtonText: {
-    color: '#ffffff',
+    color: '#000000',
     fontSize: 15,
+    fontFamily: fonts.bodyBold,
     fontWeight: '700',
   },
 });

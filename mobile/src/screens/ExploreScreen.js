@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   resultCardUncurated: {
-    backgroundColor: 'rgba(28, 39, 64, 0.6)',
+    backgroundColor: '#141414',
     borderColor: 'rgba(247, 243, 234, 0.1)',
     borderStyle: 'dashed',
   },

@@ -86,7 +86,7 @@ export default function SignUpScreen({ navigation }) {
         <TextInput
           style={styles.input}
           placeholder="Enter your email"
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor="rgba(247, 243, 234, 0.4)"
           value={email}
           onChangeText={(text) => {
             setEmail(text);
@@ -102,7 +102,7 @@ export default function SignUpScreen({ navigation }) {
         <TextInput
           style={styles.input}
           placeholder="Create a password"
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor="rgba(247, 243, 234, 0.4)"
           value={password}
           onChangeText={(text) => {
             setPassword(text);
@@ -139,35 +139,37 @@ export default function SignUpScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     padding: 24,
   },
   formContainer: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 2,
   },
   title: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.65)',
     marginBottom: 20,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
     borderWidth: 1,
-    borderColor: '#fca5a5',
+    borderColor: 'rgba(220, 38, 38, 0.5)',
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
@@ -176,31 +178,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 13,
     fontWeight: '500',
     flex: 1,
     marginRight: 8,
   },
   dismissText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontWeight: '600',
     fontSize: 12,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#334155',
+    color: 'rgba(247, 243, 234, 0.7)',
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     borderRadius: 10,
     padding: 14,
     fontSize: 16,
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 16,
   },
   button: {
@@ -224,11 +226,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   footerText: {
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     fontSize: 14,
   },
   footerLink: {
-    color: '#2563eb',
+    color: '#60a5fa',
     fontSize: 14,
     fontWeight: '600',
   },

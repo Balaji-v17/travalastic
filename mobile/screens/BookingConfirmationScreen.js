@@ -114,7 +114,7 @@ export default function BookingConfirmationScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
   },
   container: {
     padding: 24,
@@ -148,29 +148,29 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 6,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.65)',
     textAlign: 'center',
     lineHeight: 20,
     maxWidth: 280,
   },
   receiptCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 24,
     width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 3,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     marginBottom: 20,
   },
   pnrSection: {
@@ -180,20 +180,20 @@ const styles = StyleSheet.create({
   pnrLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     letterSpacing: 1.5,
     marginBottom: 6,
   },
   pnrValue: {
     fontSize: 32,
     fontWeight: '900',
-    color: '#2563eb',
+    color: '#60a5fa',
     letterSpacing: 4,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     marginBottom: 10,
   },
   statusBadge: {
-    backgroundColor: '#d1fae5',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
     paddingVertical: 4,
     paddingHorizontal: 12,
     borderRadius: 12,
@@ -201,12 +201,12 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#047857',
+    color: '#34d399',
     letterSpacing: 0.5,
   },
   divider: {
     height: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(247, 243, 234, 0.1)',
     marginVertical: 14,
   },
   detailRow: {
@@ -217,18 +217,18 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     fontWeight: '500',
   },
   detailValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   amountValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   passengerSection: {
     marginTop: 6,
@@ -241,7 +241,9 @@ const styles = StyleSheet.create({
   passengerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.08)',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
@@ -253,7 +255,7 @@ const styles = StyleSheet.create({
   passengerNameText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#334155',
+    color: '#F7F3EA',
   },
   orderIdRow: {
     flexDirection: 'row',
@@ -262,21 +264,23 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: 'rgba(247, 243, 234, 0.1)',
     gap: 6,
   },
   orderIdLabel: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.5)',
   },
   orderIdValue: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.5)',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   infoBox: {
     flexDirection: 'row',
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     borderRadius: 10,
     padding: 14,
     width: '100%',
@@ -289,12 +293,12 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 12,
-    color: '#1e40af',
+    color: 'rgba(247, 243, 234, 0.75)',
     flex: 1,
     lineHeight: 18,
   },
   doneButton: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#2563eb',
     borderRadius: 12,
     paddingVertical: 16,
     width: '100%',

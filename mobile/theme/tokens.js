@@ -1,25 +1,27 @@
-// Travalastic Semantic Design System Tokens (Dark Theme)
+// Travalastic Semantic Design System Tokens (Pure Black Theme)
 
 export const colors = {
   // Semantic Tokens
-  background: '#131B2E',      // main screen background, everywhere
+  background: '#000000',      // pure black main screen background, everywhere
   surface: '#F7F3EA',         // elevated card surface (ticket-stub cards)
-  surfaceAlt: '#1C2740',      // secondary card surface — lighter navy tint for dark-mode cards
+  surfaceAlt: '#1E1E1E',      // secondary card surface — dark gray tint for dark-mode cards / buttons
+  cardBackground: '#1E1E1E',
+  inputBackground: '#121212',
   textPrimary: '#F7F3EA',     // text on dark background
   textOnSurface: '#131B2E',   // text inside a paper-surface card
   textMuted: 'rgba(247,243,234,0.6)',
   accentPrimary: '#E8A33D',   // marigold
   accentSecondary: '#2F6E68', // sea teal
   accentUrgent: '#D65A4A',    // runway coral
-  border: 'rgba(247,243,234,0.15)',
+  border: '#27272A',
 
   // Legacy / Direct Brand Aliases (backward-compatibility)
-  inkNavy: '#131B2E',
+  inkNavy: '#000000',
   ticketPaper: '#F7F3EA',
   marigold: '#E8A33D',
   seaTeal: '#2F6E68',
   runwayCoral: '#D65A4A',
-  inkNavyMuted: 'rgba(19,27,46,0.6)',
+  inkNavyMuted: 'rgba(247,243,234,0.4)',
 };
 
 export const fonts = {

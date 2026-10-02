@@ -83,14 +83,31 @@ export const extractTripBriefFallback = (rawRequest) => {
   let budgetTier = 'mid';
   if (text.includes('luxury') || text.includes('expensive') || text.includes('5-star')) {
     budgetTier = 'luxury';
-  } else if (text.includes('budget') && !text.includes('mid-budget')) {
+  } else if ((text.includes('budget') || text.includes('cheap') || text.includes('hostel')) && !text.includes('mid-budget')) {
     budgetTier = 'budget';
   } else if (text.includes('mid')) {
     budgetTier = 'mid';
   }
 
   // Interests
-  const candidateInterests = ['beaches', 'nightlife', 'culture', 'heritage', 'adventure', 'wildlife', 'food', 'nature', 'relaxation', 'shopping'];
+  const candidateInterests = [
+    'beaches',
+    'nightlife',
+    'culture',
+    'heritage',
+    'adventure',
+    'wildlife',
+    'food',
+    'nature',
+    'relaxation',
+    'shopping',
+    'hidden gem',
+    'hidden gems',
+    'sightseeing',
+    'sights',
+    'budget accommodations',
+    'budget rooms',
+  ];
   const foundInterests = candidateInterests.filter((kw) => text.includes(kw));
   const interests = foundInterests.length > 0 ? foundInterests : ['sightseeing', 'culture'];
 
@@ -120,7 +137,14 @@ export const plannerNode = async (state) => {
     {
       role: 'system',
       content:
-        'You are an expert travel planner assistant. Analyze the user trip request and extract the trip brief into the structured schema: destination (string), startDate (ISO 8601 format YYYY-MM-DD), endDate (ISO 8601 format YYYY-MM-DD), budgetTier ("budget", "mid", or "luxury"), and interests (array of strings). If dates or budget tier are not explicitly specified, infer realistic upcoming dates and reasonable defaults based on context.',
+        `You are an expert travel planner assistant powered by Cerebras Llama 3.1. Analyze the user trip request and extract the trip brief into the structured schema: destination (string), startDate (ISO 8601 format YYYY-MM-DD), endDate (ISO 8601 format YYYY-MM-DD), budgetTier ("budget", "mid", or "luxury"), and interests (array of strings).
+
+MULTI-INTENT REQUEST HANDLING:
+- If a user prompt asks for an itinerary, travel ideas, or recommendations alongside hotel, room, or flight requests (e.g., "Provide a 2 days trip for Goa, search for budget rooms, and add a hidden gem"), you MUST fulfill the primary request completely.
+- Do NOT shut down, refuse, or deflect the response just because the words "rooms", "stays", "hotels", or "book" are present.
+- Infer the budgetTier from accommodation preferences (e.g., "budget rooms" or "hostels" -> "budget", "luxury resort" -> "luxury", default to "mid").
+- Preserve requested experiences and features (such as "hidden gems", "budget accommodations", "sightseeing", "sights") in the interests array.
+- If dates or budget tier are not explicitly specified, infer realistic upcoming dates and reasonable defaults based on context.`,
     },
     {
       role: 'user',

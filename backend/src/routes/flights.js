@@ -1,5 +1,8 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import duffel from '../services/duffelClient.js';
+import Booking from '../models/Booking.js';
+import User from '../models/User.js';
 
 const router = express.Router();
 
@@ -401,9 +404,96 @@ router.post('/book', async (req, res, next) => {
       (p) => `${p.given_name} ${p.family_name}`.trim()
     );
 
+    // Resolve userId if user is authenticated or email matches
+    let userId = null;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (authHeader && typeof authHeader === 'string' && authHeader.trim().toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.trim().split(/\s+/)[1];
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.userId || decoded.id || decoded._id;
+      } catch (e) {
+        // ignore token decode failure
+      }
+    }
+    if (!userId && req.body.userId) {
+      userId = req.body.userId;
+    }
+    if (!userId) {
+      const emailToMatch = passengers.find((p) => p.email)?.email;
+      if (emailToMatch) {
+        const matchedUser = await User.findOne({ email: emailToMatch.trim().toLowerCase() });
+        if (matchedUser) {
+          userId = matchedUser._id;
+        }
+      }
+    }
+
+    // Extract flight slice details
+    const firstSlice = offer.slices?.[0];
+    const segments = firstSlice?.segments || [];
+    const firstSegment = segments[0];
+    const lastSegment = segments[segments.length - 1] || firstSegment;
+    const airlineName =
+      offer.owner?.name ||
+      firstSegment?.operating_carrier?.name ||
+      firstSegment?.marketing_carrier?.name ||
+      'Unknown Airline';
+    const originIata =
+      firstSlice?.origin?.iata_code ||
+      firstSegment?.origin?.iata_code ||
+      '';
+    const destinationIata =
+      firstSlice?.destination?.iata_code ||
+      lastSegment?.destination?.iata_code ||
+      '';
+    const departureTime =
+      firstSegment?.departing_at
+        ? new Date(firstSegment.departing_at)
+        : firstSlice?.departure_date
+        ? new Date(firstSlice.departure_date)
+        : null;
+    const arrivalTime = lastSegment?.arriving_at ? new Date(lastSegment.arriving_at) : null;
+
+    let savedBooking = null;
+    try {
+      savedBooking = await Booking.create({
+        userId: userId || null,
+        bookingReference: order.booking_reference,
+        orderId: order.id,
+        offerId: offer.id,
+        type: 'flight',
+        status: 'confirmed',
+        airline: airlineName,
+        origin: originIata,
+        destination: destinationIata,
+        departureTime,
+        arrivalTime,
+        duration: firstSlice?.duration || null,
+        passengers: formattedPassengers.map((p) => ({
+          givenName: p.given_name,
+          familyName: p.family_name,
+          name: `${p.given_name} ${p.family_name}`,
+          dateOfBirth: p.born_on,
+          gender: p.gender,
+          title: p.title,
+          email: p.email,
+          phoneNumber: p.phone_number,
+        })),
+        passengerNames,
+        totalAmount: order.total_amount,
+        currency: order.total_currency || 'USD',
+        slices: offer.slices || [],
+        rawOrder: order,
+      });
+    } catch (saveError) {
+      console.error('Failed to persist booking to database:', saveError);
+    }
+
     return res.status(200).json({
       bookingReference: order.booking_reference,
       orderId: order.id,
+      bookingId: savedBooking?._id || null,
       totalAmount: order.total_amount,
       currency: order.total_currency,
       passengerNames,

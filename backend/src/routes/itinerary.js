@@ -51,9 +51,12 @@ router.post('/generate', authenticate, async (req, res, next) => {
  */
 router.get('/mine', authenticate, async (req, res, next) => {
   try {
-    const itineraries = await Itinerary.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+    let query = Itinerary.find({ userId: req.userId }).sort({ createdAt: -1 });
+    if (limit && !isNaN(limit)) {
+      query = query.limit(limit);
+    }
+    const itineraries = await query.exec();
 
     return res.status(200).json(itineraries);
   } catch (error) {

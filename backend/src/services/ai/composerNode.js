@@ -55,10 +55,14 @@ export const buildFallbackItineraryDays = (state) => {
 
   const days = [];
   const isNightlife = interests.toLowerCase().includes('nightlife');
+  const hasHiddenGem = interests.toLowerCase().includes('hidden gem') || (state?.rawRequest || '').toLowerCase().includes('hidden gem');
 
   for (let i = 1; i <= diffDays; i++) {
     const attraction = attractions[i - 1]?.name || `${destination} Central Area`;
     const blurb = personalizedContent[i - 1]?.text || `Enjoy local experiences tailored to ${interests}.`;
+    const gemActivity = hasHiddenGem && i === Math.min(2, diffDays)
+      ? `Afternoon: Explore an authentic hidden gem off the beaten path in ${destination} for a unique local experience.`
+      : `Afternoon: ${blurb.slice(0, 120)}...`;
     const eveningActivity = isNightlife
       ? `Evening: Experience the vibrant nightlife at local bars, cocktail lounges, and night entertainment districts in ${destination}.`
       : `Evening: Dinner at a popular local restaurant enjoying the atmosphere in ${destination}.`;
@@ -67,7 +71,7 @@ export const buildFallbackItineraryDays = (state) => {
       dayNumber: i,
       activities: [
         `Morning: Explore ${attraction} and discover local sights.`,
-        `Afternoon: ${blurb.slice(0, 120)}...`,
+        gemActivity,
         eveningActivity,
       ],
       estimatedCostINR: dailyCost,
@@ -111,20 +115,27 @@ Your task is to create a coherent, realistic day-by-day travel plan based on the
 
 You MUST strictly enforce the following rules:
 
-1. STRICT INTEREST ADHERENCE:
+1. STRICT INTEREST & HIGHLIGHT ADHERENCE:
    - Prioritize the user's explicit interests (${interestsList}).
-   - At least 60-70% of suggested activities MUST directly match these interests. If "nightlife" is selected, evenings MUST feature bars, clubs, izakayas, night markets, or evening entertainment districts—never quiet park walks or daytime tea ceremonies unless requested.
+   - At least 60-70% of suggested activities MUST directly match these interests. If "nightlife" is selected, evenings MUST feature bars, clubs, izakayas, night markets, or evening entertainment districts.
+   - If the user requested "hidden gem" or "hidden gems", you MUST feature authentic, offbeat hidden gems and secret spots in the daily itinerary.
 
-CRITICAL BUDGET RULES:
+2. ACCOMMODATION & STAY SUGGESTIONS:
+   - In accommodationSuggestion for each day, recommend suitable areas to stay and types of accommodation matching the user's requested budget tier (e.g. for budget: recommended guesthouses, boutique hostels, or budget rooms in central areas; for luxury: 5-star beach resorts).
+
+3. CRITICAL BUDGET RULES:
 - You have a strict budget of ${budget} INR total.
 - This means you MUST allocate approximately ${perDayBudget} INR per day.
 - Do NOT output a low default budget like 1500 INR. 
 - The 'estimatedCostINR' for EACH day MUST be between ${Math.round(perDayBudget * 0.8)} INR and ${Math.round(perDayBudget * 1.2)} INR.
 - Suggest hotels and activities that actually cost this amount (e.g., boutique hotels, upscale dining, premium club entry).
 
-3. CONTEXT INTEGRATION & SCHEMA:
+4. CONTEXT INTEGRATION & SCHEMA:
    - Incorporate the destination (${state?.destination || 'N/A'}), weather forecast, attractions, and personalized content blurbs into the daily schedule.
-   - Output strictly structured output conforming to the itinerary schema with dayNumber, activities (array of strings), estimatedCostINR (number), and accommodationSuggestion (string) for each day.`;
+   - Output strictly structured output conforming to the itinerary schema with dayNumber, activities (array of strings), estimatedCostINR (number), and accommodationSuggestion (string) for each day.
+
+5. FORMATTING & CHAT BUBBLE RULES:
+   - In all activity descriptions, daily highlights, and replies, AVOID Markdown tables (| Col 1 | Col 2 |). Tables are an awkward fit for narrow mobile chat bubbles and itinerary cards. Prefer plain prose, clear section headings, or short bullet lists instead. Headings and bold text are supported, but do NOT format schedules or details as Markdown tables.`;
 
   const userPrompt = `Here is the gathered trip context and research data:
 - Destination: ${state?.destination || 'N/A'}

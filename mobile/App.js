@@ -22,14 +22,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 
-// Navigation theme setting default background across all screens to colors.background
+// Navigation theme setting default background across all screens to pure black #000000
 const appNavigationTheme = {
   ...DefaultTheme,
   dark: true,
   colors: {
     ...DefaultTheme.colors,
-    background: colors.background,
-    card: colors.background,
+    background: '#000000',
+    card: '#000000',
     text: colors.textPrimary,
     border: colors.border,
   },

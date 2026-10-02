@@ -159,7 +159,7 @@ export default function TrainsAndBusesScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Bengaluru, Mumbai, Delhi"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="rgba(247, 243, 234, 0.4)"
                 value={origin}
                 onChangeText={(t) => {
                   setOrigin(t);
@@ -179,7 +179,7 @@ export default function TrainsAndBusesScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Goa, Pune, Jaipur"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="rgba(247, 243, 234, 0.4)"
                 value={destination}
                 onChangeText={(t) => {
                   setDestination(t);
@@ -343,19 +343,21 @@ export default function TrainsAndBusesScreen() {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
   },
   container: {
     padding: 16,
     paddingBottom: 40,
   },
   searchCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 2,
     marginBottom: 20,
@@ -363,19 +365,19 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 4,
   },
   subheading: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.65)',
     marginBottom: 16,
     lineHeight: 18,
   },
   inputLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
+    color: 'rgba(247, 243, 234, 0.7)',
     marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -387,29 +389,29 @@ const styles = StyleSheet.create({
   },
   modeBtn: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: 'rgba(247, 243, 234, 0.1)',
   },
   modeBtnActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    borderColor: '#3b82f6',
   },
   modeBtnText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   modeBtnTextActive: {
-    color: '#2563eb',
+    color: '#60a5fa',
     fontWeight: '700',
   },
   errorBanner: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fca5a5',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+    borderColor: 'rgba(220, 38, 38, 0.5)',
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
@@ -419,13 +421,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 13,
     flex: 1,
     marginRight: 8,
   },
   dismissText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontWeight: '600',
     fontSize: 12,
   },
@@ -443,15 +445,17 @@ const styles = StyleSheet.create({
   },
   arrowIcon: {
     fontSize: 16,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   input: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   presetRow: {
     flexDirection: 'row',
@@ -462,17 +466,19 @@ const styles = StyleSheet.create({
   },
   presetLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   presetBadge: {
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
   presetBadgeText: {
     fontSize: 11,
-    color: '#334155',
+    color: 'rgba(247, 243, 234, 0.8)',
     fontWeight: '600',
   },
   searchButton: {
@@ -495,7 +501,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   stateCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     borderRadius: 16,
     padding: 26,
     alignItems: 'center',
@@ -503,14 +511,14 @@ const styles = StyleSheet.create({
   stateTitle: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginTop: 12,
     marginBottom: 4,
     textAlign: 'center',
   },
   stateSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
   },
   resultsWrapper: {
@@ -528,26 +536,26 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   approxBadge: {
     fontSize: 11,
-    color: '#b45309',
-    backgroundColor: '#fef3c7',
+    color: '#fbbf24',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
     paddingVertical: 2,
     paddingHorizontal: 6,
     borderRadius: 4,
     fontWeight: '700',
   },
   routeCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 2,
   },
@@ -558,7 +566,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   routeModeTag: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 4,
@@ -566,23 +574,25 @@ const styles = StyleSheet.create({
   routeModeTagText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1d4ed8',
+    color: '#60a5fa',
   },
   routeFrequency: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(247, 243, 234, 0.6)',
   },
   routePair: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     marginBottom: 10,
   },
   routeMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.08)',
     padding: 10,
     borderRadius: 8,
     marginBottom: 8,
@@ -596,37 +606,37 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.5)',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   metaValue: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
   },
   verifiedTag: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#d97706',
+    color: '#fbbf24',
   },
   noteBox: {
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: 'rgba(247, 243, 234, 0.1)',
   },
   noteText: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.5)',
     fontStyle: 'italic',
   },
   noRouteCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(247, 243, 234, 0.15)',
   },
   noRouteIcon: {
     fontSize: 32,
@@ -635,20 +645,22 @@ const styles = StyleSheet.create({
   noRouteTitle: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#F7F3EA',
     textAlign: 'center',
     marginBottom: 6,
   },
   noRouteSubtitle: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'rgba(247, 243, 234, 0.6)',
     textAlign: 'center',
     lineHeight: 18,
   },
   portalCard: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
   },
   portalHeaderRow: {
     flexDirection: 'row',
@@ -659,22 +671,24 @@ const styles = StyleSheet.create({
   portalBrand: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: '#F7F3EA',
   },
   officialBadge: {
-    backgroundColor: '#334155',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 243, 234, 0.15)',
     paddingVertical: 2,
     paddingHorizontal: 6,
     borderRadius: 4,
   },
   officialBadgeText: {
-    color: '#94a3b8',
+    color: 'rgba(247, 243, 234, 0.7)',
     fontSize: 10,
     fontWeight: '700',
   },
   portalDescription: {
     fontSize: 12,
-    color: '#cbd5e1',
+    color: 'rgba(247, 243, 234, 0.7)',
     lineHeight: 18,
     marginBottom: 16,
   },

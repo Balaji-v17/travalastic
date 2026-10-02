@@ -16,7 +16,9 @@ const BOOKING_OPTIONS = [
     icon: '✈️',
     subtitle: 'Search airline routes & instant booking with Duffel',
     route: 'FlightSearch',
-    accent: '#2563eb',
+    accent: '#60A5FA',
+    badgeBg: 'rgba(96, 165, 250, 0.16)',
+    badgeText: '#60A5FA',
     badge: 'Instant Tickets',
   },
   {
@@ -25,7 +27,9 @@ const BOOKING_OPTIONS = [
     icon: '🏨',
     subtitle: 'Curated stays & real-time rooms on Booking.com',
     route: 'Hotels',
-    accent: '#003580',
+    accent: '#93C5FD',
+    badgeBg: 'rgba(59, 130, 246, 0.18)',
+    badgeText: '#93C5FD',
     badge: 'Curated + Booking.com',
   },
   {
@@ -34,7 +38,9 @@ const BOOKING_OPTIONS = [
     icon: '🚆',
     subtitle: 'Intercity Indian ground transit with IRCTC & RedBus',
     route: 'TrainsAndBuses',
-    accent: '#ea580c',
+    accent: '#FB923C',
+    badgeBg: 'rgba(249, 115, 22, 0.18)',
+    badgeText: '#FB923C',
     badge: 'Rail & Bus',
   },
   {
@@ -43,7 +49,9 @@ const BOOKING_OPTIONS = [
     icon: '🚗',
     subtitle: 'Set pickup & dropoff with direct Uber app handoff',
     route: 'CabBooking',
-    accent: '#000000',
+    accent: '#E4E4E7',
+    badgeBg: 'rgba(255, 255, 255, 0.12)',
+    badgeText: '#E4E4E7',
     badge: 'Uber Deep Link',
   },
   {
@@ -52,7 +60,9 @@ const BOOKING_OPTIONS = [
     icon: '🚙',
     subtitle: 'Self-drive car rentals & deals on Rentalcars.com',
     route: 'Cars',
-    accent: '#059669',
+    accent: '#34D399',
+    badgeBg: 'rgba(16, 185, 129, 0.18)',
+    badgeText: '#34D399',
     badge: 'Rentalcars.com',
   },
 ];
@@ -71,86 +81,53 @@ export default function BookScreen({ navigation }) {
       >
         {/* 5 Cards */}
         <View style={styles.cardsGrid}>
-          {BOOKING_OPTIONS.map((option) => {
-            const isFlights = option.id === 'flights';
-
-            return (
-              <TouchableOpacity
-                key={option.id}
-                style={[
-                  styles.cardBase,
-                  isFlights ? styles.cardSurface : styles.cardSurfaceAlt,
-                ]}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate(option.route)}
-              >
-                <View style={styles.cardTopRow}>
-                  <View
-                    style={[
-                      styles.iconCircle,
-                      {
-                        backgroundColor: isFlights
-                          ? `${option.accent}18`
-                          : `${option.accent}25`,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.icon}>{option.icon}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.badge,
-                      isFlights ? styles.badgeSurface : styles.badgeSurfaceAlt,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.badgeText,
-                        {
-                          color: isFlights ? '#1e40af' : option.accent === '#000000' ? colors.textPrimary : option.accent,
-                        },
-                      ]}
-                    >
-                      {option.badge}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text
-                  style={[
-                    styles.cardTitle,
-                    isFlights ? styles.cardTitleSurface : styles.cardTitleSurfaceAlt,
-                  ]}
-                >
-                  {option.title}
-                </Text>
-                <Text
-                  style={[
-                    styles.cardSubtitle,
-                    isFlights ? styles.cardSubtitleSurface : styles.cardSubtitleSurfaceAlt,
-                  ]}
-                >
-                  {option.subtitle}
-                </Text>
-
+          {BOOKING_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option.id}
+              style={[styles.cardBase, styles.cardSurfaceAlt]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate(option.route)}
+            >
+              <View style={styles.cardTopRow}>
                 <View
                   style={[
-                    styles.cardFooter,
-                    isFlights ? styles.cardFooterSurface : styles.cardFooterSurfaceAlt,
+                    styles.iconCircle,
+                    { backgroundColor: `${option.accent}25` },
+                  ]}
+                >
+                  <Text style={styles.icon}>{option.icon}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.badge,
+                    { backgroundColor: option.badgeBg },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.actionText,
-                      isFlights ? styles.actionTextSurface : styles.actionTextSurfaceAlt,
+                      styles.badgeText,
+                      { color: option.badgeText },
                     ]}
                   >
-                    Explore & Book
+                    {option.badge}
                   </Text>
                 </View>
-              </TouchableOpacity>
-            );
-          })}
+              </View>
+
+              <Text style={[styles.cardTitle, styles.cardTitleSurfaceAlt]}>
+                {option.title}
+              </Text>
+              <Text style={[styles.cardSubtitle, styles.cardSubtitleSurfaceAlt]}>
+                {option.subtitle}
+              </Text>
+
+              <View style={[styles.cardFooter, styles.cardFooterSurfaceAlt]}>
+                <Text style={[styles.actionText, styles.actionTextSurfaceAlt]}>
+                  Explore & Book
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
     </View>

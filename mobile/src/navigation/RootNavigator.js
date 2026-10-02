@@ -12,6 +12,7 @@ import CabBookingScreen from '../screens/CabBookingScreen';
 import CarsScreen from '../screens/CarsScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ExploreScreen from '../screens/ExploreScreen';
+import TrendingDestinationsScreen from '../screens/TrendingDestinationsScreen';
 import BookScreen from '../screens/BookScreen';
 import TripRequestScreen from '../screens/TripRequestScreen';
 import ItineraryScreen from '../screens/ItineraryScreen';
@@ -22,6 +23,9 @@ import ChatScreen from '../screens/ChatScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import SavedItinerariesScreen from '../screens/SavedItinerariesScreen';
+import BookingHistoryScreen from '../screens/BookingHistoryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -77,13 +81,17 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
       initialRouteName={resolvedInitialRoute}
       screenOptions={{
         headerStyle: {
-          backgroundColor: '#ffffff',
+          backgroundColor: '#000000',
         },
-        headerTintColor: '#0f172a',
+        headerTintColor: '#ffffff',
         headerTitleStyle: {
           fontWeight: '600',
+          color: '#ffffff',
         },
         headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: '#000000',
+        },
       }}
     >
       {/* Main Tabs (Post-Login Entry) */}
@@ -123,6 +131,18 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
         name="ExploreScreen"
         component={ExploreScreen}
         options={{ title: 'Explore Activities' }}
+      />
+
+      {/* Trending Destinations */}
+      <Stack.Screen
+        name="TrendingDestinations"
+        component={TrendingDestinationsScreen}
+        options={{ title: 'Trending Destinations', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TrendingDestinationsScreen"
+        component={TrendingDestinationsScreen}
+        options={{ title: 'Trending Destinations', headerShown: false }}
       />
 
       {/* Book Hub */}
@@ -307,6 +327,38 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
         component={ProfileScreen}
         options={{ title: 'Profile' }}
       />
+
+      {/* Functional Profile Sub-Screens */}
+      <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{ title: 'Edit Profile' }}
+      />
+      <Stack.Screen
+        name="EditProfileScreen"
+        component={EditProfileScreen}
+        options={{ title: 'Edit Profile' }}
+      />
+      <Stack.Screen
+        name="SavedItineraries"
+        component={SavedItinerariesScreen}
+        options={{ title: 'Saved Itineraries' }}
+      />
+      <Stack.Screen
+        name="SavedItinerariesScreen"
+        component={SavedItinerariesScreen}
+        options={{ title: 'Saved Itineraries' }}
+      />
+      <Stack.Screen
+        name="BookingHistory"
+        component={BookingHistoryScreen}
+        options={{ title: 'Flight History' }}
+      />
+      <Stack.Screen
+        name="BookingHistoryScreen"
+        component={BookingHistoryScreen}
+        options={{ title: 'Flight History' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -314,7 +366,7 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
   },

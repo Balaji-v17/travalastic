@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import apiClient from '../config/apiClient';
+import { colors, fonts } from '../theme/tokens';
 
 const INTERESTS_LIST = [
   'beach',
@@ -172,7 +173,7 @@ export default function TripRequestScreen({ navigation }) {
           <TextInput
             style={styles.input}
             placeholder="e.g. Goa, Jaipur, Manali, Paris"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="rgba(247, 243, 234, 0.4)"
             value={destination}
             onChangeText={(text) => {
               setDestination(text);
@@ -188,7 +189,7 @@ export default function TripRequestScreen({ navigation }) {
               <TextInput
                 style={styles.dateInput}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="rgba(247, 243, 234, 0.4)"
                 value={startDate}
                 onChangeText={setStartDate}
                 editable={!loading}
@@ -199,7 +200,7 @@ export default function TripRequestScreen({ navigation }) {
               <TextInput
                 style={styles.dateInput}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="rgba(247, 243, 234, 0.4)"
                 value={endDate}
                 onChangeText={setEndDate}
                 editable={!loading}
@@ -271,7 +272,7 @@ export default function TripRequestScreen({ navigation }) {
           {/* Loading state or Submit button */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#2563eb" />
+              <ActivityIndicator size="large" color={colors.accentPrimary} />
               <Text style={styles.loadingTitle}>Building your itinerary…</Text>
               <Text style={styles.loadingSubtitle}>
                 Synthesizing weather forecasts, local attractions, hotel options, and personalized content.
@@ -298,37 +299,41 @@ export default function TripRequestScreen({ navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
   },
   container: {
     padding: 20,
     paddingBottom: 40,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 16,
     padding: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 2,
   },
   heading: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0f172a',
+    fontFamily: fonts.display,
+    color: colors.textPrimary,
     marginBottom: 6,
   },
   subheading: {
     fontSize: 14,
-    color: '#64748b',
+    fontFamily: fonts.body,
+    color: colors.textMuted,
     lineHeight: 20,
     marginBottom: 20,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fca5a5',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+    borderColor: 'rgba(220, 38, 38, 0.5)',
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
@@ -338,30 +343,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 13,
     flex: 1,
     marginRight: 8,
   },
   dismissText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontWeight: '600',
     fontSize: 12,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#334155',
+    fontFamily: fonts.bodyBold,
+    color: colors.textMuted,
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#0f172a',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
   },
   dateRow: {
     flexDirection: 'row',
@@ -372,12 +381,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dateInput: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#0f172a',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
   },
   presetRow: {
     flexDirection: 'row',
@@ -388,17 +400,19 @@ const styles = StyleSheet.create({
   },
   presetLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: colors.textMuted,
   },
   presetBadge: {
-    backgroundColor: '#e2e8f0',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
   presetBadgeText: {
     fontSize: 12,
-    color: '#475569',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   budgetRow: {
@@ -408,16 +422,16 @@ const styles = StyleSheet.create({
   },
   budgetButton: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.border,
   },
   budgetButtonActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
   },
   budgetIcon: {
     fontSize: 18,
@@ -426,10 +440,11 @@ const styles = StyleSheet.create({
   budgetButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748b',
+    fontFamily: fonts.bodyBold,
+    color: colors.textPrimary,
   },
   budgetButtonTextActive: {
-    color: '#2563eb',
+    color: '#000000',
   },
   chipsContainer: {
     flexDirection: 'row',
@@ -438,60 +453,70 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chip: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
   },
   chipText: {
     fontSize: 13,
-    color: '#475569',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   chipTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: '#000000',
+    fontWeight: '700',
   },
   loadingContainer: {
     marginTop: 20,
     padding: 20,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 12,
     alignItems: 'center',
   },
   loadingTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0f172a',
+    fontFamily: fonts.bodyBold,
+    color: colors.textPrimary,
     marginTop: 12,
     marginBottom: 6,
   },
   loadingSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
   },
   submitButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 20,
+    shadowColor: colors.accentPrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   submitButtonDisabled: {
-    backgroundColor: '#94a3b8',
-    opacity: 0.7,
+    backgroundColor: 'rgba(232, 163, 61, 0.35)',
+    opacity: 0.6,
   },
   submitButtonText: {
-    color: '#ffffff',
+    color: '#000000',
     fontSize: 16,
+    fontFamily: fonts.bodyBold,
     fontWeight: 'bold',
   },
 });

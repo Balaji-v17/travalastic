@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: 'rgba(19, 27, 46, 0.6)',
+    backgroundColor: '#121212',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,

@@ -14,6 +14,7 @@ import carsRoute from './routes/cars.js';
 import routesRoute from './routes/routes.js';
 import testRoute from './routes/test.js';
 import chatRoute from './routes/chat.js';
+import bookingsRoute from './routes/bookings.js';
 import { connectDB } from './config/db.js'; 
 import getWeatherForecast from './services/weatherService.js';
 import CuratedHotel from './models/CuratedHotel.js';
@@ -55,6 +56,7 @@ app.use('/cars', carsRoute);
 app.use('/routes', routesRoute);
 app.use('/test', testRoute);
 app.use('/chat', chatRoute);
+app.use('/bookings', bookingsRoute);
 
 // Temporary dev-only route to confirm seeded hotel data
 app.get('/admin/hotels', async (req, res) => {

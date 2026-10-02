@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import authenticate from '../middleware/authenticate.js';
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ const formatUser = (user) => ({
   id: user._id,
   _id: user._id,
   email: user.email,
+  name: user.name || '',
   createdAt: user.createdAt,
 });
 
@@ -98,10 +100,60 @@ const handleLogin = async (req, res) => {
   }
 };
 
+// GET /auth/me
+const handleGetMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    return res.status(200).json({ user: formatUser(user) });
+  } catch (error) {
+    console.error('Get profile error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// PATCH /auth/me
+const handlePatchMe = async (req, res) => {
+  const { name } = req.body || {};
+
+  try {
+    const updates = {};
+    if (typeof name === 'string') {
+      updates.name = name.trim();
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json({
+      user: formatUser(user),
+      message: 'Profile updated successfully',
+    });
+  } catch (error) {
+    console.error('Update profile error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 router.post('/signup', handleSignup);
 router.post('/auth/signup', handleSignup);
 
 router.post('/login', handleLogin);
 router.post('/auth/login', handleLogin);
+
+router.get('/me', authenticate, handleGetMe);
+router.get('/auth/me', authenticate, handleGetMe);
+
+router.patch('/me', authenticate, handlePatchMe);
+router.patch('/auth/me', authenticate, handlePatchMe);
 
 export default router;
