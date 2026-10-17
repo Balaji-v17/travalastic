@@ -249,9 +249,13 @@ export async function findTaggedPlaces(lat, lon, category, destinationHint = '')
       const placeLon = el.lon != null ? el.lon : el.center?.lon;
       if (placeLat == null || placeLon == null) continue;
 
-      const derivedCategory = getOSMMasterCategory(el.tags);
+      const placeId = el.type && el.id ? `${el.type}/${el.id}` : (el.id ? String(el.id) : null);
 
       results.push({
+        placeId,
+        id: placeId,
+        osmType: el.type || 'node',
+        osmId: el.id,
         name,
         lat: placeLat,
         lon: placeLon,

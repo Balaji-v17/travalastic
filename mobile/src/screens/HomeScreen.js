@@ -13,6 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import { colors, fonts, radii, spacing } from '../theme/tokens';
 import { apiClient } from '../config/apiClient';
 import ScreenHeader from '../components/ScreenHeader';
+import TravelAssistantFab from '../components/TravelAssistantFab';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -171,12 +172,8 @@ export default function HomeScreen({ navigation }) {
                   style={styles.continueBtn}
                   activeOpacity={0.85}
                   onPress={() =>
-                    navigation.navigate('Itinerary', {
+                    navigation.navigate('TripHub', {
                       itineraryId: itinerary._id,
-                      itinerary: itinerary.days,
-                      destination: itinerary.destination,
-                      startDate: itinerary.startDate,
-                      endDate: itinerary.endDate,
                     })
                   }
                 >
@@ -334,6 +331,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      <TravelAssistantFab />
     </View>
   );
 }
@@ -348,7 +346,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: spacing[16] || 16,
     paddingTop: spacing[8] || 8,
-    paddingBottom: spacing[32] || 32,
+    paddingBottom: (spacing[32] || 32) + 64,
     backgroundColor: colors.background,
   },
 

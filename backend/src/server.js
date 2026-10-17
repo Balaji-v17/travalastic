@@ -15,6 +15,10 @@ import routesRoute from './routes/routes.js';
 import testRoute from './routes/test.js';
 import chatRoute from './routes/chat.js';
 import bookingsRoute from './routes/bookings.js';
+import expensesRoute from './routes/expenses.js';
+import fxRoute from './routes/fx.js';
+import packingTemplatesRoute from './routes/packingTemplates.js';
+import assistantRoute from './routes/assistant.js';
 import { connectDB } from './config/db.js'; 
 import getWeatherForecast from './services/weatherService.js';
 import CuratedHotel from './models/CuratedHotel.js';
@@ -57,6 +61,26 @@ app.use('/routes', routesRoute);
 app.use('/test', testRoute);
 app.use('/chat', chatRoute);
 app.use('/bookings', bookingsRoute);
+app.use('/expenses', expensesRoute);
+app.use('/fx', fxRoute);
+app.use('/packing-templates', packingTemplatesRoute);
+app.use('/assistant', assistantRoute);
+
+app.get('/weather', async (req, res, next) => {
+  try {
+    const { lat, lon, latitude, longitude, date } = req.query;
+    const targetLat = lat || latitude;
+    const targetLon = lon || longitude;
+    if (targetLat == null || targetLon == null) {
+      return res.status(200).json({ description: 'Weather data unavailable', temperature: 'N/A' });
+    }
+    const targetDate = date || new Date().toISOString().slice(0, 10);
+    const forecast = await getWeatherForecast(targetLat, targetLon, targetDate);
+    return res.status(200).json(forecast);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Temporary dev-only route to confirm seeded hotel data
 app.get('/admin/hotels', async (req, res) => {

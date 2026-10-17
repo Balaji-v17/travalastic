@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,11 +15,17 @@ import {
 import * as Location from 'expo-location';
 import { API_BASE_URL } from '../config/api';
 
-export default function CabBookingScreen() {
+export default function CabBookingScreen({ route, navigation }) {
+  const { destination: prefillDest } = route?.params || {};
   const [pickup, setPickup] = useState(null); // { latitude, longitude, label }
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  const [destinationQuery, setDestinationQuery] = useState('');
+  const [destinationQuery, setDestinationQuery] = useState(prefillDest || '');
+
+  // Synchronize destinationQuery if navigation route params change
+  useEffect(() => {
+    if (prefillDest) setDestinationQuery(prefillDest);
+  }, [prefillDest]);
   const [selectedDestination, setSelectedDestination] = useState(null); // { name, address, latitude, longitude }
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [searchResults, setSearchResults] = useState(null);

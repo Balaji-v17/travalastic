@@ -10,9 +10,10 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { colors, fonts, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
+import { openLegalUrl, PRIVACY_POLICY_URL, TERMS_URL } from '../config/legal';
+import { clearLocalAuthData } from '../utils/authCleanup';
 
 export default function ProfileScreen({ navigation }) {
   const [loggingOut, setLoggingOut] = useState(false);
@@ -32,11 +33,7 @@ export default function ProfileScreen({ navigation }) {
     if (loggingOut) return;
     setLoggingOut(true);
     try {
-      if (Platform.OS === 'web') {
-        localStorage.removeItem('travalastic_token');
-      } else {
-        await SecureStore.deleteItemAsync('travalastic_token').catch(() => {});
-      }
+      await clearLocalAuthData();
     } finally {
       setLoggingOut(false);
       navigation.reset({
@@ -225,15 +222,32 @@ export default function ProfileScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.itemRow}
-            onPress={() => handleComingSoon('Privacy Policy & Terms of Service')}
+            onPress={() => openLegalUrl(PRIVACY_POLICY_URL)}
             activeOpacity={0.7}
           >
             <View style={styles.itemIconContainer}>
               <Ionicons name="shield-checkmark-outline" size={18} color={colors.accentPrimary} />
             </View>
             <View style={styles.itemTextContainer}>
-              <Text style={styles.itemTitle}>Privacy Policy & Terms</Text>
-              <Text style={styles.itemSubtitle}>Data security, terms & compliance</Text>
+              <Text style={styles.itemTitle}>Privacy Policy</Text>
+              <Text style={styles.itemSubtitle}>Data collection, third parties & choices</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.itemRow}
+            onPress={() => openLegalUrl(TERMS_URL)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.itemIconContainer}>
+              <Ionicons name="document-text-outline" size={18} color={colors.accentPrimary} />
+            </View>
+            <View style={styles.itemTextContainer}>
+              <Text style={styles.itemTitle}>Terms of Service</Text>
+              <Text style={styles.itemSubtitle}>Usage guidelines & terms</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
@@ -268,6 +282,26 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.logoutButtonText}>Log Out</Text>
           )}
         </TouchableOpacity>
+
+        {/* Delete Account Section (Visually separated from Log Out) */}
+        <View style={styles.deleteAccountSection}>
+          <TouchableOpacity
+            style={styles.deleteAccountRow}
+            onPress={() => navigation.navigate('DeleteAccount')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.deleteAccountIconContainer}>
+              <Ionicons name="trash-outline" size={18} color={colors.accentUrgent} />
+            </View>
+            <View style={styles.itemTextContainer}>
+              <Text style={styles.deleteAccountTitle}>Delete Account</Text>
+              <Text style={styles.deleteAccountSubtitle}>
+                Permanently erase account & all associated data
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.accentUrgent} />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -458,5 +492,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     fontFamily: fonts.bodyBold,
+  },
+  deleteAccountSection: {
+    width: '100%',
+    marginTop: 28,
+  },
+  deleteAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  deleteAccountIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(214, 90, 74, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  deleteAccountTitle: {
+    fontSize: 15,
+    fontFamily: fonts.bodyBold,
+    color: colors.accentUrgent,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  deleteAccountSubtitle: {
+    fontSize: 12,
+    fontFamily: fonts.body,
+    color: colors.textMuted,
   },
 });

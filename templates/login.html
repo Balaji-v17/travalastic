@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - Smart Expense Claim Approval System{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-badge">PS-068 &bull; Hackathon</div>
+            <h2>Sign In to SmartExpense</h2>
+            <p class="auth-subtitle">Role-based automated expense validation & approval system</p>
+        </div>
+
+        <div id="authAlert" class="alert alert-error" style="display: none;"></div>
+
+        {% if request.args.get('registered') == '1' %}
+        <div id="authSuccessAlert" class="alert alert-success">
+            Registration successful! Please sign in with your email and password.
+        </div>
+        {% else %}
+        <div id="authSuccessAlert" class="alert alert-success" style="display: none;">
+            Registration successful! Please sign in with your email and password.
+        </div>
+        {% endif %}
+
+        <form id="loginForm" class="auth-form" onsubmit="handleLoginSubmit(event)">
+            <div class="form-group">
+                <label for="email">Work Email</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    class="form-control" 
+                    placeholder="name@company.com" 
+                    required 
+                    autocomplete="email"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    class="form-control" 
+                    placeholder="••••••••••••" 
+                    required 
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn btn-primary btn-block">
+                <span>Sign In</span>
+            </button>
+        </form>
+
+        <div class="auth-footer-link" style="text-align: center; margin-top: 1rem; margin-bottom: 0.5rem;">
+            <p style="margin: 0; color: var(--text-muted, #64748b); font-size: 0.9rem;">
+                New here? 
+                <a href="/register" style="color: var(--primary, #2563eb); font-weight: 600; text-decoration: none;">Create an account</a>
+            </p>
+        </div>
+
+        <div class="demo-login-divider">
+            <span>QUICK DEMO ROLES (1-CLICK)</span>
+        </div>
+
+        <div class="quick-demo-grid">
+            <button type="button" class="btn-demo-card" onclick="quickLogin('employee@example.com', 'password123')">
+                <div class="demo-icon">👤</div>
+                <div class="demo-info">
+                    <strong>Alice Employee</strong>
+                    <span class="role-pill role-employee">EMPLOYEE</span>
+                    <small>Submit claims & view status</small>
+                </div>
+            </button>
+
+            <button type="button" class="btn-demo-card" onclick="quickLogin('manager@example.com', 'password123')">
+                <div class="demo-icon">🛡️</div>
+                <div class="demo-info">
+                    <strong>Bob Manager</strong>
+                    <span class="role-pill role-manager">MANAGER</span>
+                    <small>Review & approve team claims</small>
+                </div>
+            </button>
+
+            <button type="button" class="btn-demo-card" onclick="quickLogin('finance@example.com', 'password123')">
+                <div class="demo-icon">📊</div>
+                <div class="demo-info">
+                    <strong>Carol Finance</strong>
+                    <span class="role-pill role-finance_admin">FINANCE ADMIN</span>
+                    <small>Company spend, policies & audits</small>
+                </div>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+{% endblock %}

@@ -12,25 +12,121 @@ import {
   SafeAreaView,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../config/apiClient';
 import { colors, fonts } from '../theme/tokens';
 
-export default function ChatScreen({ route, navigation }) {
-  const { itineraryId, onItineraryUpdated } = route.params || {};
+/**
+ * ErrorBoundary to catch and safely recover from any markdown AST or rendering errors.
+ */
+class MarkdownErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome-msg',
-      role: 'assistant',
-      content:
-        "Hello! I'm your Travalastic AI trip assistant. 🌴\n\nYou can ask me questions about your destinations, inquire about today's schedule, request edits to specific days, or ask about booking transit and hotels.",
-      timestamp: new Date().toISOString(),
-    },
-  ]);
-  const [inputText, setInputText] = useState('');
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.warn('Markdown display rendering error, falling back to plain text:', error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.content !== this.props.content && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Safe markdown renderer with fallback to plain Text when formatting or parsing fails.
+ */
+function SafeMarkdown({ content, style, fallbackStyle }) {
+  const rawText = typeof content === 'string' ? content : String(content || '');
+
+  const fallbackElement = (
+    <Text style={fallbackStyle || [styles.bubbleText, styles.bubbleTextAssistant]}>
+      {rawText}
+    </Text>
+  );
+
+  if (!rawText.trim() || typeof Markdown !== 'function') {
+    return fallbackElement;
+  }
+
+  return (
+    <MarkdownErrorBoundary content={rawText} fallback={fallbackElement}>
+      <Markdown style={style}>{rawText}</Markdown>
+    </MarkdownErrorBoundary>
+  );
+}
+
+export default function ChatScreen({ route, navigation }) {
+  const { itineraryId, onItineraryUpdated, initialMessage } = route.params || {};
+
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState(initialMessage || '');
   const [conversationId, setConversationId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [latestUndoableEditId, setLatestUndoableEditId] = useState(null);
+  const [undoingEditId, setUndoingEditId] = useState(null);
+  const [undoConflictMessage, setUndoConflictMessage] = useState({});
+
+  const [itineraryInfo, setItineraryInfo] = useState({
+    startDate: route.params?.startDate || null,
+    endDate: route.params?.endDate || null,
+    days: route.params?.days || [],
+  });
+
+  // Set header title
+  useEffect(() => {
+    navigation.setOptions({
+      title: 'Ask about your trip',
+    });
+  }, [navigation]);
+
+  // Load itinerary info if not provided in route.params
+  useEffect(() => {
+    if (itineraryId && (!itineraryInfo.startDate || !itineraryInfo.days?.length)) {
+      apiClient(`/itinerary/${itineraryId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data) {
+            setItineraryInfo({
+              startDate: data.startDate,
+              endDate: data.endDate,
+              days: data.days || data.itinerary || [],
+            });
+          }
+        })
+        .catch((err) => console.warn('Failed to load itinerary for ChatScreen chips:', err));
+    }
+  }, [itineraryId]);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isTripInProgress = Boolean(
+    itineraryInfo.startDate &&
+      itineraryInfo.endDate &&
+      todayStr >= itineraryInfo.startDate &&
+      todayStr <= itineraryInfo.endDate
+  );
+  const totalDays = Array.isArray(itineraryInfo.days) ? itineraryInfo.days.length : 0;
+
+  useEffect(() => {
+    if (initialMessage) {
+      setInputText(initialMessage);
+    }
+  }, [initialMessage]);
 
   const flatListRef = useRef(null);
 
@@ -43,8 +139,12 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, [messages, loading]);
 
-  const handleSend = async () => {
-    const trimmed = inputText.trim();
+  const handleSend = () => {
+    handleSendMessage(inputText);
+  };
+
+  const handleSendMessage = async (textToSend) => {
+    const trimmed = (textToSend || '').trim();
     if (!trimmed || loading) return;
 
     if (!itineraryId) {
@@ -94,14 +194,25 @@ export default function ChatScreen({ route, navigation }) {
         setConversationId(data.conversationId);
       }
 
-      // Append assistant reply
+      const isEditUndoable = !!(data?.undoable && data?.editId);
+
+      // Append assistant reply with answerType
       const assistantMessage = {
         id: 'assistant-' + Date.now(),
         role: 'assistant',
         content: data?.reply || 'I received your request.',
+        answerType: data?.answerType || null,
         timestamp: new Date().toISOString(),
+        editId: isEditUndoable ? data.editId : null,
+        modifiedDays:
+          isEditUndoable && Array.isArray(data.modifiedDays) ? data.modifiedDays : [],
+        undone: false,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      if (isEditUndoable) {
+        setLatestUndoableEditId(data.editId);
+      }
 
       // If response includes updated itinerary, notify caller immediately
       if (data?.updatedItinerary && typeof onItineraryUpdated === 'function') {
@@ -114,8 +225,102 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
+  const handleUndo = async (targetEditId, modifiedDays = []) => {
+    if (!itineraryId || !targetEditId || undoingEditId) return;
+
+    setUndoingEditId(targetEditId);
+    setUndoConflictMessage((prev) => ({ ...prev, [targetEditId]: '' }));
+
+    try {
+      const response = await apiClient(`/itinerary/${itineraryId}/undo`, {
+        method: 'POST',
+        body: JSON.stringify({ expectedEditId: targetEditId }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (response.status === 409) {
+        // "On 409: show 'This changed since. Please refresh.' and refetch."
+        setUndoConflictMessage((prev) => ({
+          ...prev,
+          [targetEditId]: 'This changed since. Please refresh.',
+        }));
+        setLatestUndoableEditId(null);
+
+        // Refetch itinerary
+        try {
+          const refetchRes = await apiClient(`/itinerary/${itineraryId}`);
+          if (refetchRes.ok) {
+            const refetchedData = await refetchRes.json();
+            if (typeof onItineraryUpdated === 'function') {
+              onItineraryUpdated(refetchedData);
+            }
+          }
+        } catch (refetchErr) {
+          console.warn('Refetch failed after 409:', refetchErr);
+        }
+        setUndoingEditId(null);
+        return;
+      }
+
+      if (!response.ok) {
+        const errorText =
+          data?.error?.message ||
+          data?.error ||
+          'Could not undo edit. Please try again.';
+        setErrorMessage(typeof errorText === 'string' ? errorText : JSON.stringify(errorText));
+        setUndoingEditId(null);
+        return;
+      }
+
+      // Success:
+      // Replace button with "Change undone"
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.editId === targetEditId ? { ...msg, undone: true } : msg
+        )
+      );
+      setLatestUndoableEditId(null);
+
+      // Call onItineraryUpdated
+      if (typeof onItineraryUpdated === 'function') {
+        onItineraryUpdated(data);
+      }
+
+      // Append short assistant message to chat: "Undid last change to Day N."
+      const restored =
+        Array.isArray(data?.restoredDays) && data.restoredDays.length > 0
+          ? data.restoredDays
+          : modifiedDays;
+      const daysText =
+        restored.length === 1
+          ? `Day ${restored[0]}`
+          : restored.length > 1
+          ? `Days ${restored.join(', ')}`
+          : 'the requested day';
+
+      const undoNotificationMessage = {
+        id: 'assistant-undo-' + Date.now(),
+        role: 'assistant',
+        content: `Undid last change to ${daysText}.`,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, undoNotificationMessage]);
+    } catch (err) {
+      console.error('Undo request error:', err);
+      setErrorMessage('Network error while undoing change.');
+    } finally {
+      setUndoingEditId(null);
+    }
+  };
+
   const renderItem = ({ item }) => {
     const isUser = item.role === 'user';
+    const isAssistant = !isUser;
+    const isLatestEdit = item.editId && item.editId === latestUndoableEditId;
+    const isUndoingThis = undoingEditId === item.editId;
+    const conflictText = item.editId ? undoConflictMessage[item.editId] : null;
+
     return (
       <View
         style={[
@@ -134,11 +339,85 @@ export default function ChatScreen({ route, navigation }) {
               {item.text || item.content || ''}
             </Text>
           ) : (
-            <Markdown style={markdownStyles}>
-              {item.text || item.content || ''}
-            </Markdown>
+            <SafeMarkdown
+              content={item.text || item.content || ''}
+              style={markdownStyles}
+              fallbackStyle={[styles.bubbleText, styles.bubbleTextAssistant]}
+            />
           )}
+
+          {/* Undo Action Area for AI edit replies */}
+          {isAssistant && item.editId ? (
+            <View style={styles.undoContainer}>
+              {item.undone ? (
+                <View style={styles.undoneBadge}>
+                  <Text style={styles.undoneBadgeText}>✓ Change undone</Text>
+                </View>
+              ) : isLatestEdit ? (
+                <View style={styles.undoActionRow}>
+                  <TouchableOpacity
+                    style={[styles.undoButton, isUndoingThis && styles.undoButtonDisabled]}
+                    onPress={() => handleUndo(item.editId, item.modifiedDays)}
+                    disabled={isUndoingThis}
+                    activeOpacity={0.7}
+                  >
+                    {isUndoingThis ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : (
+                      <Text style={styles.undoButtonText}>↩ Undo</Text>
+                    )}
+                  </TouchableOpacity>
+                  {conflictText ? (
+                    <Text style={styles.undoConflictText}>{conflictText}</Text>
+                  ) : null}
+                </View>
+              ) : conflictText ? (
+                <Text style={styles.undoConflictText}>{conflictText}</Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
+
+        {/* General Knowledge Tag under message */}
+        {isAssistant && item.answerType === 'general' ? (
+          <Text style={styles.generalKnowledgeTag}>
+            General travel knowledge, not from your itinerary
+          </Text>
+        ) : null}
+
+        {/* Redirect to Travel Assistant button */}
+        {isAssistant && item.answerType === 'redirect' ? (
+          <TouchableOpacity
+            style={styles.askTravelAssistantBtn}
+            onPress={() => {
+              const itemIndex = messages.findIndex((m) => m.id === item.id);
+              let lastUserQuestion = '';
+              const searchIndex = itemIndex >= 0 ? itemIndex : messages.length;
+              for (let i = searchIndex - 1; i >= 0; i--) {
+                if (messages[i].role === 'user' || messages[i].sender === 'user') {
+                  lastUserQuestion = messages[i].content || messages[i].text || '';
+                  break;
+                }
+              }
+              navigation.navigate('TravelAssistant', {
+                initialMessage: lastUserQuestion,
+              });
+            }}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Ask the Travel Assistant"
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={15}
+              color={colors.accentSecondary}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.askTravelAssistantBtnText}>
+              Ask the Travel Assistant
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   };
@@ -171,11 +450,51 @@ export default function ChatScreen({ route, navigation }) {
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>💬</Text>
-                <Text style={styles.emptyTitle}>AI Assistant Ready</Text>
                 <Text style={styles.emptySubtitle}>
-                  Ask any question about your trip schedule, destinations, or request itinerary edits.
+                  I can answer questions about your saved itinerary and help change it. I don't have opening hours or travel times.
                 </Text>
+
+                <View style={styles.chipContainer}>
+                  <TouchableOpacity
+                    style={styles.promptChip}
+                    onPress={() => handleSendMessage('Summarize my trip')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.promptChipText}>Summarize my trip</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.promptChip}
+                    onPress={() => handleSendMessage('Explain my estimated budget')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.promptChipText}>Explain my estimated budget</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.promptChip}
+                    onPress={() =>
+                      handleSendMessage(
+                        isTripInProgress ? "What's next today?" : 'What does Day 1 look like?'
+                      )
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.promptChipText}>
+                      {isTripInProgress ? "What's next today?" : 'What does Day 1 look like?'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {totalDays >= 2 ? (
+                    <TouchableOpacity
+                      style={styles.promptChip}
+                      onPress={() => setInputText('Make Day 2 more relaxed')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.promptChipText}>Make Day 2 more relaxed</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
             ) : null
           }
@@ -500,26 +819,112 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    marginTop: 40,
-  },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#F7F3EA',
-    marginBottom: 6,
-    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 24,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: 'rgba(247, 243, 234, 0.6)',
+    fontFamily: fonts.body,
+    color: 'rgba(247, 243, 234, 0.7)',
     textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 260,
+    lineHeight: 20,
+    marginBottom: 24,
+    maxWidth: 320,
+  },
+  chipContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  promptChip: {
+    backgroundColor: 'rgba(247, 243, 234, 0.08)',
+    borderColor: 'rgba(247, 243, 234, 0.16)',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  promptChipText: {
+    color: colors.textPrimary || '#F7F3EA',
+    fontSize: 13,
+    fontFamily: fonts.body,
+    fontWeight: '500',
+  },
+  generalKnowledgeTag: {
+    fontSize: 11,
+    fontFamily: fonts.body,
+    color: colors.textMuted || '#A1A1AA',
+    marginTop: 5,
+    marginLeft: 6,
+  },
+  undoContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(247, 243, 234, 0.1)',
+  },
+  undoActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  undoButton: {
+    backgroundColor: colors.accentPrimary || '#E07A5F',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  undoButtonDisabled: {
+    opacity: 0.6,
+  },
+  undoButtonText: {
+    fontSize: 12,
+    fontFamily: fonts.bodyBold,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  undoneBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(247, 243, 234, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  undoneBadgeText: {
+    fontSize: 12,
+    fontFamily: fonts.body,
+    color: colors.textMuted || '#94A3B8',
+    fontStyle: 'italic',
+  },
+  undoConflictText: {
+    fontSize: 12,
+    fontFamily: fonts.body,
+    color: colors.accentUrgent || '#EF4444',
+    marginTop: 4,
+  },
+  askTravelAssistantBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(47, 110, 104, 0.18)',
+    borderWidth: 1,
+    borderColor: colors.accentSecondary,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  askTravelAssistantBtnText: {
+    fontSize: 13,
+    fontFamily: fonts.bodyBold,
+    color: colors.accentSecondary,
+    fontWeight: '700',
   },
 });
 

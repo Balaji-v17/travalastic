@@ -53,5 +53,8 @@ apiClient.post = (endpoint, body, options = {}) =>
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 
+apiClient.delete = (endpoint, options = {}) =>
+  apiClient(endpoint, { ...options, method: 'DELETE' });
+
 export default apiClient;
 

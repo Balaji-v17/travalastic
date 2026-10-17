@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config/api';
+import { openLegalUrl, PRIVACY_POLICY_URL, TERMS_URL } from '../config/legal';
 
 export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -125,6 +126,23 @@ export default function SignUpScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
+        <Text style={styles.legalNoticeText}>
+          By creating an account you agree to our{' '}
+          <Text
+            style={styles.legalNoticeLink}
+            onPress={() => openLegalUrl(TERMS_URL)}
+          >
+            Terms of Service
+          </Text>{' '}
+          and{' '}
+          <Text
+            style={styles.legalNoticeLink}
+            onPress={() => openLegalUrl(PRIVACY_POLICY_URL)}
+          >
+            Privacy Policy
+          </Text>
+        </Text>
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={loading}>
@@ -232,6 +250,20 @@ const styles = StyleSheet.create({
   footerLink: {
     color: '#60a5fa',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  legalNoticeText: {
+    color: 'rgba(247, 243, 234, 0.6)',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 14,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+  },
+  legalNoticeLink: {
+    color: '#E8A33D',
+    textDecorationLine: 'underline',
     fontWeight: '600',
   },
 });

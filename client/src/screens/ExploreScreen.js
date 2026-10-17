@@ -15,6 +15,7 @@ import {
 import { API_BASE_URL } from '../config/api';
 import { colors, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
+import TravelAssistantFab from '../components/TravelAssistantFab';
 
 const CATEGORY_ICONS = {
   'All Places': '📍',
@@ -318,6 +319,7 @@ export default function ExploreScreen({ route }) {
           />
         ) : null}
       </View>
+      <TravelAssistantFab />
     </KeyboardAvoidingView>
   );
 }
@@ -475,7 +477,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: 24 + 64, // 88dp clearance for FAB
   },
   resultCard: {
     backgroundColor: colors.surfaceAlt,

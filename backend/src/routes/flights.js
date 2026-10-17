@@ -1,8 +1,10 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import duffel from '../services/duffelClient.js';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
+import authenticate from '../middleware/authenticate.js';
 
 const router = express.Router();
 
@@ -376,7 +378,7 @@ router.get('/offers/:offerId', async (req, res, next) => {
  */
 router.post('/book', async (req, res, next) => {
   try {
-    const { offerId, passengers } = req.body || {};
+    const { offerId, passengers, itineraryId } = req.body || {};
 
   if (!offerId || typeof offerId !== 'string' || !offerId.trim()) {
     return res.status(400).json({ error: 'offerId is required in request body' });
@@ -528,10 +530,18 @@ router.post('/book', async (req, res, next) => {
         : null;
     const arrivalTime = lastSegment?.arriving_at ? new Date(lastSegment.arriving_at) : null;
 
+    let resolvedItineraryId = null;
+    if (itineraryId) {
+      if (mongoose.Types.ObjectId.isValid(itineraryId)) {
+        resolvedItineraryId = itineraryId;
+      }
+    }
+
     let savedBooking = null;
     try {
       savedBooking = await Booking.create({
         userId: userId || null,
+        itineraryId: resolvedItineraryId || null,
         bookingReference: order.booking_reference,
         orderId: order.id,
         offerId: offer.id,
@@ -567,6 +577,7 @@ router.post('/book', async (req, res, next) => {
       bookingReference: order.booking_reference,
       orderId: order.id,
       bookingId: savedBooking?._id || null,
+      itineraryId: savedBooking?.itineraryId || null,
       totalAmount: order.total_amount,
       currency: order.total_currency,
       passengerNames,
@@ -582,6 +593,88 @@ router.post('/book', async (req, res, next) => {
   }
   } catch (outerError) {
     next(outerError);
+  }
+});
+
+/**
+ * GET /flights/bookings/:bookingId/status
+ * Auth-protected, confirms booking's userId matches req.userId.
+ * Re-fetches the order fresh from Duffel using the stored orderId.
+ * Returns current status and departure time.
+ * Pull on tap, not a push — no polling, no background jobs.
+ */
+router.get('/bookings/:bookingId/status', authenticate, async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+
+    if (!bookingId || !mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    // Confirm the booking's userId matches req.userId
+    if (!booking.userId || booking.userId.toString() !== req.userId.toString()) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    let currentStatus = booking.status || 'confirmed';
+    let departureTime = booking.departureTime;
+
+    // Re-fetch order fresh from Duffel using stored orderId
+    if (booking.orderId && process.env.DUFFEL_API_KEY) {
+      try {
+        const duffelResponse = await duffel.orders.get(booking.orderId);
+        const order = duffelResponse?.data;
+        if (order) {
+          if (order.cancelled_at) {
+            currentStatus = 'cancelled';
+          } else if (order.status) {
+            currentStatus = order.status;
+          }
+
+          const firstSlice = order.slices?.[0];
+          const firstSegment = firstSlice?.segments?.[0];
+          if (firstSegment?.departing_at) {
+            departureTime = new Date(firstSegment.departing_at);
+          } else if (firstSlice?.departure_date) {
+            departureTime = new Date(firstSlice.departure_date);
+          }
+
+          booking.status = currentStatus;
+          if (departureTime) {
+            booking.departureTime = departureTime;
+          }
+          await booking.save();
+        }
+      } catch (duffelError) {
+        console.warn('Duffel orders.get error during status refresh:', duffelError.message);
+      }
+    }
+
+    const route = booking.origin && booking.destination
+      ? `${booking.origin} → ${booking.destination}`
+      : '';
+
+    return res.status(200).json({
+      bookingId: booking._id,
+      orderId: booking.orderId,
+      bookingReference: booking.bookingReference,
+      status: currentStatus,
+      departureTime,
+      route,
+      airline: booking.airline,
+      origin: booking.origin,
+      destination: booking.destination,
+      totalAmount: booking.totalAmount,
+      currency: booking.currency,
+    });
+  } catch (error) {
+    next(error);
   }
 });
 

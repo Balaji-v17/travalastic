@@ -26,6 +26,15 @@ import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import SavedItinerariesScreen from '../screens/SavedItinerariesScreen';
 import BookingHistoryScreen from '../screens/BookingHistoryScreen';
+import TripHubScreen from '../screens/TripHubScreen';
+import PackingListScreen from '../screens/PackingListScreen';
+import TodayScreen from '../screens/TodayScreen';
+import ExpensesScreen from '../screens/ExpensesScreen';
+import DeleteAccountScreen from '../screens/DeleteAccountScreen';
+import ReorderDayScreen from '../screens/ReorderDayScreen';
+import TemplatesScreen from '../screens/TemplatesScreen';
+import SaveTemplateScreen from '../screens/SaveTemplateScreen';
+import TravelAssistantScreen from '../screens/TravelAssistantScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -271,6 +280,123 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
         component={ItineraryScreen}
         options={{ title: 'Your Itinerary' }}
       />
+      <Stack.Screen
+        name="ReorderDay"
+        component={ReorderDayScreen}
+        options={{ title: 'Reorder Day', headerShown: false }}
+      />
+      <Stack.Screen
+        name="ReorderDayScreen"
+        component={ReorderDayScreen}
+        options={{ title: 'Reorder Day', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TripHub"
+        component={TripHubScreen}
+        options={{ title: 'Trip Hub' }}
+      />
+      <Stack.Screen
+        name="TripHubScreen"
+        component={TripHubScreen}
+        options={{ title: 'Trip Hub' }}
+      />
+
+      {/* Trip Hub Reused Screens with Distinct Route Names */}
+      <Stack.Screen
+        name="TripItineraryView"
+        component={ItineraryScreen}
+        options={{ title: 'Your Itinerary' }}
+      />
+      <Stack.Screen
+        name="TripFlightSearch"
+        component={FlightSearchScreen}
+        options={{ title: 'Search Flights' }}
+      />
+      <Stack.Screen
+        name="TripHotels"
+        component={HotelsScreen}
+        options={{ title: 'Find Hotels' }}
+      />
+      <Stack.Screen
+        name="TripTrainsAndBuses"
+        component={TrainsAndBusesScreen}
+        options={{ title: 'Trains & Buses' }}
+      />
+      <Stack.Screen
+        name="TripCabBooking"
+        component={CabBookingScreen}
+        options={{ title: 'Book a Cab' }}
+      />
+      <Stack.Screen
+        name="TripChat"
+        component={ChatScreen}
+        options={{ title: 'Trip Assistant 💬' }}
+      />
+      <Stack.Screen
+        name="PackingList"
+        component={PackingListScreen}
+        options={{ title: 'Packing List 🎒' }}
+      />
+      <Stack.Screen
+        name="PackingListScreen"
+        component={PackingListScreen}
+        options={{ title: 'Packing List 🎒' }}
+      />
+      <Stack.Screen
+        name="TripPackingList"
+        component={PackingListScreen}
+        options={{ title: 'Packing List 🎒' }}
+      />
+      <Stack.Screen
+        name="Templates"
+        component={TemplatesScreen}
+        options={{ title: 'Packing Templates 📋' }}
+      />
+      <Stack.Screen
+        name="TemplatesScreen"
+        component={TemplatesScreen}
+        options={{ title: 'Packing Templates 📋' }}
+      />
+      <Stack.Screen
+        name="SaveTemplate"
+        component={SaveTemplateScreen}
+        options={{ title: 'Save Template 💾' }}
+      />
+      <Stack.Screen
+        name="SaveTemplateScreen"
+        component={SaveTemplateScreen}
+        options={{ title: 'Save Template 💾' }}
+      />
+      <Stack.Screen
+        name="Today"
+        component={TodayScreen}
+        options={{ title: "Today's Plan 📍" }}
+      />
+      <Stack.Screen
+        name="TodayScreen"
+        component={TodayScreen}
+        options={{ title: "Today's Plan 📍" }}
+      />
+      <Stack.Screen
+        name="TripToday"
+        component={TodayScreen}
+        options={{ title: "Today's Plan 📍" }}
+      />
+      <Stack.Screen
+        name="Expenses"
+        component={ExpensesScreen}
+        options={{ title: 'Trip Expenses 💰' }}
+      />
+      <Stack.Screen
+        name="ExpensesScreen"
+        component={ExpensesScreen}
+        options={{ title: 'Trip Expenses 💰' }}
+      />
+      <Stack.Screen
+        name="TripExpenses"
+        component={ExpensesScreen}
+        options={{ title: 'Trip Expenses 💰' }}
+      />
 
       {/* Ground Transit */}
       <Stack.Screen
@@ -288,12 +414,22 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ title: 'Trip Assistant 💬' }}
+        options={{ title: 'Ask about your trip' }}
       />
       <Stack.Screen
         name="ChatScreen"
         component={ChatScreen}
-        options={{ title: 'Trip Assistant 💬' }}
+        options={{ title: 'Ask about your trip' }}
+      />
+      <Stack.Screen
+        name="TravelAssistant"
+        component={TravelAssistantScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="TravelAssistantScreen"
+        component={TravelAssistantScreen}
+        options={{ headerShown: false }}
       />
 
       {/* Auth & Profile */}
@@ -329,6 +465,16 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
       />
 
       {/* Functional Profile Sub-Screens */}
+      <Stack.Screen
+        name="DeleteAccount"
+        component={DeleteAccountScreen}
+        options={{ title: 'Delete Account' }}
+      />
+      <Stack.Screen
+        name="DeleteAccountScreen"
+        component={DeleteAccountScreen}
+        options={{ title: 'Delete Account' }}
+      />
       <Stack.Screen
         name="EditProfile"
         component={EditProfileScreen}

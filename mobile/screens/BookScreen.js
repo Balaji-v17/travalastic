@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { colors, fonts, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
+import TravelAssistantFab from '../components/TravelAssistantFab';
 
 const BOOKING_OPTIONS = [
   {
@@ -130,6 +131,7 @@ export default function BookScreen({ navigation }) {
           ))}
         </View>
       </ScrollView>
+      <TravelAssistantFab />
     </View>
   );
 }
@@ -142,7 +144,7 @@ const styles = StyleSheet.create({
   container: {
     padding: spacing[16] || 16,
     paddingTop: spacing[8] || 8,
-    paddingBottom: spacing[48] || 48,
+    paddingBottom: (spacing[48] || 48) + 64,
   },
   cardsGrid: {
     gap: 16,

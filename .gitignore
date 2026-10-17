@@ -1,2 +1,9 @@
 .vercel
 .env*
+legal-site/dist/
+dist/
+venv/
+__pycache__/
+*.pyc
+
+

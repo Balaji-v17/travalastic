@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -19,10 +19,17 @@ const MODES = [
   { id: 'bus', label: 'Buses 🚌', icon: '🚌' },
 ];
 
-export default function TrainsAndBusesScreen() {
+export default function TrainsAndBusesScreen({ route, navigation }) {
+  const { destination: prefillDest, origin: prefillOrigin } = route?.params || {};
   const [mode, setMode] = useState('train');
-  const [origin, setOrigin] = useState('Bengaluru');
-  const [destination, setDestination] = useState('Goa');
+  const [origin, setOrigin] = useState(prefillOrigin || 'Bengaluru');
+  const [destination, setDestination] = useState(prefillDest || 'Goa');
+
+  // Synchronize origin/destination if navigation route params change
+  useEffect(() => {
+    if (prefillDest) setDestination(prefillDest);
+    if (prefillOrigin) setOrigin(prefillOrigin);
+  }, [prefillDest, prefillOrigin]);
 
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null); // null = initial, [] = empty, array = routes

@@ -11,6 +11,10 @@ const MessageSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    answerType: {
+      type: String,
+      default: null,
+    },
     timestamp: {
       type: Date,
       default: Date.now,

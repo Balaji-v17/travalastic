@@ -27,7 +27,7 @@ const GENDERS = [
 ];
 
 export default function PassengerFormScreen({ route, navigation }) {
-  const { offerId, passengerCount = 1, offer } = route.params || {};
+  const { offerId, passengerCount = 1, offer, itineraryId } = route.params || {};
 
   const count = Math.max(1, parseInt(passengerCount, 10) || 1);
 
@@ -133,6 +133,7 @@ export default function PassengerFormScreen({ route, navigation }) {
         body: JSON.stringify({
           offerId,
           passengers: formattedPassengers,
+          ...(itineraryId ? { itineraryId } : {}),
         }),
       });
 

@@ -21,6 +21,12 @@ const BookingSchema = new mongoose.Schema(
       ref: 'User',
       index: true,
     },
+    itineraryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Itinerary',
+      default: null,
+      index: true,
+    },
     bookingReference: {
       type: String,
       required: true,

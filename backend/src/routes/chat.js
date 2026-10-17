@@ -3,9 +3,10 @@ import mongoose from 'mongoose';
 import authenticate from '../middleware/authenticate.js';
 import { findUserItinerary } from '../models/Itinerary.js';
 import Conversation from '../models/Conversation.js';
-import { classifyIntent } from '../services/agents/intentNode.js';
+import { classifyIntent, routeIntent, getOffTopicMessage } from '../services/agents/intentNode.js';
 import { editItinerary } from '../services/agents/editNode.js';
 import { answerQuestion } from '../services/agents/qaNode.js';
+import { answerTripQuestion } from '../services/agents/tripQaNode.js';
 
 const router = express.Router();
 
@@ -75,10 +76,14 @@ router.post('/message', authenticate, async (req, res, next) => {
 
     let reply = '';
     let updatedItinerary = null;
+    let editResult = null;
 
-    // 5. Route based on intent
-    if (intent === 'edit_request') {
-      const editResult = await editItinerary({
+    // 5. Route based on intent via pure routeIntent function
+    const routing = routeIntent(intent);
+    let answerType = routing.answerType;
+
+    if (routing.handler === 'edit') {
+      editResult = await editItinerary({
         itineraryId: itinerary._id,
         userId: req.userId,
         editRequest: trimmedMessage,
@@ -89,22 +94,42 @@ router.post('/message', authenticate, async (req, res, next) => {
           ? editResult.itinerary.toObject()
           : editResult.itinerary;
 
+        delete doc.editHistory;
+
         updatedItinerary = {
           ...doc,
           itineraryId: doc._id,
           itinerary: doc.days,
         };
 
-        reply = editResult.changeDescription
+        reply = editResult.reply || (editResult.changeDescription
           ? `I have updated your itinerary: ${editResult.changeDescription}`
-          : 'I have updated your itinerary according to your request.';
+          : 'I have updated your itinerary according to your request.');
       } else {
         updatedItinerary = null;
-        reply = editResult.error || 'Could not modify the itinerary with that request.';
+        reply = editResult.reply || editResult.error || 'Could not modify the itinerary with that request.';
       }
-    } else if (intent === 'booking_question') {
+    } else if (routing.handler === 'booking') {
       // Sole direct booking transaction inquiry
       reply = 'You can search and book that from the Book tab.';
+      updatedItinerary = null;
+    } else if (routing.handler === 'redirect') {
+      // Off-topic question: no further LLM call, static redirect reply
+      reply = getOffTopicMessage();
+      answerType = 'redirect';
+      updatedItinerary = null;
+    } else if (routing.handler === 'trip') {
+      // Grounded trip Q&A: loads itinerary fresh, includes last 6 messages, strict grounding
+      const tripQaResult = await answerTripQuestion({
+        question: trimmedMessage,
+        itineraryId: itinerary._id,
+        userId: req.userId,
+        conversationMessages: conversation.messages,
+      });
+      reply = tripQaResult.answer || 'Here is the information from your trip plan.';
+      if (tripQaResult.inJourney) {
+        answerType = 'in_journey';
+      }
       updatedItinerary = null;
     } else {
       // General question, trip plan, recommendations, or in-journey schedule question
@@ -113,6 +138,9 @@ router.post('/message', authenticate, async (req, res, next) => {
         itinerary,
       });
       reply = qaResult.answer || 'Here is the information you requested.';
+      if (qaResult.inJourney) {
+        answerType = 'in_journey';
+      }
       updatedItinerary = null;
     }
 
@@ -132,6 +160,7 @@ router.post('/message', authenticate, async (req, res, next) => {
     conversation.messages.push({
       role: 'assistant',
       content: reply,
+      answerType,
       timestamp: new Date(),
     });
 
@@ -142,6 +171,14 @@ router.post('/message', authenticate, async (req, res, next) => {
       reply,
       updatedItinerary,
       conversationId: conversation._id,
+      answerType,
+      ...(intent === 'edit_request' && editResult?.success && editResult?.editId
+        ? {
+            editId: editResult.editId,
+            undoable: true,
+            modifiedDays: editResult.modifiedDays,
+          }
+        : {}),
     });
   } catch (error) {
     next(error);

@@ -57,14 +57,55 @@ export const checkInJourney = (itinerary, question, currentDate = new Date()) =>
     return null;
   }
 
-  const activitiesFormatted =
-    Array.isArray(dayPlan.activities) && dayPlan.activities.length > 0
-      ? dayPlan.activities.map((a) => `• ${a}`).join('\n')
-      : 'No specific activities scheduled.';
+  const isNextQuery =
+    /\bwhat(?:'s|s|\s+is)?\s+(?:up\s+)?next\b/i.test(q) ||
+    /\bwhat\s+next\b/i.test(q) ||
+    /\bnext\s+(?:activity|up|stop|plan)\b/i.test(q) ||
+    /\bwhat(?:\s+should\s+i\s+do|\s+do\s+i\s+have)?\s+next\b/i.test(q) ||
+    q.trim().toLowerCase() === 'next';
 
-  let answer = `Today (Day ${dayNumber}) you have:\n${activitiesFormatted}`;
-  if (dayPlan.accommodationSuggestion) {
-    answer += `\nStay: ${dayPlan.accommodationSuggestion}`;
+  let answer = '';
+
+  if (isNextQuery) {
+    const activities = Array.isArray(dayPlan.activities) ? dayPlan.activities : [];
+    const notDoneActivity = activities.find((a) => {
+      if (typeof a === 'string') return true;
+      const actObj = typeof a.toObject === 'function' ? a.toObject() : a;
+      return !actObj.done;
+    });
+
+    if (notDoneActivity) {
+      const actObj =
+        typeof notDoneActivity === 'string'
+          ? { title: notDoneActivity, name: notDoneActivity }
+          : typeof notDoneActivity.toObject === 'function'
+          ? notDoneActivity.toObject()
+          : notDoneActivity;
+      const title = actObj.title || actObj.name || 'Activity';
+      const timePrefix = actObj.suggestedTime ? `[${actObj.suggestedTime}] ` : '';
+      const desc =
+        actObj.description && actObj.description !== title ? `: ${actObj.description}` : '';
+      answer = `Next up for today (Day ${dayNumber}): ${timePrefix}${title}${desc}`;
+    } else {
+      answer = 'Everything is done for today!';
+    }
+  } else {
+    const activitiesFormatted =
+      Array.isArray(dayPlan.activities) && dayPlan.activities.length > 0
+        ? dayPlan.activities
+            .map((a) => {
+              if (typeof a === 'string') return `• ${a}`;
+              const timePrefix = a.suggestedTime ? `[${a.suggestedTime}] ` : '';
+              const desc = a.description && a.description !== a.name ? `: ${a.description}` : '';
+              return `• ${timePrefix}${a.name || a.title || ''}${desc}`;
+            })
+            .join('\n')
+        : 'No specific activities scheduled.';
+
+    answer = `Today (Day ${dayNumber}) you have:\n${activitiesFormatted}`;
+    if (dayPlan.accommodationSuggestion) {
+      answer += `\nStay: ${dayPlan.accommodationSuggestion}`;
+    }
   }
 
   return {

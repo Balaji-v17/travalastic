@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -80,7 +80,9 @@ const formatDateSnippet = (isoString) => {
   }
 };
 
-export default function FlightSearchScreen({ navigation }) {
+export default function FlightSearchScreen({ route, navigation }) {
+  const { destination: prefillDest, departureDate: prefillDate, itineraryId } = route?.params || {};
+
   // Stored IATA codes (what gets sent to /flights/search) and input text
   const [originIata, setOriginIata] = useState('LHR');
   const [originText, setOriginText] = useState('Heathrow Airport (LHR) — London, United Kingdom');
@@ -89,14 +91,29 @@ export default function FlightSearchScreen({ navigation }) {
   const [originShowDropdown, setOriginShowDropdown] = useState(false);
   const [originFocused, setOriginFocused] = useState(false);
 
-  const [destinationIata, setDestinationIata] = useState('JFK');
-  const [destinationText, setDestinationText] = useState('John F. Kennedy International Airport (JFK) — New York, United States');
+  const [destinationIata, setDestinationIata] = useState(() => {
+    if (prefillDest && /^[A-Za-z]{3}$/.test(prefillDest.trim())) {
+      return prefillDest.trim().toUpperCase();
+    }
+    return prefillDest ? null : 'JFK';
+  });
+  const [destinationText, setDestinationText] = useState(() => {
+    if (prefillDest) {
+      return prefillDest.trim();
+    }
+    return 'John F. Kennedy International Airport (JFK) — New York, United States';
+  });
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [destinationLoading, setDestinationLoading] = useState(false);
   const [destinationShowDropdown, setDestinationShowDropdown] = useState(false);
   const [destinationFocused, setDestinationFocused] = useState(false);
 
-  const [departureDate, setDepartureDate] = useState(getInitialDepartureDate());
+  const [departureDate, setDepartureDate] = useState(() => {
+    if (prefillDate && /^\d{4}-\d{2}-\d{2}$/.test(prefillDate.trim())) {
+      return prefillDate.trim();
+    }
+    return getInitialDepartureDate();
+  });
   const [passengers, setPassengers] = useState(1);
 
   const [loading, setLoading] = useState(false);
@@ -105,6 +122,25 @@ export default function FlightSearchScreen({ navigation }) {
 
   const originTimerRef = useRef(null);
   const destTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (prefillDate && /^\d{4}-\d{2}-\d{2}$/.test(prefillDate.trim())) {
+      setDepartureDate(prefillDate.trim());
+    }
+  }, [prefillDate]);
+
+  useEffect(() => {
+    if (!prefillDest) return;
+    const trimmed = prefillDest.trim();
+    if (/^[A-Za-z]{3}$/.test(trimmed)) {
+      setDestinationIata(trimmed.toUpperCase());
+      setDestinationText(trimmed.toUpperCase());
+      setDestinationSuggestions([]);
+      setDestinationShowDropdown(false);
+    } else {
+      handleDestinationChange(trimmed);
+    }
+  }, [prefillDest]);
 
   // Debounced search for origin airports (~350ms)
   const handleOriginChange = (text) => {
@@ -332,11 +368,12 @@ export default function FlightSearchScreen({ navigation }) {
   };
 
   const handleSelectOffer = (offer) => {
-    // Navigate to PassengerFormScreen passing selected offer details
+    // Navigate to PassengerFormScreen passing selected offer details and optional trip itineraryId
     navigation.navigate('PassengerForm', {
       offerId: offer.offerId,
       passengerCount: passengers,
       offer,
+      itineraryId,
     });
   };
 

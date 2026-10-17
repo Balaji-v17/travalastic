@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import apiClient from '../config/apiClient';
+import { colors, fonts } from '../theme/tokens';
 
 const INTERESTS_LIST = [
   'beach',
@@ -271,7 +272,7 @@ export default function TripRequestScreen({ navigation }) {
           {/* Loading state or Submit button */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#2563eb" />
+              <ActivityIndicator size="large" color={colors.accentPrimary} />
               <Text style={styles.loadingTitle}>Building your itinerary…</Text>
               <Text style={styles.loadingSubtitle}>
                 Synthesizing weather forecasts, local attractions, hotel options, and personalized content.
@@ -298,18 +299,18 @@ export default function TripRequestScreen({ navigation }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: colors.background,
   },
   container: {
     padding: 20,
     paddingBottom: 40,
   },
   card: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -319,12 +320,14 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#F7F3EA',
+    fontFamily: fonts.display,
+    color: colors.textPrimary,
     marginBottom: 6,
   },
   subheading: {
     fontSize: 14,
-    color: 'rgba(247, 243, 234, 0.65)',
+    fontFamily: fonts.body,
+    color: colors.textMuted,
     lineHeight: 20,
     marginBottom: 20,
   },
@@ -353,19 +356,21 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: 'rgba(247, 243, 234, 0.7)',
+    fontFamily: fonts.bodyBold,
+    color: colors.textMuted,
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#F7F3EA',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
   },
   dateRow: {
     flexDirection: 'row',
@@ -376,14 +381,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dateInput: {
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#F7F3EA',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
   },
   presetRow: {
     flexDirection: 'row',
@@ -394,19 +400,19 @@ const styles = StyleSheet.create({
   },
   presetLabel: {
     fontSize: 12,
-    color: 'rgba(247, 243, 234, 0.6)',
+    color: colors.textMuted,
   },
   presetBadge: {
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
   presetBadgeText: {
     fontSize: 12,
-    color: 'rgba(247, 243, 234, 0.8)',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   budgetRow: {
@@ -416,16 +422,16 @@ const styles = StyleSheet.create({
   },
   budgetButton: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(247, 243, 234, 0.1)',
+    borderColor: colors.border,
   },
   budgetButtonActive: {
-    backgroundColor: 'rgba(37, 99, 235, 0.2)',
-    borderColor: '#3b82f6',
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
   },
   budgetIcon: {
     fontSize: 18,
@@ -434,10 +440,11 @@ const styles = StyleSheet.create({
   budgetButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(247, 243, 234, 0.6)',
+    fontFamily: fonts.bodyBold,
+    color: colors.textPrimary,
   },
   budgetButtonTextActive: {
-    color: '#60a5fa',
+    color: '#000000',
   },
   chipsContainer: {
     flexDirection: 'row',
@@ -446,62 +453,70 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chip: {
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
   },
   chipText: {
     fontSize: 13,
-    color: 'rgba(247, 243, 234, 0.7)',
+    fontFamily: fonts.body,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   chipTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: '#000000',
+    fontWeight: '700',
   },
   loadingContainer: {
     marginTop: 20,
     padding: 20,
-    backgroundColor: '#121212',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(247, 243, 234, 0.15)',
+    borderColor: colors.border,
     borderRadius: 12,
     alignItems: 'center',
   },
   loadingTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#F7F3EA',
+    fontFamily: fonts.bodyBold,
+    color: colors.textPrimary,
     marginTop: 12,
     marginBottom: 6,
   },
   loadingSubtitle: {
     fontSize: 13,
-    color: 'rgba(247, 243, 234, 0.65)',
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
   },
   submitButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: colors.accentPrimary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 20,
+    shadowColor: colors.accentPrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   submitButtonDisabled: {
-    backgroundColor: '#334155',
-    opacity: 0.7,
+    backgroundColor: 'rgba(232, 163, 61, 0.35)',
+    opacity: 0.6,
   },
   submitButtonText: {
-    color: '#ffffff',
+    color: '#000000',
     fontSize: 16,
+    fontFamily: fonts.bodyBold,
     fontWeight: 'bold',
   },
 });

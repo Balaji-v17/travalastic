@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{appName}} - Account Deletion</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="site-wrapper">
+    <header class="site-header">
+      <a href="index.html" class="nav-back">&larr; Back to Legal Documents</a>
+      <h1>Account Deletion Information</h1>
+      <p class="subtitle">{{appName}} &middot; {{companyName}}</p>
+      <p class="meta-info">Last updated: {{lastUpdated}}</p>
+    </header>
+
+    <main>
+      <p>
+        At <strong>{{appName}}</strong>, operated by <strong>{{companyName}}</strong>, we respect your privacy and provide simple, reliable options to permanently delete your account and associated personal data.
+      </p>
+
+      <!-- Option 1: In the App -->
+      <section>
+        <h2>Option 1: Delete Directly in the Mobile App</h2>
+        <p>
+          If you have active access to the {{appName}} mobile application, you can delete your account immediately using the self-service flow:
+        </p>
+        
+        <div class="card-box">
+          <ol>
+            <li>Open the <strong>{{appName}}</strong> app on your device.</li>
+            <li>Navigate to the <strong>Profile</strong> screen by tapping the profile tab.</li>
+            <li>Scroll to the bottom of the screen and select <strong>Delete Account</strong>.</li>
+            <li>Enter your account <strong>password</strong> to verify account ownership.</li>
+            <li>Confirm the native deletion prompt (select <strong>Delete</strong>).</li>
+          </ol>
+        </div>
+
+        <h3>What Is Permanently Deleted</h3>
+        <p>
+          Executing the deletion flow immediately and permanently purges the following records from our database:
+        </p>
+        <ul>
+          <li><strong>Your User Account:</strong> Your profile record, name, registered email address, and password hash.</li>
+          <li><strong>Itineraries:</strong> All generated and saved trip itineraries, daily activity schedules, and packing lists.</li>
+          <li><strong>Chat History:</strong> All conversation sessions and message logs with the AI assistant.</li>
+          <li><strong>Expenses:</strong> All recorded trip expenditures, categories, and spending data.</li>
+          <li><strong>In-App Booking Records:</strong> Flight booking records and passenger information linked to your user account stored in the app database.</li>
+          <li><strong>Local Device Tokens:</strong> Authentication tokens stored in your device's secure storage are erased, and you are logged out.</li>
+        </ul>
+
+        <h3>What Is NOT Removed by In-App Deletion</h3>
+        <p>
+          Certain records cannot be deleted directly via this app request:
+        </p>
+        <ul>
+          <li>
+            <strong>Flight Booking Records Held by Duffel & Airlines:</strong> Flight ticket reservations and passenger details already shared with our flight booking aggregator (Duffel) and the issuing airlines are held by them under their own data retention and legal policies. We cannot cancel active airline tickets or delete Duffel's external order records through this request.
+          </li>
+          <li>
+            <strong>Data Processed by Third-Party AI Services:</strong> Prompts and travel requests previously sent to third-party AI providers (Cerebras, Groq, Google Gemini) for processing are subject to those providers' retention and privacy policies as described in our <a href="privacy.html">Privacy Policy</a>.
+          </li>
+          <li>
+            <strong>System Backups:</strong> Database backup snapshots retain data per <span class="confirm-marker">[COMPANY TO CONFIRM: backup retention]</span>.
+          </li>
+        </ul>
+      </section>
+
+      <!-- Option 2: Request Deletion via Email -->
+      <section>
+        <h2>Option 2: If You Cannot Access the App</h2>
+        <p>
+          If you are unable to access the mobile application (for example, if you have forgotten your password, no longer have access to your mobile device, or have already uninstalled the app), you can submit a manual deletion request via email:
+        </p>
+
+        <div class="card-box">
+          <h3>Email Request Instructions</h3>
+          <p>
+            Send an email to: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>
+          </p>
+          <p>
+            <strong>Requirements:</strong>
+          </p>
+          <ul>
+            <li><strong>Sender Address:</strong> Must be sent from the email address registered with your {{appName}} account.</li>
+            <li><strong>Subject Line:</strong> <code>Account deletion request</code></li>
+            <li><strong>Body:</strong> State clearly that you are requesting the permanent deletion of your {{appName}} account and personal data.</li>
+          </ul>
+        </div>
+
+        <h3>Verification and Processing Time</h3>
+        <p>
+          To protect account security and prevent unauthorized erasure, manual requests undergo identity verification:
+        </p>
+        <p>
+          <span class="confirm-marker">[COMPANY TO CONFIRM: identity verification and response time]</span>
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; {{appName}} &middot; {{companyName}} &middot; Contact: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a></p>
+    </footer>
+  </div>
+</body>
+</html>
+

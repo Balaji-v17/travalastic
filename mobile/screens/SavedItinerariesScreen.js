@@ -50,14 +50,8 @@ export default function SavedItinerariesScreen({ navigation }) {
   }, [fetchItineraries]);
 
   const handleTripPress = (trip) => {
-    const days = Array.isArray(trip.days) ? trip.days : [];
-    navigation.navigate('Itinerary', {
+    navigation.navigate('TripHub', {
       itineraryId: trip._id,
-      itinerary: days,
-      destination: trip.destination || 'Destination',
-      startDate: trip.startDate || '',
-      endDate: trip.endDate || '',
-      budgetTier: trip.budgetTier || 'mid',
     });
   };
 

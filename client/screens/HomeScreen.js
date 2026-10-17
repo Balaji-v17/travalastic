@@ -13,6 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import { colors, fonts, radii, spacing } from '../theme/tokens';
 import { apiClient } from '../config/apiClient';
 import ScreenHeader from '../components/ScreenHeader';
+import TravelAssistantFab from '../components/TravelAssistantFab';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -171,12 +172,8 @@ export default function HomeScreen({ navigation }) {
                   style={styles.continueBtn}
                   activeOpacity={0.85}
                   onPress={() =>
-                    navigation.navigate('Itinerary', {
+                    navigation.navigate('TripHub', {
                       itineraryId: itinerary._id,
-                      itinerary: itinerary.days,
-                      destination: itinerary.destination,
-                      startDate: itinerary.startDate,
-                      endDate: itinerary.endDate,
                     })
                   }
                 >
@@ -254,7 +251,7 @@ export default function HomeScreen({ navigation }) {
                   >
                     {/* Bottom-anchored dark gradient overlay */}
                     <LinearGradient
-                      colors={['transparent', 'rgba(19, 27, 46, 0.95)']}
+                      colors={['transparent', 'rgba(0, 0, 0, 0.95)']}
                       style={styles.gradientOverlay}
                     >
                       <Text
@@ -334,6 +331,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      <TravelAssistantFab />
     </View>
   );
 }
@@ -348,7 +346,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: spacing[16] || 16,
     paddingTop: spacing[8] || 8,
-    paddingBottom: spacing[32] || 32,
+    paddingBottom: (spacing[32] || 32) + 64,
     backgroundColor: colors.background,
   },
 
@@ -444,7 +442,7 @@ const styles = StyleSheet.create({
     height: 1,
     borderStyle: 'dashed',
     borderWidth: 1,
-    borderColor: 'rgba(19, 27, 46, 0.25)',
+    borderColor: 'rgba(247, 243, 234, 0.25)',
     marginHorizontal: spacing[8] || 8,
   },
 
@@ -473,12 +471,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   startBtn: {
-    backgroundColor: colors.background,
+    backgroundColor: '#1A1A1A',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   startBtnText: {
     color: colors.textPrimary,
@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 180,
     borderRadius: radii.card || 16,
-    backgroundColor: 'rgba(28, 39, 64, 0.6)',
+    backgroundColor: '#1A1A1A',
   },
   attributionContainer: {
     marginTop: 8,

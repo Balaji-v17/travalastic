@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -38,10 +38,43 @@ const getInitialDates = () => {
   };
 };
 
-export default function HotelsScreen() {
-  const initialDates = getInitialDates();
-  const [destination, setDestination] = useState('');
-  const [budgetTier, setBudgetTier] = useState('mid');
+const computeInitialDates = (prefillCheckin, prefillCheckout, startDate, endDate) => {
+  const cin = prefillCheckin || startDate;
+  const cout = prefillCheckout || endDate;
+  const fallback = getInitialDates();
+
+  if (cin && cout) {
+    return { checkinStr: cin, checkoutStr: cout };
+  }
+  if (cin && !cout) {
+    try {
+      const match = String(cin).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const d = match
+        ? new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))
+        : new Date(cin);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 1);
+        return { checkinStr: cin, checkoutStr: formatDate(d) };
+      }
+    } catch {
+      // ignore
+    }
+    return { checkinStr: cin, checkoutStr: fallback.checkoutStr };
+  }
+  return fallback;
+};
+
+export default function HotelsScreen({ route, navigation }) {
+  const {
+    destination: prefillDest,
+    checkinDate: prefillCheckin,
+    checkoutDate: prefillCheckout,
+    startDate,
+    endDate,
+  } = route?.params || {};
+  const initialDates = computeInitialDates(prefillCheckin, prefillCheckout, startDate, endDate);
+  const [destination, setDestination] = useState(prefillDest || '');
+  const [budgetTier, setBudgetTier] = useState(route?.params?.budgetTier || 'mid');
   const [checkinDate, setCheckinDate] = useState(initialDates.checkinStr);
   const [checkoutDate, setCheckoutDate] = useState(initialDates.checkoutStr);
 
@@ -50,6 +83,40 @@ export default function HotelsScreen() {
   const [bookingUrl, setBookingUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchedDest, setSearchedDest] = useState('');
+
+  // Keep hotel search inputs synchronized with incoming trip parameters
+  useEffect(() => {
+    if (prefillDest) {
+      setDestination(prefillDest);
+    }
+    const cin = prefillCheckin || startDate;
+    const cout = prefillCheckout || endDate;
+
+    if (cin && cout) {
+      setCheckinDate(cin);
+      setCheckoutDate(cout);
+    } else if (cin) {
+      setCheckinDate(cin);
+      try {
+        const match = String(cin).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const d = match
+          ? new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))
+          : new Date(cin);
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + 1);
+          setCheckoutDate(formatDate(d));
+        }
+      } catch {
+        // ignore
+      }
+    } else if (cout) {
+      setCheckoutDate(cout);
+    }
+
+    if (route?.params?.budgetTier) {
+      setBudgetTier(route.params.budgetTier);
+    }
+  }, [prefillDest, prefillCheckin, prefillCheckout, startDate, endDate, route?.params?.budgetTier]);
 
   const applyStayNights = (nights) => {
     try {

@@ -1,16 +1,59 @@
 import mongoose from 'mongoose';
 
+const ActivityLocationSchema = new mongoose.Schema(
+  {
+    lat: { type: Number, default: null },
+    lon: { type: Number, default: null },
+    placeName: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+const ActivitySchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      default: '',
+    },
+    name: {
+      type: String,
+      default: '',
+    },
+    description: {
+      type: String,
+      default: '',
+    },
+    suggestedTime: {
+      type: String,
+      default: null,
+    },
+    placeId: {
+      type: String,
+      default: null,
+    },
+    location: {
+      type: ActivityLocationSchema,
+      default: null,
+    },
+    outdoor: {
+      type: Boolean,
+      default: null,
+    },
+    done: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { _id: false, strict: false }
+);
+
 const DayPlanSchema = new mongoose.Schema(
   {
     dayNumber: {
       type: Number,
       required: true,
     },
-    activities: [
-      {
-        type: String,
-      },
-    ],
+    activities: [ActivitySchema],
     estimatedCostINR: {
       type: Number,
     },
@@ -20,6 +63,51 @@ const DayPlanSchema = new mongoose.Schema(
   },
   { _id: false }
 );
+
+const PackingCategorySchema = new mongoose.Schema(
+  {
+    category: {
+      type: String,
+      required: true,
+    },
+    items: [
+      {
+        type: String,
+      },
+    ],
+  },
+  { _id: false }
+);
+
+const PackingCustomItemSchema = new mongoose.Schema({
+  text: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  category: {
+    type: String,
+    default: 'My items',
+    trim: true,
+  },
+});
+
+const TravelerSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+});
+
+const EditHistorySchema = new mongoose.Schema({
+  dayNumbers: [{ type: Number, required: true }],
+  previousDays: [mongoose.Schema.Types.Mixed],
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
 
 const ItinerarySchema = new mongoose.Schema({
   userId: {
@@ -35,6 +123,10 @@ const ItinerarySchema = new mongoose.Schema({
   destination: {
     type: String,
     trim: true,
+  },
+  destinationCoordinates: {
+    lat: { type: Number, default: null },
+    lon: { type: Number, default: null },
   },
   startDate: {
     type: String,
@@ -55,6 +147,29 @@ const ItinerarySchema = new mongoose.Schema({
     },
   ],
   days: [DayPlanSchema],
+  budgetEstimate: {
+    type: Number,
+  },
+  packingList: {
+    type: [PackingCategorySchema],
+    default: null,
+  },
+  packingCustomItems: {
+    type: [PackingCustomItemSchema],
+    default: [],
+  },
+  packingChecked: {
+    type: [String],
+    default: [],
+  },
+  travelers: {
+    type: [TravelerSchema],
+    default: [],
+  },
+  editHistory: {
+    type: [EditHistorySchema],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,
