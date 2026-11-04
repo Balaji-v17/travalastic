@@ -19,6 +19,8 @@ import expensesRoute from './routes/expenses.js';
 import fxRoute from './routes/fx.js';
 import packingTemplatesRoute from './routes/packingTemplates.js';
 import assistantRoute from './routes/assistant.js';
+import duffelWebhookRoute from './routes/duffelWebhook.js';
+import disruptionsRoute from './routes/disruptions.js';
 import { connectDB } from './config/db.js'; 
 import getWeatherForecast from './services/weatherService.js';
 import CuratedHotel from './models/CuratedHotel.js';
@@ -28,9 +30,34 @@ const PORT = process.env.PORT || 8000;
 
 connectDB(); // Now active
 
-app.use(cors());
+const allowedOrigins = (process.env.WEB_ORIGINS || 'http://localhost:8443,http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  })
+);
 app.use(helmet());
 app.use(morgan('dev'));
+
+// Duffel webhook: raw body parsing mounted BEFORE express.json() for exact signature verification
+app.use(
+  '/webhooks/duffel',
+  express.raw({ type: 'application/json', limit: '256kb' }),
+  duffelWebhookRoute
+);
+
 app.use(express.json());
 
 // GET /health/db reports current Mongoose connection state
@@ -65,6 +92,7 @@ app.use('/expenses', expensesRoute);
 app.use('/fx', fxRoute);
 app.use('/packing-templates', packingTemplatesRoute);
 app.use('/assistant', assistantRoute);
+app.use('/disruptions', disruptionsRoute);
 
 app.get('/weather', async (req, res, next) => {
   try {

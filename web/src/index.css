@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  /* ─── Luxury palette ─────────────────────────────────────── */
+  --color-ivory:      #F7F5F0;
+  --color-stone:      #E8E4DC;
+  --color-charcoal:   #252525;
+  --color-obsidian:   #111111;
+  --color-warm-grey:  #77736C;
+  --color-champagne:  #C9A96E;
+
+  /* ─── Brand scale (kept for backwards compat) ────────────── */
+  --color-brand-50:   #F7F5F0;
+  --color-brand-100:  #E8E4DC;
+  --color-brand-200:  #d0cab8;
+  --color-brand-300:  #b8ae98;
+  --color-brand-400:  #9e9278;
+  --color-brand-500:  #877960;
+  --color-brand-600:  #6e6250;
+  --color-brand-700:  #564c40;
+  --color-brand-800:  #3d3730;
+  --color-brand-900:  #252220;
+  --color-brand-950:  #111111;
+
+  /* ─── Fonts ───────────────────────────────────────────────── */
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-sans:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #F7F5F0;
+  color: #252525;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d0cab8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #b8ae98; }
+
+/* ─── Font utilities ─────────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+.font-mono    { font-family: var(--font-mono); }
+
+/* ─── Animations ─────────────────────────────────────────────── */
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-slide-up  { animation: slide-up  0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-fade-in   { animation: fade-in   0.25s ease-out; }
+.animate-scale-in  { animation: scale-in  0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* ─── Skeleton shimmer ───────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #ede9e0 25%, #ddd8cc 50%, #ede9e0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* ─── Focus ring ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #C9A96E;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Input focus ────────────────────────────────────────────── */
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.14);
+}
+
+/* ─── Button feedback ────────────────────────────────────────── */
+button:active {
+  transform: scale(0.985);
+}
+
+/* ─── Hide scrollbar utility ─────────────────────────────────── */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Image hover zoom ───────────────────────────────────────── */
+.img-zoom img,
+.img-zoom {
+  transition: transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.group:hover .img-zoom {
+  transform: scale(1.04);
+}
+
+/* ─── Arrow nudge ────────────────────────────────────────────── */
+.arrow-nudge {
+  transition: transform 0.2s ease;
+}
+.group:hover .arrow-nudge {
+  transform: translateX(4px);
+}
+
+/* ─── Luxury underline ───────────────────────────────────────── */
+.luxury-underline {
+  position: relative;
+}
+.luxury-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 0;
+  height: 1px;
+  background: #C9A96E;
+  transition: width 0.3s ease;
+}
+.group:hover .luxury-underline::after,
+.luxury-underline:hover::after {
+  width: 100%;
+}
+
+/* ─── Editorial thin divider ─────────────────────────────────── */
+.divider-editorial {
+  border: none;
+  border-top: 1px solid #E8E4DC;
+}

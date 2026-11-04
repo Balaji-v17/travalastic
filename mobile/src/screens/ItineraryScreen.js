@@ -123,7 +123,13 @@ export default function ItineraryScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchItineraryDetails();
-  }, [fetchItineraryDetails]);
+    const unsubscribe = navigation?.addListener
+      ? navigation.addListener('focus', () => {
+          fetchItineraryDetails();
+        })
+      : undefined;
+    return unsubscribe;
+  }, [navigation, fetchItineraryDetails]);
 
   // Initially expand all days so the user immediately sees the rich details
   const [expandedDays, setExpandedDays] = useState(() => {

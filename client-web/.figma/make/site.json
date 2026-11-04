@@ -1,0 +1,10 @@
+{
+  "description": "Offers a professional, blue-themed website design tailored to showcase your brand effectively and engage your target audience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{appName}} - Privacy Policy</title>
+  <title>{{appName}} - Privacy Policy (DRAFT)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,272 +11,283 @@
     <header class="site-header">
       <a href="index.html" class="nav-back">&larr; Back to Legal Documents</a>
       <h1>Privacy Policy</h1>
-      <p class="subtitle">{{appName}} &middot; {{companyName}}</p>
+      <p class="subtitle">{{appName}} &middot; {{companyName}} <span class="badge">[TODO: Company to provide registered legal entity name]</span></p>
       <p class="meta-info">Last updated: {{lastUpdated}}</p>
     </header>
 
     <main>
-      <!-- 1. Who We Are -->
+      <!-- 1. Who We Are & Scope -->
       <section>
-        <h2>1. Who We Are</h2>
+        <h2>1. Who We Are & Scope</h2>
         <p>
-          This Privacy Policy explains how <strong>{{appName}}</strong>, operated by <strong>{{companyName}}</strong> ("we", "us", or "our"), collects, stores, uses, and shares your information when you use our mobile application and related services.
+          This Privacy Policy describes how <strong>{{appName}}</strong>, operated by <strong>{{companyName}}</strong> <span class="confirm-marker">[TODO: Company to provide registered legal entity name and governing jurisdiction]</span> ("we", "us", or "our"), collects, stores, processes, and shares personal data when you use the Travalastic mobile application, web application, and related services.
         </p>
         <p>
-          <span class="confirm-marker">[COMPANY TO CONFIRM: applicable legal basis and governing jurisdiction]</span>
-        </p>
-        <p>
-          <strong>Age Requirement:</strong><br>
-          <span class="confirm-marker">[COMPANY TO CONFIRM: minimum age requirement for users and parental consent policy]</span>
+          <strong>Children and Minors:</strong><br>
+          <span class="confirm-marker">[TODO: Company to supply minimum age requirement and child privacy policy]</span>
         </p>
       </section>
 
-      <!-- 2. Data We Collect -->
+      <!-- 2. What We Collect and Why -->
       <section>
-        <h2>2. Data We Collect</h2>
+        <h2>2. Data We Collect and Store</h2>
         <p>
-          We only collect and store data necessary to generate itineraries, facilitate bookings, track expenses, and manage your account. Based on our application architecture, we store the following data fields:
+          We only collect personal data necessary to provide personalized travel planning, AI assistance, flight reservations, and expense management. We store the following categories of data in our cloud database (hosted on <strong>MongoDB Atlas</strong>):
         </p>
 
-        <h3>2.1 Account Information</h3>
+        <h3>2.1 Account Identity & Authentication</h3>
         <ul>
-          <li><strong>Full Name:</strong> Your name as entered during account registration.</li>
-          <li><strong>Email Address:</strong> Your personal email address used for login and account notifications.</li>
-          <li><strong>Password Hash:</strong> A cryptographically hashed representation of your password created using bcrypt. We never store or have access to your plaintext password.</li>
-          <li><strong>Account Creation Timestamp:</strong> The date and time your account was created.</li>
+          <li><strong>Data fields:</strong> Full name, registered email address, password hash (cryptographically hashed using bcrypt; plaintext passwords are never stored or accessible), and account creation timestamp.</li>
+          <li><strong>Purpose:</strong> Creating your account, authenticating login sessions, securing access, and verifying ownership.</li>
+          <li><strong>Retention & Deletion:</strong> Retained while your account remains active. Permanently deleted immediately upon account deletion.</li>
         </ul>
 
-        <h3>2.2 Itineraries and Travel Plans</h3>
+        <h3>2.2 Travel Itineraries, Preferences & Packing Templates</h3>
         <ul>
-          <li><strong>Travel Request & Destination:</strong> Raw text prompts describing your trip desires, destination city or region, and trip start/end dates.</li>
-          <li><strong>Travel Preferences:</strong> Budget tier preference (budget, mid, or luxury) and selected interest tags (e.g., culture, adventure, food).</li>
-          <li><strong>Generated Schedules & Activities:</strong> Structured daily plans, including activity names, descriptions, suggested timing, place identifiers, and geocoded geographical coordinates (latitude and longitude).</li>
-          <li><strong>Cost Estimates:</strong> Total estimated budget and estimated daily costs in INR.</li>
-          <li><strong>Accommodation Suggestions:</strong> Recommended hotels or lodging options tailored to your itinerary.</li>
-          <li><strong>Packing Lists:</strong> Categorized packing suggestions generated for your scheduled activities and destination.</li>
+          <li><strong>Data fields:</strong> Free-text travel prompts (<code>rawRequest</code>), destination, travel dates, budget tier (budget, mid, luxury), travel interest tags, structured daily activity schedules (activity titles, timing, notes, completion status, coordinates), cost estimates, AI reschedule undo history snapshots (<code>editHistory</code>), and custom packing templates (<code>PackingTemplate</code>).</li>
+          <li><strong>Purpose:</strong> Generating day-by-day itineraries, tracking trip health, enabling undo/restore of AI modifications, and preparing packing checklists.</li>
+          <li><strong>Retention & Deletion:</strong> Retained while your account is active. Permanently deleted when you delete your account.</li>
         </ul>
 
-        <h3>2.3 Conversation and Chat History</h3>
+        <h3>2.3 AI Assistant Conversations: Trip Chat vs. Travel Assistant</h3>
+        <p>Our platform provides two distinct AI assistants with different storage characteristics:</p>
         <ul>
-          <li><strong>Chat Messages:</strong> Free-text messages you submit during trip planning and assistant responses generated by our system, linked to specific itineraries with timestamps.</li>
+          <li>
+            <strong>Trip Chat Assistant (Itinerary Grounded):</strong> Free-text chat questions and assistant answers about your specific trips are stored in our database in the <code>conversations</code> collection. This history is maintained so the assistant has context to answer follow-up trip questions. It is permanently erased when you delete your account.
+          </li>
+          <li>
+            <strong>General Travel Assistant (Stateless):</strong> General travel inquiries submitted to the Travel Assistant are processed statelessly. Message content and assistant replies are held strictly in temporary client/server memory during request execution. They are not stored in any database collection and are not logged in server logs.
+          </li>
         </ul>
 
-        <h3>2.4 Trip Expenses</h3>
+        <h3>2.4 Travel Expenses & Multi-Currency Splits</h3>
         <ul>
-          <li><strong>Expense Records:</strong> Free-text expense descriptions, amounts in INR, spending categories (Food, Transport, Accommodation, Activities, Shopping, Other), and creation timestamps linked to your itineraries.</li>
+          <li><strong>Data fields:</strong> Expense descriptions, amount in Indian Rupees (INR), original transaction amount and currency code, foreign exchange conversion rate, expense categories, and companion split details.</li>
+          <li><strong>Purpose:</strong> Logging on-trip expenditures, converting foreign expenses to INR using reference exchange rates, and calculating split balances among travel companions.</li>
+          <li><strong>Retention & Deletion:</strong> Stored until you delete the expense or delete your account.</li>
         </ul>
 
-        <h3>2.5 Flight Bookings and Passenger Information</h3>
+        <h3>2.5 Flight Bookings & Disruption Guardian</h3>
         <ul>
-          <li><strong>Booking References:</strong> Duffel order identifiers, airline booking reference codes (PNRs), flight offer IDs, and booking status.</li>
-          <li><strong>Flight Details:</strong> Airline carrier names, origin and destination airport codes, departure and arrival timestamps, flight durations, and segment details.</li>
-          <li><strong>Passenger Traveler Data:</strong> Passenger given names, family names, titles (e.g., Mr, Ms), genders, dates of birth, contact email addresses, and phone numbers.</li>
-          <li><strong>Transaction Amounts:</strong> Total payment amounts and currency codes.</li>
-          <li><strong>Booking Payload:</strong> Raw order responses from Duffel containing flight tickets and document details.</li>
+          <li>
+            <strong>Flight Bookings:</strong> When you purchase flights through our integration with <strong>Duffel</strong>, we store flight reservation details: airline PNR reference, Duffel order ID, flight route, departure and arrival times, total fare, and passenger traveler details (passenger full names, honorific titles, genders, dates of birth, contact email, and contact phone).
+          </li>
+          <li>
+            <strong>Disruption Guardian (Airline Schedule Changes):</strong> When airlines notify us of flight schedule changes via Duffel webhooks, we record the disruption in our <code>disruptions</code> collection: delay minutes, original and rescheduled flight times, and AI reschedule proposals. Webhooks contain only flight timing changes; passenger personal identities are never received, extracted, or stored from webhooks.
+          </li>
+          <li><strong>Retention & Deletion:</strong> Stored while your account exists. Deleted when you delete your account.</li>
         </ul>
 
         <p>
-          <em>Note on public catalog data:</em> Our system also maintains curated catalogs of hotels, transit routes, destination content embeddings, and tourist landmarks. These collections contain public destination information and do not include user personal data.
+          <em>Public Destination Catalogs:</em> We also maintain curated reference databases of hotels (<code>curatedhotels</code>), transit routes (<code>curatedroutes</code>), tourist attractions (<code>touristplaces</code>), and destination search embeddings (<code>destinationcontents</code>). These contain publicly available travel information and no personal data.
         </p>
       </section>
 
-      <!-- 3. How Your Data Is Used -->
+      <!-- 3. Third-Party Service Providers (Data Recipients) -->
       <section>
-        <h2>3. How Your Data Is Used</h2>
-        <p>We process the collected data strictly for the following operational purposes:</p>
-        <ul>
-          <li><strong>Personalized Itinerary Generation:</strong> To generate multi-day travel schedules, activities, accommodation ideas, and packing lists tailored to your destination, travel dates, budget, and interests.</li>
-          <li><strong>Interactive Assistance:</strong> To process your natural language questions, modification requests, and chat interactions regarding your travel plans.</li>
-          <li><strong>Flight Search and Booking:</strong> To query real-time flight availability, process booking orders through our airline aggregator, and display booking confirmations.</li>
-          <li><strong>Expense Management:</strong> To record and categorize your on-trip expenditures and calculate spending totals against your itinerary's budget estimate.</li>
-          <li><strong>Account Management & Authentication:</strong> To verify your credentials, maintain authenticated sessions, and protect account ownership.</li>
-        </ul>
-      </section>
-
-      <!-- 4. Third Parties That Receive Data -->
-      <section>
-        <h2>4. Third Parties That Receive Data</h2>
+        <h2>3. Third Parties That Receive Data</h2>
         <p>
-          To provide AI generation, flight bookings, weather forecasting, and location details, specific data is transmitted to third-party services. The table below lists every external service called by our codebase and the precise data shared:
+          To deliver AI planning, flight booking, weather forecasting, geocoding, and infrastructure hosting, specific data is transmitted to third-party providers. The following list identifies every external recipient called by our platform:
         </p>
 
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th>Third-Party Service</th>
-                <th>Provider Called</th>
-                <th>Data Transmitted</th>
+                <th>Recipient</th>
+                <th>Data Shared</th>
                 <th>Purpose</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><strong>Cerebras</strong></td>
-                <td>Cerebras API (<code>llama3.1-70b</code>)</td>
-                <td>Raw travel prompt text (<code>rawRequest</code>)</td>
-                <td>Primary LLM for initial itinerary planning and structuring.</td>
+                <td><strong>Groq</strong></td>
+                <td>User prompts, trip questions, whitelisted itinerary context (destination, dates, budget tier, interests, activities, expense totals, flight route), chat history, and Travel Assistant messages.</td>
+                <td>Primary LLM reasoning for itinerary generation, trip chat answers, general travel assistance, and reschedule proposals.</td>
               </tr>
               <tr>
-                <td><strong>Groq</strong></td>
-                <td>Groq API (<code>gpt-oss-120b</code>, <code>gpt-oss-20b</code>)</td>
-                <td>Travel requests, chat message text, itinerary modification requests, destinations, dates, budget tier, interests, scheduled activities, costs, user queries, and packing list needs.</td>
-                <td>LLM processing for intent classification, itinerary editing, conversational Q&A, itinerary composition, and packing list generation.</td>
+                <td><strong>Cerebras</strong></td>
+                <td>Raw travel prompt text (<code>rawRequest</code>).</td>
+                <td>Initial itinerary draft structuring in the planning agent.</td>
               </tr>
               <tr>
                 <td><strong>Google Gemini</strong></td>
-                <td>Google Gen AI (<code>gemini-embedding-001</code>)</td>
-                <td>User travel interests/tags and destination search query strings.</td>
-                <td>Generating vector embeddings for destination semantic search and interest-based personalization.</td>
+                <td>User travel interest tags and destination search query strings.</td>
+                <td>Generating vector embeddings for destination matching and interest-based personalization.</td>
               </tr>
               <tr>
                 <td><strong>Duffel</strong></td>
-                <td>Duffel API</td>
-                <td>Flight search parameters (origin, destination, travel dates, passenger counts, cabin class), airport/city queries, and during booking: passenger full names, titles, genders, dates of birth, contact emails, phone numbers, and payment transaction amounts.</td>
-                <td>Flight availability search, price quotes, flight order creation, and airline ticketing.</td>
+                <td>Flight search criteria (cities, dates, cabin class). During ticket booking only: passenger full names, titles, genders, birthdates, contact email, contact phone, and payment amounts.</td>
+                <td>Flight search, live airline pricing, and ticketing order placement.</td>
               </tr>
               <tr>
                 <td><strong>OpenWeather</strong></td>
-                <td>OpenWeatherMap API</td>
-                <td>Destination geographical coordinates (latitude, longitude) and planned travel dates.</td>
-                <td>Fetching weather forecasts for your destination.</td>
+                <td>Destination / activity latitude and longitude coordinates and travel date.</td>
+                <td>Weather forecasts and rain alerts for scheduled travel days.</td>
               </tr>
               <tr>
                 <td><strong>OpenStreetMap Nominatim</strong></td>
-                <td>Nominatim API</td>
-                <td>Destination names or landmark search queries typed by user.</td>
-                <td>Geocoding destination locations into coordinates.</td>
+                <td>City, landmark, or place name search string.</td>
+                <td>Geocoding destination and attraction names into geographic coordinates.</td>
               </tr>
               <tr>
                 <td><strong>OpenStreetMap Overpass</strong></td>
-                <td>Overpass API</td>
-                <td>Geographical coordinates (latitude and longitude within a 25km radius).</td>
-                <td>Discovering nearby tourist landmarks and attractions.</td>
+                <td>Destination geographic coordinates (latitude and longitude within a 25km radius).</td>
+                <td>Finding nearby attractions, sights, and landmarks for itinerary composition.</td>
               </tr>
               <tr>
                 <td><strong>Pexels</strong></td>
-                <td>Pexels API</td>
-                <td>Destination name search strings.</td>
-                <td>Retrieving destination cover photography.</td>
+                <td>Destination name string (e.g., "Goa").</td>
+                <td>Retrieving cover photography for destination cards.</td>
+              </tr>
+              <tr>
+                <td><strong>Frankfurter</strong></td>
+                <td>Currency codes (e.g. from USD to INR). No user data or financial amounts are sent.</td>
+                <td>Fetching foreign exchange reference rates for expense conversion.</td>
+              </tr>
+              <tr>
+                <td><strong>MongoDB Atlas</strong></td>
+                <td>All stored collections (user profile, itineraries, conversations, expenses, bookings, disruptions, packing templates) transmitted over TLS.</td>
+                <td>Secure cloud database cluster hosting.</td>
+              </tr>
+              <tr>
+                <td><strong>Render</strong></td>
+                <td>Incoming web requests over HTTPS (client IP address, User-Agent, request headers).</td>
+                <td>Cloud backend application server hosting.</td>
+              </tr>
+              <tr>
+                <td><strong>Vercel</strong></td>
+                <td>Incoming web requests over HTTPS (visitor IP address, User-Agent).</td>
+                <td>Web application content delivery network and static hosting.</td>
+              </tr>
+              <tr>
+                <td><strong>Google Fonts</strong></td>
+                <td>Visitor IP address and User-Agent when the web app loads font stylesheets (<code>fonts.googleapis.com</code> and <code>fonts.gstatic.com</code>).</td>
+                <td>Typography rendering for the web application.</td>
+              </tr>
+              <tr>
+                <td><strong>Unsplash</strong></td>
+                <td>Visitor IP address when browsing destination card imagery in the web client (<code>images.unsplash.com</code>).</td>
+                <td>Displaying travel destination photography on web pages.</td>
+              </tr>
+              <tr>
+                <td><strong>Expo / EAS</strong></td>
+                <td>Mobile application code bundles and manifests. No runtime end-user personal data.</td>
+                <td>React Native mobile application build tooling and updates.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h3>4.1 External Deep Links</h3>
+        <h3>3.1 External Partner Redirect Links</h3>
         <p>
-          Our mobile application provides optional deep links that open third-party applications or websites installed on your device:
+          Our application includes optional redirect links that direct you to external service providers. When you tap these links, you leave Travalastic and interact directly with the partner; their respective privacy policies govern your use:
         </p>
         <ul>
-          <li><strong>Uber:</strong> When you choose to book a cab, your pickup coordinates (latitude, longitude), dropoff coordinates, and destination name are passed to Uber.</li>
-          <li><strong>RentalCars:</strong> When browsing rental cars, your destination name is passed to RentalCars.</li>
-          <li><strong>Google Maps:</strong> When tapping "Get directions" for an itinerary activity, the activity coordinates (latitude, longitude) are passed to Google Maps.</li>
-          <li><strong>IRCTC & RedBus:</strong> Static links to train and bus booking portals; no personal or trip data is appended.</li>
+          <li><strong>Uber:</strong> When you initiate cab booking from the app, pickup coordinates (from device GPS), dropoff coordinates, and destination address are forwarded to the Uber app or website.</li>
+          <li><strong>RentalCars:</strong> Tapping rental car options forwards the destination city name to RentalCars.com.</li>
+          <li><strong>Google Maps:</strong> Tapping directions for an activity forwards the activity coordinates (latitude, longitude) to Google Maps.</li>
+          <li><strong>IRCTC & RedBus:</strong> Static links to train and bus portals. No personal or travel data is appended.</li>
         </ul>
       </section>
 
-      <!-- 5. On-Device Data and Permissions -->
+      <!-- 4. On-Device Storage & Permissions -->
       <section>
-        <h2>5. On-Device Data and Permissions</h2>
+        <h2>4. On-Device Storage & Device Permissions</h2>
 
-        <h3>5.1 Device Permissions</h3>
+        <h3>4.1 Device Permissions</h3>
         <ul>
           <li>
-            <strong>Foreground Location:</strong> The app requests foreground location permission (via <code>expo-location</code>) only when you initiate cab booking to pre-fill your pickup point. Your device GPS coordinates remain strictly on your device in temporary memory; they are never sent to or stored on Travalastic backend servers.
+            <strong>Foreground Location (Mobile):</strong> Requested only when booking a cab via <code>expo-location</code> to determine your pickup point. Coordinates remain in volatile device memory and are never sent to or stored on Travalastic backend servers.
           </li>
         </ul>
 
-        <h3>5.2 Local Storage</h3>
+        <h3>4.2 On-Device Storage</h3>
         <ul>
           <li>
-            <strong>Secure Credential Storage:</strong> On iOS and Android devices, your active session token (JWT containing your user ID and email) is stored using <code>expo-secure-store</code>, which is backed by the operating system's hardware-backed keychain (iOS Keychain / Android Keystore).
+            <strong>Mobile Keystore (<code>SecureStore</code>):</strong> On iOS and Android devices, your active JSON Web Token (JWT) session credential is stored securely using <code>expo-secure-store</code>, backed by the operating system's hardware keychain (iOS Keychain / Android Keystore). It is erased upon logout or account deletion.
           </li>
           <li>
-            <strong>Web Storage:</strong> If accessing via web browsers, the session token is stored in browser <code>localStorage</code>.
+            <strong>Mobile Memory Isolation:</strong> Travel Assistant conversation history exists only in volatile memory on the mobile device. It is not saved to disk and is purged when you clear chat, log out, or delete your account.
           </li>
           <li>
-            <strong>No Unencrypted App Storage:</strong> The application does not use <code>AsyncStorage</code>.
+            <strong>Web Storage (<code>localStorage</code>):</strong> In web browsers, the session token is stored in browser <code>localStorage</code>. No persistent cookies or sessionStorage are utilized.
           </li>
         </ul>
       </section>
 
-      <!-- 6. Your Choices and Data Deletion -->
+      <!-- 5. Logging and Security Practices -->
       <section>
-        <h2>6. Your Choices and Data Deletion</h2>
+        <h2>5. Logging and Security Practices</h2>
         <p>
-          You have the right to delete your account and all associated personal data stored in our application at any time.
+          We enforce privacy-preserving logging controls and data protections verified in our application code:
+        </p>
+        <ul>
+          <li><strong>Zero Plaintext Passwords:</strong> Passwords are cryptographically hashed with bcrypt before storage.</li>
+          <li><strong>Server Log Protection:</strong> Server-side HTTP request loggers (Morgan) log only request methods, URLs, status codes, and response times. Request bodies, passwords, payment details, and chat messages are never recorded in server logs.</li>
+          <li><strong>Travel Assistant Privacy:</strong> Travel Assistant messages are not stored in any database and are not logged in server logs.</li>
+          <li><strong>Trip Chat Retention:</strong> Trip Chat conversations are stored in our database to maintain trip context and are deleted when the user deletes their account.</li>
+          <li><strong>LLM Tracing Disabled:</strong> External prompt tracing services (e.g., LangSmith) are not enabled.</li>
+          <li><strong>Encrypted Transport:</strong> All data in transit between clients, backend services, and third-party APIs is encrypted using industry-standard HTTPS/TLS.</li>
+        </ul>
+      </section>
+
+      <!-- 6. Account Deletion and Retention -->
+      <section>
+        <h2>6. Account Deletion and Retention</h2>
+        <p>
+          You have the right to permanently erase your account and all associated personal data at any time.
         </p>
 
         <div class="card-box">
           <h3>How to Delete Your Account</h3>
-          <p>
-            You can delete your account directly inside the app:
-          </p>
-          <ol>
-            <li>Open the {{appName}} app and tap the <strong>Profile</strong> tab.</li>
-            <li>Scroll to the bottom and select <strong>Delete Account</strong>.</li>
-            <li>Enter your account password to confirm your identity.</li>
-            <li>Confirm the prompt to permanently erase your account and all associated data.</li>
-          </ol>
-          <p>
-            For alternative deletion methods (such as if you forgot your password or uninstalled the app) and a complete explanation of data erasure, visit our dedicated <a href="delete-account.html">Account Deletion Information page</a>.
-          </p>
+          <ul>
+            <li><strong>In the Mobile App:</strong> Go to the <strong>Profile</strong> tab &rarr; tap <strong>Delete Account</strong> &rarr; enter your account password &rarr; confirm deletion.</li>
+            <li><strong>On the Web App:</strong> Navigate to the <strong>Delete Account</strong> page in the footer &rarr; follow the instructions or email <a href="mailto:{{supportEmail}}">{{supportEmail}}</a> <span class="confirm-marker">[TODO: Company to provide support email]</span> from your registered account address.</li>
+          </ul>
         </div>
 
-        <h3>Data Retention</h3>
-        <p>
-          <span class="confirm-marker">[COMPANY TO CONFIRM: data retention periods for user account, itinerary, chat, expense, and booking data]</span>
-        </p>
-        <p>
-          <span class="confirm-marker">[COMPANY TO CONFIRM: backup retention period and lifecycle]</span>
-        </p>
-      </section>
-
-      <!-- 7. Security Measures -->
-      <section>
-        <h2>7. Security Measures</h2>
-        <p>
-          We employ security controls that are verified and enforced in our application codebase:
-        </p>
+        <h3>What Is Erased Immediately</h3>
+        <p>Executing an account deletion permanently removes:</p>
         <ul>
-          <li><strong>Password Hashing:</strong> Passwords are cryptographically hashed using bcrypt prior to database storage. Plaintext passwords are never stored.</li>
-          <li><strong>Token-Based Authentication:</strong> Sessions are secured with JSON Web Tokens (JWT), with authentication enforced on private API routes.</li>
-          <li><strong>Hardware-Backed Device Storage:</strong> Mobile tokens are stored in operating system keystores (iOS Keychain / Android Keystore).</li>
-          <li><strong>Ownership-Scoped Queries:</strong> All database deletion and retrieval queries strictly filter by the authenticated user's ID to prevent unauthorized access.</li>
-          <li><strong>Server Log Protection:</strong> Server-side HTTP loggers do not record request bodies; passwords, password hashes, auth tokens, and free-text chat contents are not written to server logs.</li>
-          <li><strong>Encrypted Transport:</strong> Network communication between the mobile client and backend servers is encrypted using standard HTTPS/TLS protocols.</li>
+          <li>Your user account record, name, email address, and password hash.</li>
+          <li>All saved and generated travel itineraries, activities, and undo history snapshots.</li>
+          <li>All trip chat conversations.</li>
+          <li>All logged expenses, multi-currency conversions, and split records.</li>
+          <li>All flight booking records linked to your user account.</li>
+          <li>All reusable packing templates.</li>
+          <li>All recorded flight disruptions and reschedule proposals.</li>
+          <li>Local device session tokens in SecureStore and localStorage.</li>
+        </ul>
+
+        <h3>What May Remain After Deletion</h3>
+        <ul>
+          <li><strong>Airlines & Aggregator Records:</strong> Flight ticket reservations already issued by airlines and Duffel are retained by them under applicable aviation regulations and their independent privacy notices.</li>
+          <li><strong>Database Backup Snapshots:</strong> Encrypted database backup snapshots expire according to our cloud retention schedule <span class="confirm-marker">[TODO: Company to confirm backup retention lifecycle]</span>.</li>
+          <li><strong>Processing Timelines:</strong> <span class="confirm-marker">[TODO: Company to confirm deletion processing timeline]</span></li>
         </ul>
       </section>
 
-      <!-- 8. Changes to This Policy -->
+      <!-- 7. Contact and Inquiries -->
       <section>
-        <h2>8. Changes to This Policy</h2>
+        <h2>7. Contact and Inquiries</h2>
         <p>
-          We may update this Privacy Policy from time to time. When changes are made, we will update the "Last updated" date at the top of this document. Continued use of {{appName}} following notice of changes indicates your acknowledgment of the updated policy.
-        </p>
-      </section>
-
-      <!-- 9. Contact and Grievance -->
-      <section>
-        <h2>9. Contact and Grievance Officer</h2>
-        <p>
-          If you have questions, comments, or requests regarding this Privacy Policy or our data practices, please contact us at:
+          For privacy questions, access requests, or deletion assistance, contact:
         </p>
         <p>
-          <strong>Email:</strong> <a href="mailto:{{supportEmail}}">{{supportEmail}}</a><br>
-          <strong>Company:</strong> {{companyName}}
+          <strong>Email:</strong> <a href="mailto:{{supportEmail}}">{{supportEmail}}</a> <span class="confirm-marker">[TODO: Company to provide support email]</span><br>
+          <strong>Company:</strong> {{companyName}} <span class="confirm-marker">[TODO: Company to provide registered legal entity name]</span>
         </p>
         <p>
           <strong>Grievance Officer:</strong><br>
-          <span class="confirm-marker">[COMPANY TO CONFIRM: designated grievance officer name, title, and contact details]</span>
+          <span class="confirm-marker">[TODO: Company to provide designated grievance officer name and contact details]</span>
         </p>
       </section>
     </main>
 
     <footer class="site-footer">
-      <p>&copy; {{appName}} &middot; {{companyName}} &middot; Contact: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a></p>
+      <p>&copy; {{appName}} &middot; {{companyName}} <span class="badge">[TODO]</span> &middot; Contact: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a></p>
     </footer>
   </div>
 </body>
 </html>
-

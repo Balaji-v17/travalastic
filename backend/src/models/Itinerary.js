@@ -107,6 +107,19 @@ const EditHistorySchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  tag: {
+    type: String,
+    default: null,
+  },
+  label: {
+    type: String,
+    default: null,
+  },
+  disruptionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Disruption',
+    default: null,
+  },
 });
 
 const ItinerarySchema = new mongoose.Schema({

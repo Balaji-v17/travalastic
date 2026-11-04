@@ -189,7 +189,13 @@ export default function TodayScreen({ route, navigation }) {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    const unsubscribe = navigation?.addListener
+      ? navigation.addListener('focus', () => {
+          loadData(true);
+        })
+      : undefined;
+    return unsubscribe;
+  }, [navigation, loadData]);
 
   /**
    * On-demand check of flight booking status.

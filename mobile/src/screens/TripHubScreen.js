@@ -210,6 +210,86 @@ export default function TripHubScreen({ route, navigation }) {
     });
   };
 
+  const newestDisruption = activeDisruptions.length > 0 ? activeDisruptions[0] : null;
+
+  const availableDays =
+    Array.isArray(trip?.days) && trip.days.length > 0
+      ? trip.days.map((d) => d.dayNumber || 1)
+      : Array.isArray(trip?.itinerary) && trip.itinerary.length > 0
+      ? trip.itinerary.map((d) => d.dayNumber || 1)
+      : [1, 2, 3];
+
+  const formatDisruptionSubtitle = (disruption) => {
+    const delay =
+      disruption?.details?.delayMinutes != null
+        ? formatDelay(disruption.details.delayMinutes)
+        : null;
+    const day = disruption?.dayNumber;
+
+    if (day && delay) {
+      return `Day ${day} · arrives about ${delay} later`;
+    }
+    if (delay) {
+      return `Arrives about ${delay} later`;
+    }
+    if (day) {
+      return `Day ${day} flight schedule updated`;
+    }
+    return 'Flight schedule updated';
+  };
+
+  const handleOpenDisruption = () => {
+    if (!newestDisruption) return;
+    navigation.navigate('DisruptionDetail', {
+      disruptionId: newestDisruption.id,
+      itineraryId: trip?._id || itineraryId,
+      onRefresh: () => {
+        fetchTrip(true);
+        fetchDisruptions();
+      },
+    });
+  };
+
+  const handleSimulateSubmit = async () => {
+    if (simSubmitting) return;
+    setSimSubmitting(true);
+    setSimError('');
+
+    const currentItinId = trip?._id || itineraryId;
+    try {
+      const res = await simulateDisruption({
+        itineraryId: currentItinId,
+        dayNumber: simDayNumber,
+        delayMinutes: simDelayMinutes,
+      });
+
+      setIsSimModalVisible(false);
+      const newDisruptionId =
+        res?.id || res?.disruption?._id || res?._id || res?.disruptionId;
+
+      if (newDisruptionId) {
+        navigation.navigate('DisruptionDetail', {
+          disruptionId: String(newDisruptionId),
+          itineraryId: currentItinId,
+          onRefresh: () => {
+            fetchTrip(true);
+            fetchDisruptions();
+          },
+        });
+      } else {
+        fetchDisruptions();
+      }
+    } catch (err) {
+      if (err?.status === 404 || err?.code === 'not_found') {
+        setSimError("The simulator isn't enabled on this server.");
+      } else {
+        setSimError(err?.message || 'Could not simulate disruption.');
+      }
+    } finally {
+      setSimSubmitting(false);
+    }
+  };
+
   return (
     <View style={styles.wrapper}>
       {/* Universal ScreenHeader matching dark theme */}
@@ -236,7 +316,10 @@ export default function TripHubScreen({ route, navigation }) {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => fetchTrip(true)}
+            onRefresh={() => {
+              fetchTrip(true);
+              fetchDisruptions();
+            }}
             tintColor={colors.accentPrimary}
             colors={[colors.accentPrimary]}
           />
@@ -261,6 +344,44 @@ export default function TripHubScreen({ route, navigation }) {
           </View>
         ) : trip ? (
           <>
+            {/* Heads-up Card for Flight Disruption */}
+            {newestDisruption ? (
+              <TouchableOpacity
+                style={styles.disruptionCard}
+                onPress={handleOpenDisruption}
+                activeOpacity={0.85}
+                accessibilityLabel="Flight schedule change, tap to review plan"
+              >
+                <View style={styles.disruptionCardTopRow}>
+                  <View style={styles.disruptionTitleRow}>
+                    <Ionicons name="airplane" size={16} color={colors.accentPrimary} />
+                    <Text style={styles.disruptionCardTitle}>Flight schedule change</Text>
+                  </View>
+                  <View style={styles.disruptionBadgesRow}>
+                    {newestDisruption.simulated ? (
+                      <View style={styles.simulatedBadge}>
+                        <Text style={styles.simulatedBadgeText}>SIMULATED</Text>
+                      </View>
+                    ) : null}
+                    {activeDisruptions.length > 1 ? (
+                      <View style={styles.moreDisruptionsBadge}>
+                        <Text style={styles.moreDisruptionsText}>
+                          +{activeDisruptions.length - 1} more
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                <Text style={styles.disruptionCardSubtitle}>
+                  {formatDisruptionSubtitle(newestDisruption)}
+                </Text>
+                <View style={styles.disruptionTapRow}>
+                  <Text style={styles.disruptionTapText}>Review plan</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.accentPrimary} />
+                </View>
+              </TouchableOpacity>
+            ) : null}
+
             {/* OVERVIEW SECTION AT TOP */}
             <View style={styles.overviewCard}>
               <View style={styles.overviewTopRow}>
@@ -551,10 +672,150 @@ export default function TripHubScreen({ route, navigation }) {
                   />
                 </View>
               </TouchableOpacity>
+
+              {/* DEMO-ONLY SIMULATOR TRIGGER */}
+              {ENABLE_SIMULATOR ? (
+                <View style={styles.demoToolsContainer}>
+                  <TouchableOpacity
+                    style={styles.demoToolsBtn}
+                    onPress={() => {
+                      setSimError('');
+                      setIsSimModalVisible(true);
+                    }}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Open demo tools: simulate a flight delay"
+                  >
+                    <Ionicons name="flask-outline" size={18} color={colors.accentPrimary} />
+                    <Text style={styles.demoToolsBtnText}>Demo tools: Simulate flight delay</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.accentPrimary} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           </>
         ) : null}
       </ScrollView>
+
+      {/* SIMULATE FLIGHT DELAY MODAL */}
+      <Modal
+        visible={isSimModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          if (!simSubmitting) setIsSimModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Simulate a flight delay</Text>
+                <Text style={styles.modalSubtitle}>
+                  Demo tool. Creates a SIMULATED disruption. Not a real airline event.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setIsSimModalVisible(false)}
+                activeOpacity={0.7}
+                disabled={simSubmitting}
+                accessibilityLabel="Close simulation modal"
+              >
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Inline Error */}
+            {simError ? (
+              <View style={styles.modalErrorBox}>
+                <Ionicons name="alert-circle-outline" size={16} color={colors.accentUrgent} />
+                <Text style={styles.modalErrorText}>{simError}</Text>
+              </View>
+            ) : null}
+
+            {/* Day Picker */}
+            <Text style={styles.modalFieldLabel}>Select Day</Text>
+            <View style={styles.chipsRow}>
+              {availableDays.map((dNum) => (
+                <TouchableOpacity
+                  key={`day-${dNum}`}
+                  style={[
+                    styles.chip,
+                    simDayNumber === dNum && styles.chipActive,
+                  ]}
+                  onPress={() => setSimDayNumber(dNum)}
+                  accessibilityLabel={`Select Day ${dNum}`}
+                  activeOpacity={0.8}
+                  disabled={simSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      simDayNumber === dNum && styles.chipTextActive,
+                    ]}
+                  >
+                    Day {dNum}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Delay Picker */}
+            <Text style={styles.modalFieldLabel}>Delay duration</Text>
+            <View style={styles.chipsRow}>
+              {[30, 60, 90, 120, 200].map((mins) => (
+                <TouchableOpacity
+                  key={`delay-${mins}`}
+                  style={[
+                    styles.chip,
+                    simDelayMinutes === mins && styles.chipActive,
+                  ]}
+                  onPress={() => setSimDelayMinutes(mins)}
+                  accessibilityLabel={`Select delay ${mins} minutes`}
+                  activeOpacity={0.8}
+                  disabled={simSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      simDelayMinutes === mins && styles.chipTextActive,
+                    ]}
+                  >
+                    {formatDelay(mins)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Actions */}
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setIsSimModalVisible(false)}
+                disabled={simSubmitting}
+                accessibilityLabel="Cancel simulation"
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, simSubmitting && styles.btnDisabled]}
+                onPress={handleSimulateSubmit}
+                disabled={simSubmitting}
+                accessibilityLabel="Simulate flight delay"
+                activeOpacity={0.8}
+              >
+                {simSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text style={styles.modalSubmitBtnText}>Simulate</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -855,5 +1116,235 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     fontFamily: fonts.body,
+  },
+
+  // DISRUPTION GUARDIAN HEADS-UP CARD
+  disruptionCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.card || 20,
+    padding: spacing[16] || 16,
+    marginBottom: spacing[16] || 16,
+    borderWidth: 1,
+    borderColor: colors.accentPrimary,
+  },
+  disruptionCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  disruptionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  disruptionCardTitle: {
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+  },
+  disruptionBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  simulatedBadge: {
+    backgroundColor: colors.accentPrimary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  simulatedBadgeText: {
+    color: colors.background, // #000000 on #E8A33D -> 9.74:1 contrast ratio
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+  },
+  moreDisruptionsBadge: {
+    backgroundColor: colors.inputBackground,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  moreDisruptionsText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 11,
+  },
+  disruptionCardSubtitle: {
+    color: colors.accentPrimary,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    marginTop: 2,
+    lineHeight: 20,
+  },
+  disruptionTapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  disruptionTapText: {
+    color: colors.accentPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 12,
+    marginRight: 4,
+  },
+
+  // DEMO TOOLS TRIGGER
+  demoToolsContainer: {
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  demoToolsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 48,
+    gap: 10,
+  },
+  demoToolsBtnText: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+  },
+
+  // SIMULATOR MODAL
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.card || 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 420,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 18,
+  },
+  modalSubtitle: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    padding: 4,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.inputBackground,
+    borderWidth: 1,
+    borderColor: colors.accentUrgent,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 14,
+  },
+  modalErrorText: {
+    flex: 1,
+    color: colors.accentUrgent,
+    fontFamily: fonts.body,
+    fontSize: 13,
+  },
+  modalFieldLabel: {
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  chip: {
+    backgroundColor: colors.inputBackground,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chipActive: {
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
+  },
+  chipText: {
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+  },
+  chipTextActive: {
+    color: colors.background, // #000000 on #E8A33D
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: colors.inputBackground,
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalCancelBtnText: {
+    color: colors.textPrimary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+  },
+  modalSubmitBtn: {
+    flex: 1,
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSubmitBtnText: {
+    color: colors.background,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+  },
+  btnDisabled: {
+    opacity: 0.5,
   },
 });

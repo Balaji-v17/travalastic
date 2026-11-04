@@ -35,6 +35,7 @@ import ReorderDayScreen from '../screens/ReorderDayScreen';
 import TemplatesScreen from '../screens/TemplatesScreen';
 import SaveTemplateScreen from '../screens/SaveTemplateScreen';
 import TravelAssistantScreen from '../screens/TravelAssistantScreen';
+import DisruptionDetailScreen from '../screens/DisruptionDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -299,6 +300,11 @@ export default function RootNavigator({ initialRouteName, isAuthenticated }) {
         name="TripHubScreen"
         component={TripHubScreen}
         options={{ title: 'Trip Hub' }}
+      />
+      <Stack.Screen
+        name="DisruptionDetail"
+        component={DisruptionDetailScreen}
+        options={{ title: 'Flight Disruption' }}
       />
 
       {/* Trip Hub Reused Screens with Distinct Route Names */}

@@ -1,504 +1,171 @@
 # Travalastic Data Inventory & Privacy Audit
 
-This document provides a comprehensive, read-only data audit of the Travalastic codebase (`backend/` and `mobile/`).
+## A. Summary
+Travalastic is an AI-powered travel planning and itinerary management platform. The application handles:
+1. **User Account Data**: Name, email address, and bcrypt-hashed account passwords for identity and access management.
+2. **Trip & Itinerary Data**: Free-text travel prompts, destinations, travel dates, budget preferences, travel interest tags, daily activity schedules, and custom packing templates.
+3. **Conversations**: AI itinerary chat messages stored persistently for trip grounding; general travel assistant messages processed statelessly in volatile client/server memory only.
+4. **Expenses & Spending**: Activity costs, logged expense amounts in INR and original foreign currencies, FX exchange rates, and cost-splitting member breakdowns.
+5. **Flight Bookings & Disruption Guardian**: Passenger identities (full names, birthdates, gender, email, phone) and Duffel booking order references; flight delay minutes and derived rescheduled timestamps.
 
 ---
 
-## 1. Stored User Data (Mongoose Models)
+## B. Data We Store
 
-The backend database contains 9 Mongoose models across MongoDB collections. Below is the field-by-field breakdown detailing whether each field contains personal data and whether it is linked to a `userId`.
-
-### 1.1 `users` Collection (`User` Model)
-*File: `backend/src/models/User.js`*
-
-| Field Name | Type | Personal Data? | Linked to `userId`? | Description / Sensitivity |
+| Data Item | Collection / Field | Purpose | Retention / Deletion | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
-| `_id` | `ObjectId` | Yes | Yes (Is the `userId`) | Primary unique identifier for the user account |
-| `email` | `String` | Yes | Yes | User's personal email address (unique, lowercase, trimmed) |
-| `name` | `String` | Yes | Yes | User's full name |
-| `passwordHash` | `String` | Yes | Yes | Bcrypt hash of the user's account password (authentication credential) |
-| `createdAt` | `Date` | No | Yes | Account creation timestamp |
+| User Profile | `users` (`_id`, `email`, `name`, `passwordHash`, `createdAt`) | Authentication, account identity, and session authorization. | Retained until user deletes account. Permanently deleted via `User.deleteOne({ _id: userId })`. | [`backend/src/models/User.js`](file:///Users/balaji.v/travalastic/backend/src/models/User.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L54) |
+| Travel Itineraries | `itineraries` (`userId`, `rawRequest`, `destination`, `startDate`, `endDate`, `budgetTier`, `interests`, `budgetEstimate`, `days[]`, `packingList[]`, `editHistory[]`) | Storing generated trip plans, user preferences, daily schedules, AI undo snapshots, and packing items. | Retained until user deletes account. Permanently deleted via `Itinerary.deleteMany({ userId })`. | [`backend/src/models/Itinerary.js`](file:///Users/balaji.v/travalastic/backend/src/models/Itinerary.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L48) |
+| Trip Chat Conversations | `conversations` (`userId`, `itineraryId`, `messages[].role`, `messages[].content`, `messages[].timestamp`) | Grounded trip Q&A, itinerary modification conversation history. | Retained until user deletes account. Permanently deleted via `Conversation.deleteMany({ userId })`. | [`backend/src/models/Conversation.js`](file:///Users/balaji.v/travalastic/backend/src/models/Conversation.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L49) |
+| Trip Expenses & Splits | `expenses` (`userId`, `itineraryId`, `description`, `amountINR`, `amountOriginal`, `currencyOriginal`, `fxRateToINR`, `splitDetails[]`, `category`) | Tracking traveler spending, multi-currency conversions, and bill splitting between companions. | Retained until user deletes account. Permanently deleted via `Expense.deleteMany({ userId })`. | [`backend/src/models/Expense.js`](file:///Users/balaji.v/travalastic/backend/src/models/Expense.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L50) |
+| Flight Bookings | `bookings` (`userId`, `itineraryId`, `bookingReference`, `orderId`, `offerId`, `status`, `airline`, `origin`, `destination`, `departureTime`, `arrivalTime`, `passengers[]`, `passengerNames[]`, `totalAmount`, `currency`, `slices[]`, `rawOrder`) | Flight order persistence, PNR reference tracking, boarding pass and schedule display. | Retained until user deletes account. Permanently deleted via `Booking.deleteMany({ userId })`. *(Note: bookings created unauthenticated have `userId: null`; see Section H)*. | [`backend/src/models/Booking.js`](file:///Users/balaji.v/travalastic/backend/src/models/Booking.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L51) |
+| Packing Templates | `packingtemplates` (`userId`, `name`, `items[].text`, `items[].category`, `createdAt`) | Reusable user packing checklists across multiple journeys. | Retained until user deletes account. Permanently deleted via `PackingTemplate.deleteMany({ userId })`. | [`backend/src/models/PackingTemplate.js`](file:///Users/balaji.v/travalastic/backend/src/models/PackingTemplate.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L52) |
+| Flight Disruptions | `disruptions` (`userId`, `itineraryId`, `bookingId`, `type`, `source`, `dedupeKey`, `details { oldDeparture, newDeparture, oldArrival, newArrival, delayMinutes, structural }`, `proposal`, `status`, `detectedAt`) | Tracking airline schedule changes, storing reschedule proposals, supporting approve/undo workflows. | Retained until user deletes account. Permanently deleted via `Disruption.deleteMany({ userId })`. | [`backend/src/models/Disruption.js`](file:///Users/balaji.v/travalastic/backend/src/models/Disruption.js), [`backend/src/services/accountDeletion.js`](file:///Users/balaji.v/travalastic/backend/src/services/accountDeletion.js#L53) |
+| Curated Hotels Catalog | `curatedhotels` (`destination`, `budgetTier`, `name`, `priceRangeINR`, `rating`) | Global static catalog for hotel recommendations. | Global non-user catalog. Not tied to user; not deleted. | [`backend/src/models/CuratedHotel.js`](file:///Users/balaji.v/travalastic/backend/src/models/CuratedHotel.js) |
+| Curated Routes Catalog | `curatedroutes` (`mode`, `origin`, `destination`, `approxDurationHours`, `frequency`, `note`) | Global transit options catalog. | Global non-user catalog. Not tied to user; not deleted. | [`backend/src/models/CuratedRoute.js`](file:///Users/balaji.v/travalastic/backend/src/models/CuratedRoute.js) |
+| Destination Content Catalog | `destinationcontents` (`text`, `tags`, `embedding`) | Curated destination vector search repository. | Global non-user catalog. Not tied to user; not deleted. | [`backend/src/models/DestinationContent.js`](file:///Users/balaji.v/travalastic/backend/src/models/DestinationContent.js) |
+| Tourist Places Catalog | `touristplaces` (`name`, `city`, `state`, `zone`, `type`, `significance`, `googleRating`, `entranceFeeINR`, `timeNeededHours`, `embedding`) | Global tourist attractions vector catalog. | Global non-user catalog. Not tied to user; not deleted. | [`backend/src/models/TouristPlace.js`](file:///Users/balaji.v/travalastic/backend/src/models/TouristPlace.js) |
 
 ---
 
-### 1.2 `itineraries` Collection (`Itinerary` Model)
-*File: `backend/src/models/Itinerary.js`*
+## C. Data Sent to Third Parties
 
-| Field Name | Type | Personal Data? | Linked to `userId`? | Description / Sensitivity |
-| :--- | :--- | :--- | :--- | :--- |
-| `_id` | `ObjectId` | No | Yes | Itinerary unique document identifier |
-| `userId` | `ObjectId` | Yes | Yes (Link Field) | Foreign key reference to `User._id` (indexed, required) |
-| `rawRequest` | `String` | Yes | Yes | User's raw free-text travel prompt and trip requests |
-| `destination` | `String` | Yes | Yes | Destination of user's personal trip |
-| `startDate` | `String` | Yes | Yes | Trip start date (YYYY-MM-DD) |
-| `endDate` | `String` | Yes | Yes | Trip end date (YYYY-MM-DD) |
-| `budgetTier` | `String` | Yes | Yes | User's budget preference (`budget`, `mid`, `luxury`) |
-| `interests` | `[String]` | Yes | Yes | Array of user's personal travel interests and preferences |
-| `budgetEstimate` | `Number` | Yes | Yes | Total calculated budget allocation in INR |
-| `days` | `[DayPlanSchema]` | Yes | Yes | Day-by-day itinerary contents (see nested fields below) |
-| `days[].dayNumber` | `Number` | Yes | Yes | Daily schedule day index |
-| `days[].activities` | `[Mixed]` | Yes | Yes | Array of planned activities (`title`, `name`, `description`, `suggestedTime`, `placeId`, `location: { lat, lon, placeName }`) |
-| `days[].estimatedCostINR`| `Number` | Yes | Yes | Daily estimated spending |
-| `days[].accommodationSuggestion` | `String` | Yes | Yes | Hotel or stay recommendation tailored to user |
-| `packingList` | `[PackingCategorySchema]` | Yes | Yes | Categorized packing list (`category`, `items: [String]`) tailored to user's itinerary activities |
-| `createdAt` | `Date` | No | Yes | Creation timestamp |
-
----
-
-### 1.3 `conversations` Collection (`Conversation` Model)
-*File: `backend/src/models/Conversation.js`*
-
-| Field Name | Type | Personal Data? | Linked to `userId`? | Description / Sensitivity |
-| :--- | :--- | :--- | :--- | :--- |
-| `_id` | `ObjectId` | No | Yes | Conversation document identifier |
-| `userId` | `ObjectId` | Yes | Yes (Link Field) | Foreign key reference to `User._id` (indexed, required) |
-| `itineraryId` | `ObjectId` | Yes | Yes | Foreign key reference to `Itinerary._id` (indexed, required) |
-| `messages` | `[MessageSchema]` | Yes | Yes | Array of chat interaction objects |
-| `messages[].role` | `String` | No | Yes | Sender role (`user` or `assistant`) |
-| `messages[].content`| `String` | Yes | Yes | Free-text chat messages submitted by user and assistant responses |
-| `messages[].timestamp` | `Date` | No | Yes | Message timestamp |
-| `createdAt` | `Date` | No | Yes | Document creation timestamp |
-| `updatedAt` | `Date` | No | Yes | Document last update timestamp |
-
----
-
-### 1.4 `expenses` Collection (`Expense` Model)
-*File: `backend/src/models/Expense.js`*
-
-| Field Name | Type | Personal Data? | Linked to `userId`? | Description / Sensitivity |
-| :--- | :--- | :--- | :--- | :--- |
-| `_id` | `ObjectId` | No | Yes | Expense document identifier |
-| `userId` | `ObjectId` | Yes | Yes (Link Field) | Foreign key reference to `User._id` (indexed, required) |
-| `itineraryId` | `ObjectId` | Yes | Yes | Foreign key reference to `Itinerary._id` (indexed, required) |
-| `description` | `String` | Yes | Yes | Free-text description of personal expenditure |
-| `amountINR` | `Number` | Yes | Yes | Financial amount spent in INR |
-| `category` | `String` | Yes | Yes | Category (`Food`, `Transport`, `Accommodation`, `Activities`, `Shopping`, `Other`) |
-| `createdAt` | `Date` | No | Yes | Timestamp of expense entry |
-| `updatedAt` | `Date` | No | Yes | Last modified timestamp |
-
----
-
-### 1.5 `bookings` Collection (`Booking` Model)
-*File: `backend/src/models/Booking.js`*
-
-| Field Name | Type | Personal Data? | Linked to `userId`? | Description / Sensitivity |
-| :--- | :--- | :--- | :--- | :--- |
-| `_id` | `ObjectId` | No | Yes / Conditional | Booking document identifier |
-| `userId` | `ObjectId` | Yes | Yes (Link Field)* | Reference to `User._id` (*Optional in schema; null if booked unauthenticated) |
-| `itineraryId` | `ObjectId` | Yes | Yes | Reference to `Itinerary._id` (optional, default: `null`) |
-| `bookingReference` | `String` | Yes | Yes / Conditional | Airline PNR / Duffel booking reference code |
-| `orderId` | `String` | Yes | Yes / Conditional | Duffel order identifier |
-| `offerId` | `String` | No | Yes / Conditional | Duffel flight offer identifier |
-| `type` | `String` | No | Yes / Conditional | Booking type (default `'flight'`) |
-| `status` | `String` | Yes | Yes / Conditional | Order status (`confirmed`, etc.) |
-| `airline` | `String` | Yes | Yes / Conditional | Airline carrier name |
-| `origin` | `String` | Yes | Yes / Conditional | Flight departure airport / city code |
-| `destination` | `String` | Yes | Yes / Conditional | Flight destination airport / city code |
-| `departureTime` | `Date` | Yes | Yes / Conditional | Flight departure date and time |
-| `arrivalTime` | `Date` | Yes | Yes / Conditional | Flight arrival date and time |
-| `duration` | `String` | No | Yes / Conditional | Total flight travel duration |
-| `passengers` | `[PassengerSchema]` | Yes | Yes / Conditional | Array of passenger traveler objects (see subfields below) |
-| `passengers[].givenName` | `String` | Yes | Yes / Conditional | Passenger given / first name |
-| `passengers[].familyName`| `String` | Yes | Yes / Conditional | Passenger family / last name |
-| `passengers[].name` | `String` | Yes | Yes / Conditional | Passenger full name |
-| `passengers[].dateOfBirth` | `String` | Yes | Yes / Conditional | Passenger date of birth (`YYYY-MM-DD`) |
-| `passengers[].gender` | `String` | Yes | Yes / Conditional | Passenger gender (`m` / `f`) |
-| `passengers[].title` | `String` | Yes | Yes / Conditional | Passenger title / honorific (`mr`, `ms`, etc.) |
-| `passengers[].email` | `String` | Yes | Yes / Conditional | Passenger contact email |
-| `passengers[].phoneNumber` | `String` | Yes | Yes / Conditional | Passenger phone number |
-| `passengerNames` | `[String]` | Yes | Yes / Conditional | Full passenger names list |
-| `totalAmount` | `String` | Yes | Yes / Conditional | Financial payment amount |
-| `currency` | `String` | Yes | Yes / Conditional | Transaction currency (e.g. `USD`, `INR`) |
-| `slices` | `Array` | Yes | Yes / Conditional | Flight segment and route details |
-| `rawOrder` | `Object` | Yes | Yes / Conditional | Complete raw Duffel API response payload containing tickets, documents, and passenger data |
-| `createdAt` | `Date` | No | Yes / Conditional | Booking creation timestamp |
-| `updatedAt` | `Date` | No | Yes / Conditional | Booking update timestamp |
-
----
-
-### 1.6 Public Catalog Collections (No Personal Data)
-
-The following 4 collections hold static, curated, or scraped public catalog records:
-
-1. **`curatedhotels` (`CuratedHotel` Model)** (`backend/src/models/CuratedHotel.js`):
-   - Fields: `_id`, `destination`, `budgetTier`, `name`, `priceRangeINR`, `rating`, `createdAt`.
-   - Personal Data: **No**.
-   - Linked to `userId`: **No**.
-2. **`curatedroutes` (`CuratedRoute` Model)** (`backend/src/models/CuratedRoute.js`):
-   - Fields: `_id`, `mode`, `origin`, `destination`, `approxDurationHours`, `frequency`, `note`, `createdAt`.
-   - Personal Data: **No**.
-   - Linked to `userId`: **No**.
-3. **`destinationcontents` (`DestinationContent` Model)** (`backend/src/models/DestinationContent.js`):
-   - Fields: `_id`, `text`, `tags`, `embedding`, `createdAt`.
-   - Personal Data: **No**.
-   - Linked to `userId`: **No**.
-4. **`touristplaces` (`TouristPlace` Model)** (`backend/src/models/TouristPlace.js`):
-   - Fields: `_id`, `name`, `city`, `state`, `zone`, `type`, `significance`, `googleRating`, `entranceFeeINR`, `timeNeededHours`, `bestTimeToVisit`, `embedding`, `createdAt`, `updatedAt`.
-   - Personal Data: **No**.
-   - Linked to `userId`: **No**.
-
----
-
-## 2. Outbound Third-Party Calls
-
-This section maps all external network requests, SDK invocations, and third-party APIs called across `backend/` and `mobile/`.
-
-### 2.1 LLM Providers
-
-| Provider | File(s) Making the Call | Function / Node | Model Used | API Key Variable | User-Derived Data Transmitted |
+| Recipient | What Exactly is Sent | User-Identifying? | Purpose | Evidence | Provider-Side Retention |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Cerebras** | `backend/src/services/agents/plannerNode.js` | `plannerNode` (Primary) | `llama3.1-70b` | `CEREBRAS_API_KEY` | `rawRequest` (user's raw travel request / prompt text). Target endpoint: `https://api.cerebras.ai/v1`. |
-| **Groq** | `backend/src/services/agents/plannerNode.js` | `plannerNode` (Secondary fallback) | `openai/gpt-oss-20b` | `GROQ_API_KEY` | `rawRequest` (user's raw travel request / prompt text). Target endpoint: `https://api.groq.com/openai/v1`. |
-| **Groq** | `backend/src/services/agents/intentNode.js` | `intentNode` | `openai/gpt-oss-120b` (fallback: `openai/gpt-oss-20b`) | `GROQ_API_KEY` | `message` / `rawRequest` (user's free-text chat message or trip request). |
-| **Groq** | `backend/src/services/agents/editNode.js` | `editItinerary` (Step 1 analysis & Step 2 day regeneration) | `openai/gpt-oss-120b` (fallback: `openai/gpt-oss-20b`) | `GROQ_API_KEY` | `editRequest` (user modification request text), trip destination, budget tier, travel interests, original activities & costs. |
-| **Groq** | `backend/src/services/agents/qaNode.js` | `qaNode` | `openai/gpt-oss-120b` (fallback: `openai/gpt-oss-20b`) | `GROQ_API_KEY` | `question` (user's free-text chat query), trip destination, dates, budget tier, interests, complete daily activities, hotel suggestions, and packing list. |
-| **Groq** | `backend/src/services/ai/composerNode.js` | `composerNode` | `openai/gpt-oss-120b` (fallback: `openai/gpt-oss-20b`) | `GROQ_API_KEY` | `destination`, travel dates (`startDate`, `endDate`), `budgetTier`, `budgetEstimate`, `interests`, `rawRequest`, and personalized travel blurbs. |
-| **Groq** | `backend/src/services/packingListService.js` | `generatePackingList` | `openai/gpt-oss-120b` (fallback: `openai/gpt-oss-20b`) | `GROQ_API_KEY` | `destination`, travel dates, `budgetTier`, `interests`, and all daily activities planned across the itinerary. |
-
-> **LLM Provider Summary**:  
-> The codebase uses **both Cerebras and Groq**.  
-> - `plannerNode.js` invokes **Cerebras** as its primary LLM via `@langchain/openai` targeting `https://api.cerebras.ai/v1`, falling back to Groq if Cerebras fails.  
-> - `intentNode.js`, `editNode.js`, `qaNode.js`, `composerNode.js`, and `packingListService.js` invoke **Groq** via `@langchain/groq`.
+| **Groq** | User prompt, trip questions, whitelisted itinerary context (destination, dates, budget tier, interests, daily activities with time bucket and done status, logged expense category totals, linked flight route and status), recent 6 chat messages, Travel Assistant user message (1–1000 chars) and recent 10 history entries. | **Yes** (Free-text user prompts, travel dates, personal preferences, daily plans). | Core LLM reasoning: generating itineraries, answering trip chat questions, stateless general assistant responses, reschedule proposals, packing suggestions. | [`backend/src/services/agents/tripQaNode.js`](file:///Users/balaji.v/travalastic/backend/src/services/agents/tripQaNode.js#L112), [`backend/src/services/travelAssistantService.js`](file:///Users/balaji.v/travalastic/backend/src/services/travelAssistantService.js#L442), [`backend/src/services/rescheduleService.js`](file:///Users/balaji.v/travalastic/backend/src/services/rescheduleService.js#L418) | UNVERIFIED (Check Groq Commercial Terms of Service & Data Processing Agreement regarding retention of API inputs). |
+| **Cerebras** | Raw travel request text (`rawRequest`). | **Yes** (Free-text prompt describing user travel desires). | Primary LLM inference for initial itinerary generation in `plannerNode`. | [`backend/src/services/agents/plannerNode.js`](file:///Users/balaji.v/travalastic/backend/src/services/agents/plannerNode.js#L149) | UNVERIFIED (Check Cerebras API Data Policy). |
+| **Google Gemini** | User travel interest tags (`interests`) and destination search strings (`destinationQuery`). | **Yes** (Travel preference tags). | Generating text embeddings (`gemini-embedding-001`) for vector similarity search against attractions and destination content. | [`backend/src/services/embeddingService.js`](file:///Users/balaji.v/travalastic/backend/src/services/embeddingService.js#L18), [`backend/src/services/agents/personalizationNode.js`](file:///Users/balaji.v/travalastic/backend/src/services/agents/personalizationNode.js#L45) | UNVERIFIED (Check Google Cloud / Google AI Studio Terms of Service regarding API logging). |
+| **Duffel** | Flight search parameters (origin, destination, dates, passenger count, cabin class); **Booking orders**: Passenger full names, titles, genders, dates of birth, contact email, contact phone, payment amounts. | **Yes** (Direct personal identities of passengers and contact details). | Flight availability search and official airline reservation order placement. | [`backend/src/routes/flights.js`](file:///Users/balaji.v/travalastic/backend/src/routes/flights.js#L150), [`backend/src/routes/flights.js`](file:///Users/balaji.v/travalastic/backend/src/routes/flights.js#L540) | UNVERIFIED (Governed by Duffel Terms of Service and underlying airline ticket retention regulations). |
+| **OpenWeather** | Destination / activity geographic coordinates (`latitude`, `longitude`) and target date. | **No** (Coordinates of travel location, no user identity). | Weather forecast retrieval for travel dates and rainfall scheduling alerts. | [`backend/src/services/weatherService.js`](file:///Users/balaji.v/travalastic/backend/src/services/weatherService.js#L30) | UNVERIFIED (Check OpenWeather API Privacy Policy). |
+| **OpenStreetMap Nominatim** | Destination or place search query string (`query`). | **No** (Search terms only; no user identifiers forwarded). | Geocoding city and landmark names to latitude/longitude coordinates. | [`backend/src/services/placesService.js`](file:///Users/balaji.v/travalastic/backend/src/services/placesService.js#L52) | UNVERIFIED (Subject to OpenStreetMap Foundation Standard Privacy Policy). |
+| **OpenStreetMap Overpass** | Geographic bounding box / radius coordinates (`lat`, `lon` within 25km). | **No** (Geographic coordinates only). | Fetching tourist attractions, points of interest, and amenities for destination planning. | [`backend/src/services/overpassService.js`](file:///Users/balaji.v/travalastic/backend/src/services/overpassService.js#L68) | UNVERIFIED (Subject to OSM Overpass API Acceptable Use Policy). |
+| **Pexels** | Destination query string (e.g. `"Goa"`). | **No** (Location name only). | Sourcing royalty-free cover photography for destinations. | [`backend/src/services/pexelsService.js`](file:///Users/balaji.v/travalastic/backend/src/services/pexelsService.js#L122) | UNVERIFIED (Check Pexels API Terms of Service). |
+| **Frankfurter** | Currency codes (`from=<currency>`, `to=INR`). | **No** (Currency ISO codes only). | Real-time foreign exchange reference rates (ECB data) for expense currency conversion. | [`backend/src/services/fxRates.js`](file:///Users/balaji.v/travalastic/backend/src/services/fxRates.js#L44) | UNVERIFIED (Public open-source FX rate API; no authentication). |
+| **MongoDB Atlas** | All stored collections listed in Section B over TLS. | **Yes** (Encrypted database cluster holding user accounts, itineraries, bookings). | Primary cloud database hosting. | [`backend/src/server.js`](file:///Users/balaji.v/travalastic/backend/src/server.js#L131) | UNVERIFIED (Governed by MongoDB Cloud Privacy Notice and customer DPA). |
+| **Render** | Incoming HTTP requests over HTTPS (IP address, User-Agent, request headers). | **Yes** (Network IP addresses and request headers). | Cloud hosting platform executing the Node.js backend runtime. | [`backend/src/server.js`](file:///Users/balaji.v/travalastic/backend/src/server.js) | UNVERIFIED (Check Render Privacy Policy regarding infrastructure server access logs). |
+| **Vercel** | Incoming web client requests over HTTPS (IP address, User-Agent). | **Yes** (Client IP address). | Cloud CDN and hosting for web frontends. | [`web/vite.config.ts`](file:///Users/balaji.v/travalastic/web/vite.config.ts) | UNVERIFIED (Check Vercel Privacy Policy). |
+| **Google Fonts** | Font stylesheet request from visitor browser (`fonts.googleapis.com` & `fonts.gstatic.com`). | **Yes** (Visitor browser IP address and User-Agent). | Typography styling in web application. | [`web/src/index.css`](file:///Users/balaji.v/travalastic/web/src/index.css#L1) | UNVERIFIED (Subject to Google Fonts Privacy Policy). |
+| **Unsplash** | Image asset requests from visitor browser (`images.unsplash.com`). | **Yes** (Visitor browser IP address). | Web UI destination card photography display (222 image URLs). | [`web/src/data/mockData.ts`](file:///Users/balaji.v/travalastic/web/src/data/mockData.ts) | UNVERIFIED (Check Unsplash Image API / CDN Privacy Policy). |
+| **Uber (Redirect)** | Device GPS pickup latitude/longitude, destination dropoff coordinates and address. | **Yes** (Exact user GPS coordinates at time of cab booking). | Deep link navigation to Uber cab dispatch service. | [`mobile/screens/CabBookingScreen.js`](file:///Users/balaji.v/travalastic/mobile/screens/CabBookingScreen.js#L155) | User-directed navigation; governed by Uber Privacy Notice. |
+| **RentalCars (Redirect)** | Destination city name. | **No** (Destination name string). | Partner redirect link for car rental booking. | [`mobile/screens/CarsScreen.js`](file:///Users/balaji.v/travalastic/mobile/screens/CarsScreen.js#L35) | User-directed navigation; governed by Rentalcars.com Privacy Policy. |
+| **Google Maps (Redirect)**| Activity latitude and longitude coordinates. | **No** (Location coordinates). | Opening activity location in Google Maps app / web. | [`mobile/screens/ItineraryScreen.js`](file:///Users/balaji.v/travalastic/mobile/screens/ItineraryScreen.js#L210) | User-directed navigation; governed by Google Privacy Policy. |
+| **IRCTC / RedBus (Redirect)**| None (Static home / search URLs without query parameters). | **No** | Transit reference navigation. | [`mobile/screens/TrainsAndBusesScreen.js`](file:///Users/balaji.v/travalastic/mobile/screens/TrainsAndBusesScreen.js#L42) | User-directed navigation. |
+| **Expo / EAS** | Application bundle manifests during build/update. | **No** (Build artifacts only; no user data in runtime payload). | React Native framework build tooling and distribution. | [`mobile/eas.json`](file:///Users/balaji.v/travalastic/mobile/eas.json) | Governed by Expo Privacy Policy. |
 
 ---
 
-### 2.2 Embedding Provider
+## D. Data in Logs
 
-| Service | File(s) Making the Call | Function | Model / SDK | API Key Variable | User-Derived Data Transmitted |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Google Gemini** | `backend/src/services/embeddingService.js` | `embedText` | `gemini-embedding-001` via `@google/genai` | `GEMINI_API_KEY` | - In `personalizationNode.js`: `interests` (user-selected travel interests/tags).<br>- In `destinations.js`: `destinationQuery` (search query string typed by user). |
-
----
-
-### 2.3 Flight Aggregator (Duffel)
-
-| Service | File(s) Making the Call | Method / Endpoint | User-Derived Data Transmitted |
+| Logging Mechanism | File / Location | What is Logged | Sensitivity & PII Assessment |
 | :--- | :--- | :--- | :--- |
-| **Duffel API** | `backend/src/routes/flights.js` | `duffel.suggestions.list` | `query` (city / airport name typed by user). |
-| **Duffel API** | `backend/src/routes/flights.js` | `duffel.offerRequests.create` | User's flight search parameters: origin, destination, departure date, return date, passenger count, cabin class. |
-| **Duffel API** | `backend/src/routes/flights.js` | `duffel.offers.get` | Selected flight `offerId`. |
-| **Duffel API** | `backend/src/routes/flights.js` | `duffel.orders.create` | **Sensitive personal traveler data**: Passenger full names (`given_name`, `family_name`), titles (`title`), genders (`gender`), dates of birth (`born_on`), contact emails (`email`), phone numbers (`phone_number`), and payment transaction amounts. |
-| **Duffel API** | `backend/src/routes/flights.js` | `duffel.orders.get` | User's Duffel `orderId` (used to refresh booking status). |
+| **Morgan HTTP Logger** (`morgan('dev')`) | [`backend/src/server.js`](file:///Users/balaji.v/travalastic/backend/src/server.js#L33) | HTTP request method, URL path, query string, status code, response time. | **Query parameters logged**: Destination search terms (`/destinations/search?q=...`), flight queries (`/flights/search?...`), coordinates (`/weather?lat=...`). Request bodies, passwords, and chat messages are **never** logged by Morgan. |
+| **Assistant Route Logger** | [`backend/src/routes/assistant.js`](file:///Users/balaji.v/travalastic/backend/src/routes/assistant.js#L74) | `userId`, message character length (`number`), `toolUsed` (`boolean`), and latency in ms. | **No message text logged**: Logs metrics only. Message content, conversation history, and assistant replies are **never** logged. |
+| **Assistant Error Logger** | [`backend/src/routes/assistant.js`](file:///Users/balaji.v/travalastic/backend/src/routes/assistant.js#L85) | `userId`, message character length, latency, exception `error.message`. | Error message only. Request body and prompt text are not logged. |
+| **Disruption Webhook Loggers** | [`backend/src/routes/duffelWebhook.js`](file:///Users/balaji.v/travalastic/backend/src/routes/duffelWebhook.js#L65) | Duffel event ID (`wev_...`), event type, outcome label (`skipped`, `duplicate`, `success`), error message on failure. | Webhook metadata only. Raw payload, signature headers, passenger names, and PNRs are **never** logged. |
+| **Disruption Proposal Loggers**| [`backend/src/services/disruptions/proposal.js`](file:///Users/balaji.v/travalastic/backend/src/services/disruptions/proposal.js#L315) | `disruptionId` and outcome enum (`generated`, `cached`, `manual_review`, `failed`). | Disruption identifier and processing status only. Itinerary text, activity titles, and proposed changes are **never** logged. |
+| **Disruption Lifecycle Loggers**| [`backend/src/services/disruptions/lifecycle.js`](file:///Users/balaji.v/travalastic/backend/src/services/disruptions/lifecycle.js#L87) | `disruptionId`, action (`approve`, `dismiss`, `undo`), outcome (`idempotent`, `crash_recovery`, `success`). | Operational audit identifiers only. |
+| **Flight Booking Error Loggers**| [`backend/src/routes/flights.js`](file:///Users/balaji.v/travalastic/backend/src/routes/flights.js#L573) | `saveError` (Mongoose DB persistence failure) and `error` (Duffel API order creation error). | Mongoose error or Duffel API error object. May contain validation field names if payload was rejected. |
+| **External API Error Loggers** | [`backend/src/services/travelAssistantService.js`](file:///Users/balaji.v/travalastic/backend/src/services/travelAssistantService.js#L472), [`backend/src/services/packingListService.js`](file:///Users/balaji.v/travalastic/backend/src/services/packingListService.js#L322) | Fallback model error messages (`err.message`). | Technical exception strings only. Prompts and completions are not logged. |
+| **Global Error Handler** | [`backend/src/server.js`](file:///Users/balaji.v/travalastic/backend/src/server.js#L108) | `console.error(err.stack)`. | Unhandled call stack traces. Does not log request body. |
+
+### Verification of Specific Audit Claims
+- `grep -rn "console\." backend/src | wc -l`: **89 occurrences**. None of these console calls log request bodies, prompt texts, or LLM generation outputs.
+- <!-- claim: travel-assistant-not-stored verified --> **Travel Assistant messages not stored**: **VERIFIED**. Proven by code: `POST /assistant/message` in [`backend/src/routes/assistant.js`](file:///Users/balaji.v/travalastic/backend/src/routes/assistant.js) has zero database write operations. No Mongoose model exists for assistant conversations.
+- <!-- claim: travel-assistant-not-logged verified --> **Travel Assistant messages not logged**: **VERIFIED**. Proven by code: `routes/assistant.js` lines 74 & 85 log strictly `userId`, `msgLen` (number), `toolUsed` (boolean), `latencyMs`, and `error.message`.
+- <!-- claim: trip-chat-stored verified --> **Trip chat messages ARE stored**: **VERIFIED**. Confirmed: messages are stored in MongoDB in the `conversations` collection (`Conversation` model in [`backend/src/models/Conversation.js`](file:///Users/balaji.v/travalastic/backend/src/models/Conversation.js)) and retained until user account deletion.
+- <!-- claim: tracing-disabled verified --> **LLM Tracing disabled**: **VERIFIED**. Confirmed: No LangSmith or LangChain tracing environment variables (`LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`) are configured or referenced in the codebase.
 
 ---
 
-### 2.4 Weather Provider
+## E. Client-Side Storage
 
-| Service | File(s) Making the Call | Method / Endpoint | API Key Variable | User-Derived Data Transmitted |
+| App | Storage Mechanism | Key Name | Content & Sensitivity | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
-| **OpenWeather** | `backend/src/services/weatherService.js` | HTTP GET `https://api.openweathermap.org/data/2.5/forecast` | `OPENWEATHER_API_KEY` | Geographical coordinates (`latitude`, `longitude` of user's destination or requested location) and user's travel `date`. |
+| **Mobile** | `SecureStore` (iOS Keychain / Android Keystore) | `travalastic_token` | Active JWT authentication token (contains encoded `userId` and `email`). Cleared on logout and account deletion. | [`mobile/src/context/AuthContext.js`](file:///Users/balaji.v/travalastic/mobile/src/context/AuthContext.js#L53), [`mobile/src/utils/authCleanup.js`](file:///Users/balaji.v/travalastic/mobile/src/utils/authCleanup.js#L21) |
+| **Mobile** | `SecureStore` (Legacy Reads) | `userToken`, `token` | Read-only backward compatibility check during app startup; never written by current app. | [`mobile/src/context/AuthContext.js`](file:///Users/balaji.v/travalastic/mobile/src/context/AuthContext.js#L31) |
+| **Mobile** | `AsyncStorage` | *None* | **Not used.** `@react-native-async-storage/async-storage` is not installed or referenced. | [`mobile/package.json`](file:///Users/balaji.v/travalastic/mobile/package.json) |
+| **Mobile** | Volatile In-Memory Only | `inMemoryAssistantConversation` | Travel Assistant conversation history. Volatile JavaScript array; cleared on "Clear Chat", logout, or account deletion. Never persisted to disk. | [`mobile/screens/TravelAssistantScreen.js`](file:///Users/balaji.v/travalastic/mobile/screens/TravelAssistantScreen.js#L24), [`mobile/utils/authCleanup.js`](file:///Users/balaji.v/travalastic/mobile/utils/authCleanup.js#L13) |
+| **Web** | `localStorage` | `travalastic_token` | Active JWT authentication token. Cleared on user logout. *(Security note: accessible via XSS; see Section H)*. | [`web/src/lib/auth.ts`](file:///Users/balaji.v/travalastic/web/src/lib/auth.ts#L3), [`web/src/store/AuthContext.tsx`](file:///Users/balaji.v/travalastic/web/src/store/AuthContext.tsx) |
+| **Web** | `sessionStorage` | *None* | **Not used.** Zero references across `web/src/`. | [`web/src/`](file:///Users/balaji.v/travalastic/web/src) |
+| **Web** | Cookies (`document.cookie`) | *None* | **Not used.** Zero cookie read/write operations across `web/src/`. | [`web/src/`](file:///Users/balaji.v/travalastic/web/src) |
+| **Web** | Volatile In-Memory Only | Flight Booking Component State | Passenger full names, birthdates, title, gender, contact email, and contact phone collected during flight booking. Held exclusively in volatile React component state; zero persistence to `localStorage`, `sessionStorage`, cookies, query parameters, or client console logs. Transmitted over HTTPS to backend `POST /flights/book` (forwarded to Duffel and persisted per Section B `bookings`), then purged from client memory immediately upon booking confirmation or navigating away. | [`web/src/pages/traveler/FlightBookingPage.tsx`](file:///Users/balaji.v/travalastic/web/src/pages/traveler/FlightBookingPage.tsx) |
 
 ---
 
-### 2.5 Geocoding and Mapping Providers
+## F. Browser-Side Third-Party Requests (Web App)
 
-| Service | File(s) Making the Call | Method / Endpoint | API Key Variable | User-Derived Data Transmitted |
+| Host | Count / URLs | Data Received by Host | Purpose | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
-| **OpenStreetMap Nominatim** | `backend/src/services/placesService.js` | HTTP GET `https://nominatim.openstreetmap.org/search` | None (Throttled, custom User-Agent) | Destination or place search query typed by the user (`query`). |
-| **OpenStreetMap Overpass** | `backend/src/services/overpassService.js` | HTTP POST `https://overpass-api.de/api/interpreter` | None (Custom User-Agent) | Destination geographical coordinates (`latitude`, `longitude` within 25km radius) corresponding to user's destination. |
+| `fonts.googleapis.com` & `fonts.gstatic.com` | 1 stylesheet link (`DM Serif Display`, `Inter`, `JetBrains Mono`) + underlying font file fetches | Visitor browser IP address, User-Agent, referer header. | Typography rendering in browser. | [`web/src/index.css`](file:///Users/balaji.v/travalastic/web/src/index.css#L1) |
+| `images.unsplash.com` | 222 hardcoded image URLs across mock data and page views | Visitor browser IP address, User-Agent, referer header. | Destination and activity photography display. | [`web/src/data/mockData.ts`](file:///Users/balaji.v/travalastic/web/src/data/mockData.ts) |
+| Booking.com (Outbound affiliate redirect) | User-initiated outbound link (`booking.com/searchresults.html`) | Destination query (`ss`), stay dates (`checkin`, `checkout`), guest count (`group_adults`), room count (`no_rooms`), affiliate tag (`aid`). Zero user identity, zero PII, zero tokens, zero account data. | Live hotel room availability and real-time rate lookup on Booking.com. | Generated server-side with `process.env.BOOKING_AFFILIATE_ID` in [`backend/src/routes/hotels.js`](file:///Users/balaji.v/travalastic/backend/src/routes/hotels.js#L44), augmented on client in [`web/src/lib/stay.ts`](file:///Users/balaji.v/travalastic/web/src/lib/stay.ts), opened in new tab via [`web/src/components/hotels/CuratedHotelCard.tsx`](file:///Users/balaji.v/travalastic/web/src/components/hotels/CuratedHotelCard.tsx). |
+| Uber (Outbound universal link) | User-initiated outbound universal link (`m.uber.com/ul/`) | Dropoff coordinates (`dropoff[latitude]`, `dropoff[longitude]`, `dropoff[nickname]`), default `pickup=my_location` (Uber automatically resolves user location; browser never prompts or accesses location), optional client ID. Zero user identity, zero PII, zero tokens, zero account data. | Outbound navigation to Uber ride booking with destination pre-set. | [`web/src/lib/transportLinks.ts`](file:///Users/balaji.v/travalastic/web/src/lib/transportLinks.ts), [`web/src/pages/traveler/GroundTransportPage.tsx`](file:///Users/balaji.v/travalastic/web/src/pages/traveler/GroundTransportPage.tsx) |
+| RentalCars (Outbound affiliate redirect) | User-initiated outbound affiliate link (`rentalcars.com/search-results`) | Pickup location name (`locationName`, `dropLocationName`), pickup date (`pickupDate`), drop-off date (`dropoffDate`), affiliate tag (`aid`, `affiliateCode`). Zero user identity, zero PII, zero tokens, zero account data. | Outbound affiliate redirect for car rental search on Rentalcars.com. | Generated server-side via [`backend/src/routes/cars.js`](file:///Users/balaji.v/travalastic/backend/src/routes/cars.js), fallback in [`web/src/lib/transportLinks.ts`](file:///Users/balaji.v/travalastic/web/src/lib/transportLinks.ts), opened via [`web/src/pages/traveler/GroundTransportPage.tsx`](file:///Users/balaji.v/travalastic/web/src/pages/traveler/GroundTransportPage.tsx). |
+| Analytics / Custom Scripts | **0** | None | No third-party analytics (Google Analytics, Mixpanel, Sentry) or tracking scripts are present in `web/index.html`, `web/vite.config.ts`, or `web/.figma/make/site.json`. | [`web/index.html`](file:///Users/balaji.v/travalastic/web/index.html), [`web/.figma/make/site.json`](file:///Users/balaji.v/travalastic/web/.figma/make/site.json) |
 
 ---
 
-### 2.6 Photography Provider
+## G. Account Deletion Coverage
 
-| Service | File(s) Making the Call | Method / Endpoint | API Key Variable | User-Derived Data Transmitted |
+| Model Name | Has `userId`? | Deleted on Account Deletion? | Deletion Operation & Query | Test Coverage |
 | :--- | :--- | :--- | :--- | :--- |
-| **Pexels API** | `backend/src/services/pexelsService.js` | HTTP GET `https://api.pexels.com/v1/search` | `PEXELS_API_KEY` | Destination query string typed by user (e.g. `"Goa"`). |
+| `User` | Yes (`_id`) | **Yes** | `User.deleteOne({ _id: userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js) |
+| `Itinerary` | Yes (`userId`) | **Yes** | `Itinerary.deleteMany({ userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js) |
+| `Conversation` | Yes (`userId`) | **Yes** | `Conversation.deleteMany({ userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js) |
+| `Expense` | Yes (`userId`) | **Yes** | `Expense.deleteMany({ userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js) |
+| `Booking` | Yes (`userId`)* | **Yes** (Authenticated bookings) | `Booking.deleteMany({ userId })` *(Unauthenticated orphan risk noted in Section H)* | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js) |
+| `PackingTemplate` | Yes (`userId`) | **Yes** | `PackingTemplate.deleteMany({ userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js), [`backend/test/packingTemplates.test.js`](file:///Users/balaji.v/travalastic/backend/test/packingTemplates.test.js#L99) |
+| `Disruption` | Yes (`userId`) | **Yes** | `Disruption.deleteMany({ userId })` | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js), [`backend/test/disruptions.test.js`](file:///Users/balaji.v/travalastic/backend/test/disruptions.test.js#L489) |
+| `CuratedHotel` | No | **Exempt** | Shared curated catalog; contains no personal data. | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js#L14) |
+| `CuratedRoute` | No | **Exempt** | Static transit definitions; contains no personal data. | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js#L15) |
+| `DestinationContent` | No | **Exempt** | Public destination search embeddings; contains no personal data. | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js#L16) |
+| `TouristPlace` | No | **Exempt** | Public tourist attraction database; contains no personal data. | [`backend/test/accountDeletionCoverage.test.js`](file:///Users/balaji.v/travalastic/backend/test/accountDeletionCoverage.test.js#L17) |
 
 ---
 
-### 2.7 Mobile Client Outbound Requests & Deep Links
+## H. Gaps and Decisions
 
-- **Backend API Communication**: All `fetch()` requests in the mobile application (`mobile/config/apiClient.js`, `mobile/screens/*.js`) communicate **exclusively** with the self-hosted Travalastic backend (`API_BASE_URL`). The mobile app makes no direct third-party HTTP API calls.
-- **External Deep Links (`Linking.openURL`)**:
-  - `Uber` (`https://m.uber.com/ul/?action=setPickup` in `CabBookingScreen.js`): Transmits device GPS pickup coordinates (`latitude`, `longitude`), dropoff coordinates, and destination name to the Uber app/website.
-  - `RentalCars` (`https://www.rentalcars.com/search-results?locationName=...` in `CarsScreen.js`): Transmits destination name.
-  - `Google Maps` (`https://www.google.com/maps/search/?api=1&query=lat,lon` in `ItineraryScreen.js`): Transmits activity latitude and longitude.
-  - `IRCTC` (`https://www.irctc.co.in/nget/train-search` in `TrainsAndBusesScreen.js`): Static link (no user data appended).
-  - `RedBus` (`https://www.redbus.in/` in `TrainsAndBusesScreen.js`): Static link (no user data appended).
+1. **Empty Legal Entity Name and Privacy Contact Email**  
+   - **Severity**: `blocks launch`  
+   - **Risk**: In `legal-site/legal-config.json`, `companyName` and `supportEmail` are empty strings. Play Store policy, GDPR, CCPA, and India DPDP Act require clearly identifying the legal data controller entity and providing an accessible contact email for privacy and deletion requests.  
+   - **Suggested Fix**: Company ownership must supply the registered legal entity name and an active privacy contact email address (e.g. `privacy@travalastic.com`) before production submission.
 
----
+2. **Unauthenticated Flight Booking Orphan Records**  
+   - **Severity**: `blocks launch`  
+   - **Risk**: In [`backend/src/routes/flights.js`](file:///Users/balaji.v/travalastic/backend/src/routes/flights.js) (`POST /flights/book`), the endpoint does not require the `authenticate` middleware. When a user books without an Authorization header and their passenger email is not already registered, the booking is stored with `userId: null`. When that user subsequently registers or deletes their account, `deleteUserAndData` queries strictly `{ userId }`. The booking document containing passenger names, dates of birth, emails, phone numbers, and Duffel ticket payloads remains orphaned in MongoDB.  
+   - **Suggested Fix**: Enforce `authenticate` middleware on `POST /flights/book` to guarantee every booking is linked to a valid `userId`, and add email-based cleanup in `deleteUserAndData`: `{ $or: [{ userId }, { "passengers.email": userEmail }] }`.
 
-## 3. Device Permissions and On-Device Data
+3. **JWT Authentication Token Stored in Browser `localStorage`**  
+   - **Severity**: `should fix`  
+   - **Risk**: [`web/src/lib/auth.ts`](file:///Users/balaji.v/travalastic/web/src/lib/auth.ts#L1) stores the user's active JWT in browser `localStorage`. Any cross-site scripting (XSS) vulnerability in the web application can read and exfiltrate this session token.  
+   - **Suggested Fix**: Transition web authentication to secure, `HttpOnly`, `SameSite=Lax` cookies with CSRF token verification.
 
-### 3.1 Device Permissions
+4. **Third-Party Hotlinking of Fonts & Images on Web Client**  
+   - **Severity**: `should fix`  
+   - **Risk**: The web client loads Google Fonts from `fonts.googleapis.com` and 222 images from `images.unsplash.com`. Every browser visit transmits the user's IP address and browsing headers directly to Google and Unsplash servers without prior consent.  
+   - **Suggested Fix**: Self-host web fonts (`.woff2` files via `@fontsource`) and serve destination imagery from Travalastic's own origin CDN / object storage before production launch.
 
-| Permission | Module | Location in Code | Purpose | Is Data Sent to Backend? |
-| :--- | :--- | :--- | :--- | :--- |
-| **Foreground Location** | `expo-location` | `mobile/screens/CabBookingScreen.js` (`handleUseCurrentLocation`) | Requests user's current GPS location to pre-fill pickup coordinates when booking a cab. | **NO**. Device GPS coordinates (`latitude`, `longitude`) stay strictly on the device. They are stored only in local React state (`pickup`) and used client-side to generate an outbound Uber deep link URL. They are never sent to the backend. |
+5. **LLM Provider Data Retention and Model Training Terms**  
+   - **Severity**: `needs decision`  
+   - **Risk**: The backend sends user prompts, itinerary details, and chat messages to Groq and Cerebras. Commercial API terms typically state API data is not used for model training, but may be retained in provider server logs for 30 days for abuse monitoring.  
+   - **Suggested Fix**: Management/Legal must review Groq's and Cerebras's enterprise Data Processing Agreements (DPAs) and confirm zero-retention / abuse-logging duration to ensure compliance with privacy representations.
 
-*Manifest declaration note*: In `mobile/app.json`, only `"plugins": ["expo-secure-store"]` is listed; `expo-location` permissions are requested dynamically at runtime via `Location.requestForegroundPermissionsAsync()`.
+6. **Public OpenStreetMap (Nominatim & Overpass) Acceptable Use Policies**  
+   - **Severity**: `note`  
+   - **Risk**: Backend relies on public OSM Nominatim and Overpass endpoints for place search and attraction queries without API keys. Increased production traffic risks IP-level rate-limiting or blocking under OSM fair use guidelines.  
+   - **Suggested Fix**: Provision a paid or self-hosted geocoding and POI service (e.g. Mapbox, Google Maps Platform, or dedicated Nominatim container) prior to scaling.
 
----
-
-### 3.2 On-Device Storage Inventory
-
-| Storage Mechanism | Key Name | File(s) Where Accessed | Stored Data & Sensitivity |
-| :--- | :--- | :--- | :--- |
-| **`SecureStore`** (iOS Keychain / Android Keystore) | `travalastic_token` | `mobile/App.js`, `mobile/config/apiClient.js`, `mobile/screens/LoginScreen.js`, `mobile/screens/SignUpScreen.js`, `mobile/screens/ProfileScreen.js`, `mobile/screens/EditProfileScreen.js`, `mobile/screens/HomeScreen.js` | User's active JWT authentication token. Contains encoded `userId` and user `email`. Cleared upon logout via `SecureStore.deleteItemAsync`. |
-| **`SecureStore`** (Legacy Fallback Reads) | `userToken`, `token` | `mobile/App.js`, `mobile/src/context/AuthContext.js` | Legacy session token keys (checked read-only during startup for backward compatibility; never written). |
-| **`AsyncStorage`** | *None* | *None* | **Not used.** `AsyncStorage` is not installed or referenced anywhere in `mobile/`. |
-| **`localStorage`** (Web Only) | `travalastic_token` | `mobile/config/apiClient.js`, `mobile/screens/LoginScreen.js`, `mobile/screens/SignUpScreen.js` | Web platform fallback storing the JWT token in browser `localStorage`. |
-
----
-
-## 4. Server-Side Logging
-
-Below is the inventory of user-derived data that appears in server-side logs:
-
-| Logging Mechanism | File / Location | What is Logged | Sensitivity & User Data Included |
-| :--- | :--- | :--- | :--- |
-| **Morgan HTTP Logger** (`morgan('dev')`) | `backend/src/server.js`, `server/server.js` | HTTP request method, URL path, query string, status code, response time. | **Destination & flight search queries, dates, and coordinates**: URLs containing query strings are logged to stdout. Examples:<br>- `GET /destinations/search?q=<destination>`<br>- `GET /flights/suggestions?query=<city>`<br>- `GET /flights/search?origin=BOM&destination=DEL...`<br>- `GET /weather?lat=...&lon=...`<br>- `GET /itinerary/<itineraryId>`<br>*(Request bodies are NOT logged by Morgan).* |
-| **Error Stack Traces** (`console.error(err.stack)`) | `backend/src/server.js` | Unhandled error stacks. | May contain URL parameters or error messages resulting from malformed requests. |
-| **External API Error Logs** | `backend/src/routes/flights.js` (lines 573, 587) | `console.error('Failed to persist booking:', saveError)` and `console.error('Duffel order creation error:', error)` | If Duffel or Mongoose rejects booking parameters, error messages containing invalid fields (e.g., passenger name or birthdate validation failures) may be written to server logs. |
-| **Destination Name Logging** | `backend/src/services/pexelsService.js` (lines 136, 139) | `console.error('Error querying Pexels API for "<cleanName>":', err.message)` | User-searched destination name. |
-
-> **Credentials & Chat Logging**:  
-> User passwords, password hashes, JWT tokens, and free-text chat message contents are **NOT** logged in plaintext by any server-side loggers.
+7. **Cross-Border Cloud Data Hosting vs. India DPDP Act 2023**  
+   - **Severity**: `needs decision`  
+   - **Risk**: Backend is hosted on Render (US/EU regions) and MongoDB Atlas (cloud cluster). If servicing Indian residents, the India Digital Personal Data Protection Act 2023 guidelines on cross-border data transfer and security safeguards must be formally validated.  
+   - **Suggested Fix**: Confirm cloud database region placement and ensure privacy policy explicitly informs users of overseas data processing.
 
 ---
 
-## 5. User Account Deletion Map
+## I. Open Questions for the Internship Team
 
-To fulfill a complete user account deletion ("Right to Be Forgotten"), the following map identifies all collections storing user-linked data, the exact link field to query, and flagged orphan data risks.
-
-### 5.1 Deletion Target Map
-
-| Collection Name | Mongoose Model | User Link Field | Deletion Query | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| `users` | `User` | `_id` | `{ _id: targetUserId }` | Removes primary user account record, name, email, and password hash. |
-| `itineraries` | `Itinerary` | `userId` | `{ userId: targetUserId }` | Removes all itineraries, custom schedules, and generated packing lists belonging to the user. |
-| `conversations` | `Conversation` | `userId` | `{ userId: targetUserId }` | Removes all chat sessions and free-text AI conversation history. |
-| `expenses` | `Expense` | `userId` | `{ userId: targetUserId }` | Removes all recorded trip expenses and spending records. |
-| `bookings` | `Booking` | `userId` | `{ userId: targetUserId }` | Removes flight bookings, passenger names, birthdates, emails, and phone numbers. *(See orphan risk below)*. |
-
----
-
-### 5.2 Flagged Orphan Collections (User Data Existing WITHOUT a `userId` Link)
-
-> [!WARNING]  
-> **CRITICAL FLAG: `bookings` Collection**  
-> In [`backend/src/models/Booking.js`](file:///Users/balaji.v/travalastic/backend/src/models/Booking.js), the `userId` field is defined as optional:  
-> ```javascript
-> userId: {
->   type: mongoose.Schema.Types.ObjectId,
->   ref: 'User',
->   index: true,
-> }
-> ```  
-> In [`backend/src/routes/flights.js`](file:///Users/balaji.v/travalastic/backend/src/routes/flights.js) (`POST /flights/book`), the endpoint does **not** enforce the `authenticate` middleware. Instead, it attempts best-effort resolution of `userId` from the Authorization header, `req.body.userId`, or by matching passenger emails against the `users` collection.  
->  
-> **The Orphan Condition**:  
-> If a user books a flight without an active authentication session (or without an Authorization header), and the passenger email does not match an existing registered user, the booking document is persisted with:  
-> `userId: null`  
->  
-> **Impact on Deletion**:  
-> Personal passenger data (passenger full names, dates of birth, phone numbers, emails, PNR references, and Duffel ticket payloads) will exist in the `bookings` collection with `userId: null`. A standard account deletion query (`{ userId: targetUserId }`) will **fail to locate or delete these records**.  
->  
-> To guarantee complete erasure, an account deletion procedure must also search the `bookings` collection for passenger email matches:  
-> `{ $or: [{ userId: targetUserId }, { "passengers.email": targetUserEmail }] }`.
-
----
-
-## 6. Two-assistant split addendum
-
-This section audits the architectural data flow, logging footprint, third-party transmissions, on-device memory boundaries, and deletion guarantees introduced by the two-assistant separation: the trip-grounded Trip Chat assistant (`trip_question` route) and the stateless general Travel Assistant (`POST /assistant/message`).
-
-Every claim in this section has been verified against the current codebase. For each item, the exact source file and function verifying the claim are explicitly identified.
-
----
-
-### 6.1 Trip Chat: Trip-Question Grounding & Field Whitelist
-
-*Files:*
-- `backend/src/services/agents/tripContext.js` — function `buildTripContext(itinerary, expenseSummary, flightSummaries)`
-- `backend/src/services/agents/tripQaNode.js` — functions `answerTripQuestion({ question, itineraryId, userId, conversationMessages, currentDate })`, `tripQaNode(state)`
-
-#### Itinerary Fields Reaching the LLM Provider
-When a user asks a trip-grounded question (`trip_question`), `answerTripQuestion` loads the itinerary fresh from MongoDB using `findUserItinerary(itineraryId, userId)` (preventing stale cache leaks and enforcing ownership). It passes the itinerary, logged expenses, and linked flight bookings to `buildTripContext`.
-
-**Exclusively Whitelisted Fields Transmitted to LLM Provider (Groq):**
-1. **Trip Overview**:
-   - `destination` (`itin.destination`)
-   - `startDate` and `endDate` (`itin.startDate`, `itin.endDate`)
-   - `budgetTier` (`itin.budgetTier`)
-   - `interests` (`itin.interests` — array of strings)
-   - `budgetEstimate` (`itin.budgetEstimate`, explicitly labelled `"Total Estimated Cost: ₹<amount> (AI estimate)"`)
-2. **Daily Schedule (`itin.days`)**:
-   - `dayNumber` (`day.dayNumber`)
-   - `estimatedCostINR` (`day.estimatedCostINR`, explicitly labelled `"Day Estimated Cost: ₹<amount> (AI estimate)"`)
-   - `accommodationSuggestion` (`day.accommodationSuggestion`)
-   - **Activities (`day.activities`)**:
-     - `title` or `name`
-     - `suggestedTime`
-     - `description`
-     - `done` (boolean status, rendered as `[Done]` or `[Not done]`)
-     - `location` (`placeName`, `lat`, `lon` if present, rendered as `"Location known: Yes (<placeName>, lat: <lat>, lon: <lon>)"` or `"No"`)
-3. **Logged Actual Expenses (`expenseSummary`)**:
-   - `totalSpent` (sum of `amountINR`, explicitly labelled `"(actual, logged by the user, not tied to a specific day)"`)
-   - `categoryTotals` (spending totals aggregated by category: `Food`, `Transport`, `Accommodation`, `Activities`, `Shopping`, `Other`)
-4. **Linked Flight Bookings (`flightSummaries`)**:
-   - Route (`f.origin → f.destination` or `slices[0].origin.iata_code → slices[0].destination.iata_code`)
-   - Departure date/time (`f.departureTime` as ISO string or `f.departureDate`)
-   - Booking status (`f.status`, e.g. `'confirmed'`)
-5. **Conversation History**:
-   - The most recent 6 messages (`role` and `content` only) from the active trip chat session (`conversationMessages.slice(-6)`), plus the current user question.
-6. **Explicit NOT AVAILABLE List**:
-   - Fixed prompt boundary notifying the LLM that traveler counts, opening hours, driving/travel times, ticket prices, hotel reservation confirmations, and ground transit bookings are not in the trip data and must never be invented.
-
-#### Sensitive Passenger & Payment Data Exclusion Confirmation
-- **Claim**: Passenger names, dates of birth, booking references, and payment data are **NEVER** included in the prompt or sent to the LLM provider, even when a flight booking is linked to the trip.
-- **Verification Status**: **TRUE**.
-- **Code Proof (`backend/src/services/agents/tripContext.js`, lines 156–194)**:
-  `buildTripContext` iterates over linked `Booking` records and projects strictly three fields: route, departure time, and status (`• Route: ${route} | Departure: ${departure} | Status: ${status}`).
-  The following sensitive `Booking` fields are completely excluded from the context:
-  - Passenger names (`passengers[].givenName`, `passengers[].familyName`, `passengers[].name`, `passengerNames`) — **EXCLUDED**.
-  - Passenger dates of birth (`passengers[].dateOfBirth`) — **EXCLUDED**.
-  - Passenger genders and titles (`passengers[].gender`, `passengers[].title`) — **EXCLUDED**.
-  - Passenger contact details (`passengers[].email`, `passengers[].phoneNumber`) — **EXCLUDED**.
-  - Booking & Order references (`bookingReference`, Duffel PNR, `orderId`, `offerId`) — **EXCLUDED**.
-  - Payment & financial transaction data (`totalAmount`, `currency`, Duffel `rawOrder` tickets and payment receipt payloads) — **EXCLUDED**.
-  - Verified by automated unit test: `backend/test/tripContext.test.js` (`"fixture: passenger fields never appear even if present on the input"`).
-
----
-
-### 6.2 Stateless Travel Assistant: `POST /assistant/message`
-
-*Files:*
-- `backend/src/routes/assistant.js` — route handler `router.post('/message', authenticate, assistantLimiter, ...)`
-- `backend/src/services/travelAssistantService.js` — functions `validateAssistantRequest(body)`, `buildTripHint(itinerary, options)`, `callTravelAssistant({ message, history, tripHint, deps })`
-- `backend/src/server.js` — server middleware configuration
-- `backend/src/middleware/authenticate.js` — JWT authentication middleware
-
-#### (a) Database Persistence: Zero Writes
-- **Claim**: Nothing is written to the database during execution of `POST /assistant/message`.
-- **Verification Status**: **TRUE**.
-- **Code Proof**:
-  - `backend/src/routes/assistant.js` imports only `findUserItinerary` from `../models/Itinerary.js`.
-  - When `tripId` is provided, it executes `findUserItinerary(tripId, req.userId)` (`Itinerary.findOne({ _id: id, userId })`), which is a read-only query.
-  - Across `backend/src/routes/assistant.js` and `backend/src/services/travelAssistantService.js`, there are **zero** database mutation calls: no `new Model()`, `.save()`, `.create()`, `.updateOne()`, `.findOneAndUpdate()`, `.deleteMany()`, or raw MongoDB writes.
-  - There is no Mongoose model or MongoDB collection for Travel Assistant conversations.
-
-#### (b) Logging Footprint: Zero Message, History, or Reply Logging
-- **Claim**: No message text, conversation history, or assistant reply text is logged anywhere in server logs, logger calls, or error handlers on this path, including app-level middleware.
-- **Verification Status**: **TRUE**.
-- **Code Proof & Audit of All Logging Points on the Path**:
-  1. **Route Success Logger** (`backend/src/routes/assistant.js`, line 74):
-     `console.info(`[Assistant] userId=${req.userId} msgLen=${messageLength} toolUsed=${toolUsed} latency=${latencyMs}ms`);`
-     Logs only user ID, message character length (`number`), boolean tool flag, and latency in milliseconds. Message text, history, and reply are not logged.
-  2. **Route Error Logger** (`backend/src/routes/assistant.js`, line 85):
-     `console.warn(`[Assistant] error userId=${req.userId} msgLen=${messageLength} latency=${latencyMs}ms: ${error.message}`);`
-     Logs only user ID, message character length (`number`), latency, and the standard exception error message.
-  3. **Service Fallback Loggers** (`backend/src/services/travelAssistantService.js`, lines 472, 508, 512):
-     Logs only model configuration error names and exception messages (`bindErr.message`, `primaryErr.message`, `fallbackErr.message`).
-  4. **App-Level HTTP Logger** (`backend/src/server.js`, line 33):
-     Uses `morgan('dev')`. Morgan logs only `:method :url :status :response-time ms - :res[content-length]`. For this endpoint, the URL is `/assistant/message` with no query parameters. `morgan('dev')` **does not log request bodies (`req.body`) or response bodies**.
-  5. **Authentication Middleware** (`backend/src/middleware/authenticate.js`, lines 33–36):
-     Logs only `console.error('JWT_SECRET is not configured...')` if environment configuration is missing. Does not log tokens, headers, or request bodies.
-  6. **App Global Error Handler** (`backend/src/server.js`, line 108):
-     Logs `console.error(err.stack)`. Unhandled exceptions contain call stacks and error messages; request body contents are not attached to `Error` instances.
-
-#### (c) Optional `tripId`: Prompt Contribution
-- **Function**: `buildTripHint(itinerary)` in `backend/src/services/travelAssistantService.js` (lines 107–176).
-- **Prompt Insertion**: `getAssistantSystemPrompt(tripHint)` in `backend/src/prompts/travelAssistant.js` (lines 35–40).
-- When `tripId` is supplied and verified by `findUserItinerary(tripId, req.userId)`, `buildTripHint` extracts **strictly 5 whitelisted fields**:
-  1. `destination` (`itin.destination`)
-  2. `startDate` (`itin.startDate`)
-  3. `endDate` (`itin.endDate`)
-  4. `budgetTier` (`itin.budgetTier`)
-  5. `interests` (`itin.interests` — array of strings)
-- **Exact Added Prompt Text**:
-  ```text
-  HELPFUL TRIP CONTEXT (Provided as background context only, not as a restriction):
-  Destination: <destination>
-  Dates: <startDate> to <endDate>
-  Budget Tier: <budgetTier>
-  Interests: <interests comma separated>
-  ```
-- **Excluded**: Daily schedules, activities, costs, budget estimates, expenses, flight bookings, passenger names, packing lists, and raw requests are **NOT** added to the Travel Assistant prompt.
-
----
-
-### 6.3 Third Parties Used by Two-Assistant Flows
-
-| Third Party | Invoking File & Function | Target Endpoint | User-Derived Data Received |
-| :--- | :--- | :--- | :--- |
-| **Groq (ChatGroq)** | `backend/src/services/agents/tripQaNode.js` (`answerTripQuestion`) | `POST https://api.groq.com/openai/v1/chat/completions` | **Trip Chat**: User question, last 6 chat messages (`role`, `content`), and whitelisted trip context (destination, dates, budget tier, interests, daily activities with time bucket and done status, logged expense totals by category, linked flight route and status). |
-| **Groq (ChatGroq)** | `backend/src/services/travelAssistantService.js` (`callTravelAssistant`) | `POST https://api.groq.com/openai/v1/chat/completions` | **Travel Assistant**: User message (1–1000 chars), up to 10 newest history messages (role and content truncated to 2000 chars), tool definitions, tool execution outputs, and optional 5-field trip hint (destination, dates, budget tier, interests) if `tripId` toggle was active. |
-| **OpenStreetMap Nominatim** | `backend/src/services/placesService.js` (`searchPlaces`), invoked by `runForecastLookup` in `travelAssistantService.js` | `GET https://nominatim.openstreetmap.org/search?q=<place>&format=jsonv2...` | **Weather Tool Geocoding**: Destination/city query string extracted by the LLM (e.g. `"Goa"` or `"Mysore"`). No user IDs, tokens, or IP addresses forwarded. |
-| **OpenWeather** | `backend/src/services/weatherService.js` (`getWeatherForecast`), invoked by `runForecastLookup` in `travelAssistantService.js` | `GET https://api.openweathermap.org/data/2.5/forecast?lat=<lat>&lon=<lon>&appid=...&units=metric` | **Weather Tool Forecast**: Destination latitude and longitude coordinates (resolved via Nominatim), target date (within 5-day window), metric units, and server API key. No user IDs, trip IDs, or user questions forwarded. |
-
----
-
-### 6.4 Mobile Client: Memory Isolation & Lifecycle Cleanup
-
-*Files:*
-- `client/screens/TravelAssistantScreen.js` (and mirror files `client/src/screens/TravelAssistantScreen.js`, `mobile/screens/TravelAssistantScreen.js`, `mobile/src/screens/TravelAssistantScreen.js`)
-- `client/utils/authCleanup.js` (and mirror files `client/src/utils/authCleanup.js`, `mobile/utils/authCleanup.js`, `mobile/src/utils/authCleanup.js`)
-- `client/screens/ProfileScreen.js` (and mirror files)
-- `client/screens/DeleteAccountScreen.js` (and mirror files)
-
-#### On-Device Storage Verification
-1. **Held in Memory Only**:
-   - **Verification Status**: **TRUE**.
-   - **Code Proof**: In `TravelAssistantScreen.js` (line 24), conversation history is stored exclusively in a module-scoped memory variable:
-     ```javascript
-     let inMemoryAssistantConversation = [];
-     ```
-     Component state initializes from and synchronizes with this array via `getTravelAssistantStore()` and `setTravelAssistantStore()`.
-2. **Cleared on "Clear chat"**:
-   - **Verification Status**: **TRUE**.
-   - **Code Proof**: In `TravelAssistantScreen.js` (lines 163–168), `handleClearChat` invokes `clearTravelAssistantStore()`, resetting `inMemoryAssistantConversation = []` and clearing local React component state.
-3. **Cleared on Logout**:
-   - **Verification Status**: **TRUE**.
-   - **Code Proof**: In `ProfileScreen.js` (line 36), `handleLogout` invokes `clearLocalAuthData()`. In `authCleanup.js` (line 13), `clearLocalAuthData()` explicitly calls `clearTravelAssistantStore()`, flushing all in-memory messages.
-4. **Cleared on Account Deletion**:
-   - **Verification Status**: **TRUE**.
-   - **Code Proof**: In `DeleteAccountScreen.js` (line 37), `handleConfirmDelete` invokes `clearLocalAuthData()`, which calls `clearTravelAssistantStore()` prior to navigation to the login screen.
-5. **No Persistence to SecureStore, AsyncStorage, or Files**:
-   - **Verification Status**: **TRUE**.
-   - **Code Proof**: `TravelAssistantScreen.js` does not import `expo-secure-store`, `@react-native-async-storage/async-storage`, or any filesystem libraries (`expo-file-system`, `fs`). No assistant message, session metadata, or reply is written to persistent on-device storage.
-
----
-
-### 6.5 New Environment Variables, Dependencies, and Network Calls
-
-#### Environment Variables Added
-- **None**.
-- **Verification**: Both the Trip Chat Q&A node (`tripQaNode.js`) and the Travel Assistant service (`travelAssistantService.js`) reuse existing environment variables already configured in the backend:
-  - `GROQ_API_KEY` (existing LLM credentials)
-  - `GROQ_MODEL` (existing optional model identifier override; defaults to `openai/gpt-oss-120b`)
-  - `OPENWEATHER_API_KEY` (existing weather API credentials)
-  - `JWT_SECRET` (existing token verification secret)
-  - `PORT` (existing server port)
-
-#### New Dependencies Added
-1. **Backend** (`backend/package.json`):
-   - `express-rate-limit` (`^8.7.1`): Used in `backend/src/routes/assistant.js` to enforce the 30 requests/hour/user rate limit (`assistantLimiter`).
-2. **Mobile / Client** (`client/package.json`, `mobile/package.json`):
-   - `react-native-markdown-display` (`^7.0.2`): Used in `TravelAssistantScreen.js` and `ChatScreen.js` to render markdown formatting without table clipping.
-   - Supporting gesture/animation libraries: `react-native-reanimated` (`4.5.1`), `react-native-gesture-handler` (`~2.32.0`), `react-native-draggable-flatlist` (`^4.0.3`).
-
-#### Network Calls Added
-1. **Client-to-Backend**:
-   - `POST /assistant/message`: Auth-protected call carrying `{ message, history, tripId? }`.
-   - `GET /itinerary`: Invoked once on mount by `TravelAssistantScreen.js` to discover the user's latest trip destination and dates for the optional trip context toggle chip.
-2. **Backend Outbound**:
-   - `POST https://api.groq.com/openai/v1/chat/completions` (invoked via `@langchain/groq` in `tripQaNode.js` and `travelAssistantService.js`).
-   - `GET https://nominatim.openstreetmap.org/search?q=...` (invoked via `placesService.js` only when the Travel Assistant weather tool executes a forecast lookup).
-   - `GET https://api.openweathermap.org/data/2.5/forecast?lat=...&lon=...` (invoked via `weatherService.js` only when the Travel Assistant weather tool executes a forecast lookup).
-
----
-
-### 6.6 User Account Deletion Map Update: Travel Assistant Data
-
-- **Question**: Does the Travel Assistant create any user-linked data requiring deletion?
-- **Answer**: **NONE**.
-- **Verification Status**: **PROVEN BY CODE**.
-- **Code Proof**:
-  - `POST /assistant/message` (`backend/src/routes/assistant.js`) is completely stateless. It performs zero `insert`, `save`, or `update` operations against MongoDB.
-  - No database collection or document is created for assistant conversations, prompts, or replies.
-  - On the client side, conversation history exists strictly in volatile device memory (`inMemoryAssistantConversation`) and is completely cleared upon account deletion via `clearLocalAuthData()` in `authCleanup.js`.
-  - **Deletion Map Impact**: Section 5.1 requires **no new collections, models, or deletion queries**. The 5 audited collections (`users`, `itineraries`, `conversations`, `expenses`, `bookings`) remain the complete and exhaustive list of persisted user data collections.
-
-
+1. **Age Threshold for Children / Minors**: What is the minimum age requirement for Travalastic user accounts? If minors under 18 (or under 13/16 depending on jurisdiction) can travel as passengers on flight bookings made by guardians, what consent verification mechanism should be documented?
+2. **Account Deletion Retention Timelines**: Are MongoDB Atlas automated backups retained for 7, 14, or 30 days? When a user deletes their account, live database records are deleted immediately; what is the exact timeline for backup tape expiration?
+3. **Flight Booking Guest Checkout**: Should flight booking require user registration/login upfront, or should guest booking be retained with an explicit email-based deletion flow?
+4. **Third-Party CDN Migration**: Can destination images and Google Fonts be bundled into the web static build assets to achieve zero third-party browser network calls?
+5. **Customer Support & Privacy Contact**: What email address should receive data subject access and deletion requests submitted via the hosted delete-account web page?

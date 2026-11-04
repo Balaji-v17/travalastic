@@ -74,6 +74,9 @@ export function formatUndo(editHistory) {
  * @param {Array<Object>} params.newDays
  * @param {Array<number>} params.modifiedDayNumbers
  * @param {Array<Object>} params.previousDays
+ * @param {string|null} [params.tag]
+ * @param {string|null} [params.label]
+ * @param {string|mongoose.Types.ObjectId|null} [params.disruptionId]
  * @returns {Promise<{ updatedItinerary: Object, editId: string }>}
  */
 export async function saveItineraryEditSnapshot({
@@ -82,6 +85,9 @@ export async function saveItineraryEditSnapshot({
   newDays,
   modifiedDayNumbers,
   previousDays,
+  tag = null,
+  label = null,
+  disruptionId = null,
 }) {
   const snapshotId = new mongoose.Types.ObjectId();
   const snapshotEntry = {
@@ -91,6 +97,9 @@ export async function saveItineraryEditSnapshot({
     previousDays: (previousDays || []).map((d) =>
       typeof d.toObject === 'function' ? d.toObject() : JSON.parse(JSON.stringify(d))
     ),
+    tag,
+    label,
+    disruptionId,
   };
 
   const query = userId ? { _id: itineraryId, userId } : { _id: itineraryId };

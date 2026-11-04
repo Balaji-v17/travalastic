@@ -7,4 +7,7 @@ export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000');
 
+// Demo-only simulator flag: default to false
+export const ENABLE_SIMULATOR = process.env.EXPO_PUBLIC_ENABLE_SIMULATOR === 'true';
+
 export default API_BASE_URL;

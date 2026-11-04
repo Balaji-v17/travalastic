@@ -145,6 +145,18 @@ export default function DeleteAccountScreen({ navigation }) {
               <Text style={styles.bulletBold}>Booking Records:</Text> All flight reservations and traveler passenger records stored in this app.
             </Text>
           </View>
+          <View style={styles.bulletItem}>
+            <Ionicons name="close-circle-outline" size={18} color={colors.accentUrgent} style={styles.bulletIcon} />
+            <Text style={styles.bulletText}>
+              <Text style={styles.bulletBold}>Packing Templates:</Text> All saved custom packing templates and items.
+            </Text>
+          </View>
+          <View style={styles.bulletItem}>
+            <Ionicons name="close-circle-outline" size={18} color={colors.accentUrgent} style={styles.bulletIcon} />
+            <Text style={styles.bulletText}>
+              <Text style={styles.bulletBold}>Flight Disruptions:</Text> All recorded airline delay notifications and reschedule proposals.
+            </Text>
+          </View>
         </View>
 
         {/* Section 2: What Is NOT Removed */}
@@ -167,6 +179,12 @@ export default function DeleteAccountScreen({ navigation }) {
                 Privacy Policy
               </Text>
               .
+            </Text>
+          </View>
+          <View style={styles.bulletItem}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.accentPrimary} style={styles.bulletIcon} />
+            <Text style={styles.bulletText}>
+              <Text style={styles.bulletBold}>Database Backups:</Text> Encrypted backup snapshots expire automatically according to cloud retention schedules.
             </Text>
           </View>
         </View>
