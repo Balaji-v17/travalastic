@@ -71,11 +71,13 @@ router.post('/generate', authenticate, async (req, res, next) => {
       budgetTier: finalState.budgetTier,
       interests: finalState.interests,
       days: finalState.itinerary || [],
+      grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
     });
 
     return res.status(200).json({
       itineraryId: newItinerary._id,
       itinerary: finalState.itinerary,
+      grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
     });
   } catch (error) {
     next(error);

@@ -23,7 +23,20 @@ const ActivitySchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    timeOfDay: {
+      type: String,
+      default: null,
+    },
     suggestedTime: {
+      type: String,
+      default: null,
+    },
+    kind: {
+      type: String,
+      enum: ['place', 'meal', 'transit', 'rest'],
+      default: 'place',
+    },
+    placeRef: {
       type: String,
       default: null,
     },
@@ -52,6 +65,10 @@ const DayPlanSchema = new mongoose.Schema(
     dayNumber: {
       type: Number,
       required: true,
+    },
+    theme: {
+      type: String,
+      default: '',
     },
     activities: [ActivitySchema],
     estimatedCostINR: {
@@ -160,6 +177,11 @@ const ItinerarySchema = new mongoose.Schema({
     },
   ],
   days: [DayPlanSchema],
+  grounding: {
+    candidateCount: { type: Number, default: 0 },
+    sources: [{ type: String }],
+    limited: { type: Boolean, default: false },
+  },
   budgetEstimate: {
     type: Number,
   },

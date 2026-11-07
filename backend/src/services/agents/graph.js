@@ -55,6 +55,10 @@ export const TripStateAnnotation = Annotation.Root({
     reducer: (x, y) => (y !== undefined ? y : x),
     default: () => [],
   }),
+  grounding: Annotation({
+    reducer: (x, y) => (y !== undefined ? y : x),
+    default: () => ({ candidateCount: 0, sources: [], limited: false }),
+  }),
   finalItinerary: Annotation({
     reducer: (x, y) => (y !== undefined ? y : x),
   }),

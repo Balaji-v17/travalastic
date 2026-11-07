@@ -21,6 +21,9 @@ export interface JourneyItem {
   note?: string;
   aiReason?: string;
   placeId?: string | null;
+  location?: { lat?: number; lon?: number };
+  kind?: 'place' | 'meal' | 'transit' | 'rest';
+  placeRef?: string;
 }
 
 export interface JourneyDay {
@@ -28,6 +31,7 @@ export interface JourneyDay {
   date: string;
   location: string;
   title: string;
+  theme?: string;
   items: JourneyItem[];
   estimatedCostINR?: number;
   accommodationSuggestion?: string;
@@ -68,6 +72,11 @@ export interface GeneratedJourney {
   itineraryId?: string;
   aiMessage?: string;
   alternativeVersion?: Omit<GeneratedJourney, 'alternativeVersion'>;
+  grounding?: {
+    candidateCount: number;
+    sources: string[];
+    limited: boolean;
+  };
 }
 
 /**
@@ -104,9 +113,18 @@ export function backendDaysToItineraryDays(
       dateStr = dayDate.toISOString().split('T')[0];
     }
 
-    const dayTitle = dayPlan.accommodationSuggestion
-      ? `Day ${dayNumber} · ${dayPlan.accommodationSuggestion}`
-      : `Day ${dayNumber}${location ? ` — ${location}` : ''}`;
+    const placeTitles = (dayPlan.activities || [])
+      .filter((a) => (a as any).kind === 'place' || (a.location && a.location.lat != null))
+      .map((a) => a.title);
+    const derivedTheme =
+      dayPlan.theme && dayPlan.theme.trim()
+        ? dayPlan.theme.trim()
+        : placeTitles.length > 0
+        ? placeTitles.slice(0, 2).join(' and ')
+        : location
+        ? `Highlights of ${location}`
+        : `Day ${dayNumber}`;
+    const dayTitle = `Day ${dayNumber} · ${derivedTheme}`;
 
     const activities: ItineraryActivity[] = (dayPlan.activities || []).map(
       (act: BackendActivity, actIdx: number) => {
@@ -178,23 +196,30 @@ export function toGeneratedJourney(
 
   const days: JourneyDay[] = itineraryDays.map((d, dayIdx) => {
     const rawDayPlan = backendDays[dayIdx];
-    const items: JourneyItem[] = d.activities.map((act) => ({
-      id: act.id,
-      time: act.time,
-      title: act.title,
-      type: act.type,
-      duration: act.duration,
-      cost: act.cost ?? 0,
-      costKnown: false,
-      status: 'planned' as const,
-      note: act.notes,
-    }));
+    const items: JourneyItem[] = d.activities.map((act, actIdx) => {
+      const rawAct = rawDayPlan?.activities?.[actIdx];
+      return {
+        id: act.id,
+        time: act.time,
+        title: act.title,
+        type: act.type,
+        duration: act.duration,
+        cost: act.cost ?? 0,
+        costKnown: false,
+        status: 'planned' as const,
+        note: act.notes,
+        location: act.location,
+        kind: (rawAct as any)?.kind,
+        placeRef: (rawAct as any)?.placeRef,
+      };
+    });
 
     return {
       day: d.day,
       date: d.date,
       location: d.location,
       title: d.title,
+      theme: rawDayPlan?.theme || d.title.replace(/^Day \d+ · /, ''),
       items,
       estimatedCostINR: rawDayPlan?.estimatedCostINR,
       accommodationSuggestion: rawDayPlan?.accommodationSuggestion,
@@ -235,5 +260,6 @@ export function toGeneratedJourney(
     version: 1,
     savedJourneyId: response.itineraryId,
     itineraryId: response.itineraryId,
+    grounding: response.grounding,
   };
 }

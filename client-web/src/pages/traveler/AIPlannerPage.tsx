@@ -269,6 +269,13 @@ export default function AIPlannerPage() {
             </div>
           )}
 
+          {journey.grounding?.limited && (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm flex items-start gap-2.5">
+              <span className="text-amber-500 font-bold">ℹ</span>
+              <p>We found few verified places for {journey.dna.destination.split(',')[0].trim()}. Parts of this plan are general suggestions.</p>
+            </div>
+          )}
+
           {/* Daily Itinerary */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">
@@ -293,6 +300,11 @@ export default function AIPlannerPage() {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-slate-900">{day.title}</p>
                           <p className="text-xs text-slate-400">{day.location} · {day.date}</p>
+                          {day.accommodationSuggestion && (
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              <span className="font-semibold text-slate-600">Stay:</span> {day.accommodationSuggestion}
+                            </p>
+                          )}
                         </div>
                       </button>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -616,27 +628,38 @@ export default function AIPlannerPage() {
                 ))}
               </div>
             )}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Total estimated</span>
-                <span className="font-bold text-slate-900">₹{journey.budget.total.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Your budget</span>
-                <span className="font-semibold text-slate-700">₹{journey.dna.budget.toLocaleString()}</span>
-              </div>
-              {Number(journey.dna.budget) - journey.budget.total > 0 ? (
-                <div className="flex justify-between text-sm">
-                  <span className="text-emerald-600 font-medium">Remaining</span>
-                  <span className="font-bold text-emerald-600">₹{(Number(journey.dna.budget) - journey.budget.total).toLocaleString()}</span>
+            {(() => {
+              const hasFullEstimate =
+                journey.budget.flights > 0 ||
+                journey.budget.experiences > 0 ||
+                journey.budget.food > 0 ||
+                journey.budget.transport > 0;
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{hasFullEstimate ? 'Total estimated' : 'Estimated stay cost'}</span>
+                    <span className="font-bold text-slate-900">₹{journey.budget.total.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Your budget</span>
+                    <span className="font-semibold text-slate-700">₹{journey.dna.budget.toLocaleString()}</span>
+                  </div>
+                  {hasFullEstimate && (
+                    Number(journey.dna.budget) - journey.budget.total > 0 ? (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-emerald-600 font-medium">Remaining</span>
+                        <span className="font-bold text-emerald-600">₹{(Number(journey.dna.budget) - journey.budget.total).toLocaleString()}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-amber-600 font-medium">Over budget</span>
+                        <span className="font-bold text-amber-600">₹{(journey.budget.total - Number(journey.dna.budget)).toLocaleString()}</span>
+                      </div>
+                    )
+                  )}
                 </div>
-              ) : (
-                <div className="flex justify-between text-sm">
-                  <span className="text-amber-600 font-medium">Over budget</span>
-                  <span className="font-bold text-amber-600">₹{(journey.budget.total - Number(journey.dna.budget)).toLocaleString()}</span>
-                </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* AI Controls */}
@@ -703,7 +726,7 @@ export default function AIPlannerPage() {
                 ['Travelers', `${journey.dna.travelers}`],
                 ['Pace', journey.dna.pace],
                 ['Comfort', journey.dna.comfort],
-                ['Interests', journey.dna.interests.join(', ') || 'Not specified'],
+                ['Interests', journey.dna.interests.length > 0 ? journey.dna.interests.join(', ') : 'Not specified'],
               ].map(([label, value]) => (
                 <div key={label as string} className="flex justify-between gap-2">
                   <span className="text-slate-400">{label}</span>

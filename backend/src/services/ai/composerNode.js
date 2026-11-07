@@ -3,35 +3,44 @@ import { z } from 'zod';
 import { ChatGroq } from '@langchain/groq';
 
 /**
- * Zod schema for structured activity.
- * Contains title, description, optional suggestedTime, and optional placeId.
+ * Zod schema for structured activity per Step B:2.
+ * Output schema per activity:
+ * { title, description, timeOfDay, kind: 'place' | 'meal' | 'transit' | 'rest', placeRef?: <candidate id> }
  */
 export const ActivitySchema = z.object({
   title: z.string().describe('Title or name of the activity, attraction, or experience'),
   description: z
     .string()
-    .describe('Detailed description of what to do or see; only name places that exist in the provided verified places list'),
-  suggestedTime: z
+    .describe('Description of the activity. Only use facts present in candidate record (type, note, best time). For meals/transit/rest, do NOT name a specific restaurant, shop, tour operator, price or opening hours.'),
+  timeOfDay: z
+    .string()
+    .describe('Time of day or timeframe (e.g. "Morning", "Afternoon", "Evening", or "Night")'),
+  kind: z
+    .enum(['place', 'meal', 'transit', 'rest'])
+    .describe('Activity kind: "place" (must reference a candidate id), "meal", "transit", or "rest"'),
+  placeRef: z
     .string()
     .nullable()
     .optional()
-    .describe('Optional suggested time of day or timeframe (e.g. "Morning", "Afternoon", "Evening", or "10:00 AM")'),
-  placeId: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Exact placeId string from the verified places list, or null for generic activities'),
+    .describe('Exact candidate ID string from the verified candidate places list. Required if kind is "place".'),
 });
 
 /**
  * Zod schema for each day in the itinerary.
- * Each day contains dayNumber, activities (array of structured activity objects), estimatedCostINR, and accommodationSuggestion.
+ * Each day contains dayNumber, theme (theme generated from day\'s places), activities, estimatedCostINR, and accommodationSuggestion.
  */
 export const DayPlanSchema = z.object({
-  dayNumber: z.number().describe('The day number of the trip (e.g. 1, 2, etc.)'),
+  dayNumber: z.number().describe('The day number of the trip (e.g. 1, 2, 3)'),
+  theme: z
+    .string()
+    .describe('A short descriptive theme generated from that day\'s place activities (e.g. "Cliff walks and beaches")'),
   activities: z.array(ActivitySchema).describe('Array of structured activities planned for this day'),
-  estimatedCostINR: z.number().describe('Estimated cost for this day in INR'),
-  accommodationSuggestion: z.string().describe('Recommended accommodation or hotel for this day'),
+  estimatedCostINR: z.number().describe('Estimated stay/accommodation cost for this day in INR; 0 if no overnight stay (last day)'),
+  accommodationSuggestion: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Recommended accommodation for overnight stay on this day, or null/empty if departure day with no overnight stay'),
 });
 
 /**
@@ -42,206 +51,362 @@ export const ItinerarySchema = z.object({
 });
 
 /**
- * Attaches real places to itinerary activities by reference (placeId).
- * Looks up placeId in the attractions list passed to the composer.
- * If matched: attaches location = { lat, lon, placeName }.
- * If placeId is null, or if invalid / not found in list: sets location: null and placeId: null, and keeps description as-is.
- * Logs the count and grounded rate per generation.
- *
- * @param {Array<Object>} days - Array of DayPlan objects
- * @param {Array<Object>} attractions - List of verified attractions { placeId, name, category, lat, lon }
- * @returns {Array<Object>} Days with grounded activities
+ * Strips specific commercial restaurant, cafe, or shop names from meal titles/descriptions
+ * to enforce the rule: meals must not name a specific restaurant, shop, tour operator, price or opening hours.
  */
-export const attachGroundingLocations = (days, attractions = []) => {
-  if (!Array.isArray(days)) return [];
+export function sanitizeMealActivity(act) {
+  let title = (act.title || '').trim();
+  let description = (act.description || '').trim();
 
-  // Build map of verified attractions by placeId for fast lookup
-  const attractionsMap = new Map();
-  if (Array.isArray(attractions)) {
-    for (const attr of attractions) {
-      if (attr && attr.placeId != null) {
-        attractionsMap.set(String(attr.placeId).trim(), attr);
-      }
+  // Pattern matching specific restaurant/cafe/dhaba/bistro naming like:
+  // "Lunch at Fisherman's Cove", "Dinner at Cafe Del Mar", "Breakfast at Darjeeling Bakery"
+  const restaurantNamePattern = /\b(at|in|from)\s+([A-Z][a-zA-Z0-9'&.-]+(?:\s+[A-Z][a-zA-Z0-9'&.-]+)*\s+(?:Restaurant|Cafe|Café|Bistro|Dhaba|Bar|Grill|Kitchen|Eatery|Bakery|Diner|Lounge))\b/i;
+  const specificAtPattern = /\b(Lunch|Dinner|Breakfast)\s+at\s+([A-Z][a-zA-Z0-9'&.-]+(?:\s+[A-Z][a-zA-Z0-9'&.-]+)*)/i;
+
+  if (restaurantNamePattern.test(title)) {
+    title = title.replace(restaurantNamePattern, '$1 a local eatery');
+  } else if (specificAtPattern.test(title)) {
+    const match = title.match(specificAtPattern);
+    const mealType = match[1];
+    const placeName = match[2];
+    // If the name isn't generic words like "a local spot", "local restaurant"
+    if (!/local|hotel|guesthouse|resort|leisure/i.test(placeName)) {
+      title = `${mealType} at a local eatery`;
     }
   }
 
-  let groundedCount = 0;
-  let ungroundedCount = 0;
+  // Remove prices (e.g. ₹500, Rs. 500, 500 INR, $20) and opening hours (e.g. 9 AM - 5 PM)
+  description = description
+    .replace(/(?:₹|Rs\.?|INR|\$)\s*\d+(?:,\d+)*(?:\s*-\s*(?:₹|Rs\.?|INR|\$)?\s*\d+(?:,\d+)*)?/gi, '')
+    .replace(/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*-\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/gi, '')
+    .trim();
 
-  const processedDays = days.map((day) => {
+  return { title, description };
+}
+
+/**
+ * Validates and grounds itinerary days against the candidate places list.
+ * Enforces:
+ * - kind: 'place' MUST reference a candidate id; hallucinated refs are repaired or converted to plain 'rest' item ("Free time")
+ * - Coordinates are COPIED from the candidate by code (model never supplies lat/lon)
+ * - Max place activities/day based on pace (Balanced = 3, Relaxed = 2, Packed = 4)
+ * - Meal activities cannot name specific restaurants or prices
+ * - Last day has no overnight stay (accommodationSuggestion = null, estimatedCostINR = 0)
+ * - Computes grounding metadata: { candidateCount, sources, limited: boolean } (limited if distinct candidates used < 5)
+ *
+ * @param {Array<Object>} days - Array of DayPlan objects
+ * @param {Array<Object>} candidates - Candidate places list [{ id, name, type, lat, lon, source, note }]
+ * @param {Object} [options] - Options (pace, totalDays)
+ * @returns {{ days: Array<Object>, grounding: { candidateCount: number, sources: string[], limited: boolean } }}
+ */
+export function validateAndGroundItinerary(days = [], candidates = [], options = {}) {
+  if (!Array.isArray(days)) {
+    return {
+      days: [],
+      grounding: { candidateCount: candidates?.length || 0, sources: [], limited: true },
+    };
+  }
+
+  const candidateList = Array.isArray(candidates) ? candidates : [];
+  const candidateMap = new Map();
+  const candidateNameMap = new Map();
+
+  for (const c of candidateList) {
+    if (!c) continue;
+    const cid = String(c.id || c.placeId || '').trim();
+    if (cid) {
+      candidateMap.set(cid, c);
+      candidateMap.set(cid.toLowerCase(), c);
+    }
+    if (c.name) {
+      candidateNameMap.set(c.name.toLowerCase().trim(), c);
+    }
+  }
+
+  const pace = (options.pace || 'balanced').toLowerCase();
+  const maxPlacesPerDay = pace === 'relaxed' ? 2 : pace === 'packed' ? 4 : 3;
+  const distinctCandidatesUsed = new Set();
+  const totalDays = days.length;
+
+  const processedDays = days.map((day, dayIdx) => {
     if (!day || !Array.isArray(day.activities)) {
       return day;
     }
 
+    const isLastDay = dayIdx === totalDays - 1 && totalDays > 1;
+    let placeCountForDay = 0;
+    const dayPlaces = [];
+
     const processedActivities = day.activities.map((act) => {
-      let title = '';
-      let description = '';
-      let suggestedTime = null;
-      let rawPlaceId = null;
+      let title = (act.title || act.name || '').trim();
+      let description = (act.description || '').trim();
+      const timeOfDay = act.timeOfDay || act.suggestedTime || 'Morning';
+      let kind = (act.kind || '').toLowerCase().trim();
+      let rawRef = act.placeRef != null ? String(act.placeRef).trim() : act.placeId != null ? String(act.placeId).trim() : null;
 
-      if (typeof act === 'string') {
-        const timeMatch = act.match(
-          /^(Morning|Afternoon|Evening|Night|\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*:\s*(.*)$/i
-        );
-        if (timeMatch) {
-          title = timeMatch[2].trim();
-          description = act.trim();
-          suggestedTime = timeMatch[1].trim();
+      if (!['place', 'meal', 'transit', 'rest'].includes(kind)) {
+        if (rawRef && candidateMap.has(rawRef)) {
+          kind = 'place';
+        } else if (/lunch|dinner|breakfast|meal|snack|dining|food/i.test(title)) {
+          kind = 'meal';
+        } else if (/transfer|flight|train|bus|ferry|drive|travel|arrival|departure/i.test(title)) {
+          kind = 'transit';
         } else {
-          title = act.trim();
-          description = act.trim();
+          kind = 'rest';
         }
-      } else if (act && typeof act === 'object') {
-        title = (act.title || act.name || '').trim();
-        description = (act.description || '').trim();
-        suggestedTime = act.suggestedTime || null;
-        rawPlaceId = act.placeId != null ? String(act.placeId).trim() : null;
-      } else {
-        return act;
       }
 
-      // Check if placeId is explicit null/empty/sentinel
-      if (
-        !rawPlaceId ||
-        rawPlaceId.toLowerCase() === 'null' ||
-        rawPlaceId.toLowerCase() === 'undefined' ||
-        rawPlaceId.toLowerCase() === 'none' ||
-        rawPlaceId.toLowerCase() === 'n/a'
-      ) {
-        rawPlaceId = null;
-      }
-
-      let matchedPlace = null;
-      if (rawPlaceId && attractionsMap.has(rawPlaceId)) {
-        matchedPlace = attractionsMap.get(rawPlaceId);
-      }
-
-      let location = null;
-      let finalPlaceId = null;
-
-      if (matchedPlace) {
-        finalPlaceId = matchedPlace.placeId;
-        const lat = matchedPlace.lat ?? matchedPlace.latitude ?? null;
-        const lon = matchedPlace.lon ?? matchedPlace.longitude ?? null;
-        location = {
-          lat: lat != null && !isNaN(Number(lat)) ? Number(lat) : null,
-          lon: lon != null && !isNaN(Number(lon)) ? Number(lon) : null,
-          placeName: matchedPlace.name || title,
+      if (kind === 'meal') {
+        const sanitized = sanitizeMealActivity({ title, description });
+        return {
+          title: sanitized.title,
+          name: sanitized.title,
+          description: sanitized.description,
+          timeOfDay,
+          suggestedTime: timeOfDay,
+          kind: 'meal',
+          placeRef: null,
+          placeId: null,
+          location: null,
         };
-        groundedCount++;
-      } else {
-        // Disobeyed, invalid, or null placeId: set location: null and placeId: null, keep description as-is
-        finalPlaceId = null;
-        location = null;
-        ungroundedCount++;
       }
+
+      if (kind === 'transit' || kind === 'rest') {
+        return {
+          title,
+          name: title,
+          description,
+          timeOfDay,
+          suggestedTime: timeOfDay,
+          kind,
+          placeRef: null,
+          placeId: null,
+          location: null,
+        };
+      }
+
+      // kind === 'place'
+      // 1. Check pace limit: if day already reached max places, convert excess to rest
+      if (placeCountForDay >= maxPlacesPerDay) {
+        return {
+          title: 'Free time',
+          name: 'Free time',
+          description: 'Free time to relax and explore at your own pace.',
+          timeOfDay,
+          suggestedTime: timeOfDay,
+          kind: 'rest',
+          placeRef: null,
+          placeId: null,
+          location: null,
+        };
+      }
+
+      // 2. Validate placeRef
+      let matchedCandidate = null;
+      if (rawRef && candidateMap.has(rawRef)) {
+        matchedCandidate = candidateMap.get(rawRef);
+      } else if (rawRef && candidateMap.has(rawRef.toLowerCase())) {
+        matchedCandidate = candidateMap.get(rawRef.toLowerCase());
+      } else {
+        // Attempt repair: match candidate name in placeRef or title
+        if (rawRef && candidateNameMap.has(rawRef.toLowerCase())) {
+          matchedCandidate = candidateNameMap.get(rawRef.toLowerCase());
+        } else {
+          const lowerTitle = title.toLowerCase();
+          for (const [candName, cand] of candidateNameMap.entries()) {
+            if (lowerTitle.includes(candName) || candName.includes(lowerTitle)) {
+              matchedCandidate = cand;
+              break;
+            }
+          }
+        }
+      }
+
+      // 3. If invalid / hallucinated ref: convert to plain rest item "Free time"
+      if (!matchedCandidate) {
+        return {
+          title: 'Free time',
+          name: 'Free time',
+          description: 'Free time to relax and explore at your own pace.',
+          timeOfDay,
+          suggestedTime: timeOfDay,
+          kind: 'rest',
+          placeRef: null,
+          placeId: null,
+          location: null,
+        };
+      }
+
+      // 4. Valid place candidate: COPY coordinates directly from candidate record
+      placeCountForDay++;
+      distinctCandidatesUsed.add(matchedCandidate.id);
+      dayPlaces.push(matchedCandidate.name);
+
+      const lat = matchedCandidate.lat != null ? Number(matchedCandidate.lat) : null;
+      const lon = matchedCandidate.lon != null ? Number(matchedCandidate.lon) : null;
 
       return {
         title,
-        name: title, // backward compatibility for frontend and other services
+        name: title,
         description,
-        suggestedTime,
-        placeId: finalPlaceId,
-        location,
+        timeOfDay,
+        suggestedTime: timeOfDay,
+        kind: 'place',
+        placeRef: matchedCandidate.id,
+        placeId: matchedCandidate.id,
+        location: {
+          lat: !isNaN(lat) ? lat : null,
+          lon: !isNaN(lon) ? lon : null,
+          placeName: matchedCandidate.name,
+        },
       };
     });
 
+    // Theme generation from day's place activities if missing or generic
+    let theme = (day.theme || '').trim();
+    if (!theme || /day\s*\d+/i.test(theme)) {
+      if (dayPlaces.length > 0) {
+        theme = dayPlaces.slice(0, 2).join(' and ');
+      } else {
+        theme = `Exploration and Leisure`;
+      }
+    }
+
+    // Overnight stay & cost: last day has no stay and no stay cost
+    let accommodationSuggestion = day.accommodationSuggestion || null;
+    let estimatedCostINR = day.estimatedCostINR != null ? Number(day.estimatedCostINR) : 0;
+
+    if (isLastDay) {
+      accommodationSuggestion = null;
+      estimatedCostINR = 0;
+    }
+
     return {
       ...day,
+      theme,
+      accommodationSuggestion,
+      estimatedCostINR,
       activities: processedActivities,
     };
   });
 
-  const total = groundedCount + ungroundedCount;
-  const rate = total > 0 ? ((groundedCount / total) * 100).toFixed(1) : '0.0';
-  console.log(
-    `[Itinerary Grounding] Grounded activities: ${groundedCount}/${total} (${rate}%), ungrounded: ${ungroundedCount}`
+  const sources = Array.from(
+    new Set(candidateList.map((c) => c.source).filter(Boolean))
   );
 
-  return processedDays;
-};
+  const grounding = {
+    candidateCount: candidateList.length,
+    sources,
+    limited: distinctCandidatesUsed.size < 5,
+    distinctUsedCount: distinctCandidatesUsed.size,
+  };
 
-// Backward compatibility alias for any existing imports
+  return {
+    days: processedDays,
+    grounding,
+  };
+}
+
+// Backward compatibility alias for attachGroundingLocations
+export const attachGroundingLocations = (days, attractions = []) => {
+  const { days: groundedDays } = validateAndGroundItinerary(days, attractions);
+  return groundedDays;
+};
 export const geocodeItineraryActivities = attachGroundingLocations;
 
 /**
- * Helper to build a fallback day-by-day plan when LLM call is unavailable.
- * @param {Object} state 
- * @returns {Array<Object>}
+ * Builds fallback days when LLM call fails, strictly using provided candidates.
  */
-export const buildFallbackItineraryDays = (state) => {
+export const buildFallbackItineraryDays = (state, candidates = []) => {
   const destination = state?.destination || 'Destination';
-  const startDate = state?.startDate || new Date().toISOString().slice(0, 10);
-  const endDate = state?.endDate || startDate;
-  const interests = Array.isArray(state?.interests) && state.interests.length > 0
-    ? state.interests.join(', ')
-    : 'sightseeing and culture';
-  const attractions = Array.isArray(state?.attractions) ? state.attractions : [];
-  const accommodationOptions = Array.isArray(state?.accommodationOptions) ? state.accommodationOptions : [];
-  const personalizedContent = Array.isArray(state?.personalizedContent) ? state.personalizedContent : [];
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffDays = state?.days || Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) || 1);
-  const totalBudget =
-    state?.budgetEstimate != null
-      ? state.budgetEstimate
-      : diffDays * (state?.budgetTier === 'luxury' ? 10000 : state?.budgetTier === 'budget' ? 1500 : 4000);
-  const dailyCost = Math.round(totalBudget / diffDays);
-
-  const defaultHotel =
-    accommodationOptions[0]?.name ||
-    (state?.budgetTier === 'luxury'
-      ? `5-Star Luxury Resort & Spa in ${destination}`
-      : state?.budgetTier === 'budget'
-      ? `Budget Traveler Hostel / Guesthouse in ${destination}`
-      : `Boutique Hotel & Suites in ${destination}`);
+  const tripDays = state?.days || 3;
+  const budget = state?.budgetEstimate || 30000;
+  const dailyRate = Math.round(budget / tripDays);
+  const candidatePool = Array.isArray(candidates) && candidates.length > 0 ? [...candidates] : [];
 
   const days = [];
-  const isNightlife = interests.toLowerCase().includes('nightlife');
-  const hasHiddenGem = interests.toLowerCase().includes('hidden gem') || (state?.rawRequest || '').toLowerCase().includes('hidden gem');
+  for (let d = 1; d <= tripDays; d++) {
+    const isLastDay = d === tripDays && tripDays > 1;
+    const dayPlaces = [];
+    const activities = [];
 
-  for (let i = 1; i <= diffDays; i++) {
-    const attractionObj = attractions[i - 1];
-    const attractionName = attractionObj?.name || `${destination} Central Area`;
-    const blurb = personalizedContent[i - 1]?.text || `Enjoy local experiences tailored to ${interests}.`;
-    const gemActivityDesc = hasHiddenGem && i === Math.min(2, diffDays)
-      ? `Explore an authentic hidden gem off the beaten path in ${destination} for a unique local experience.`
-      : `${blurb.slice(0, 120)}...`;
-    const eveningActivityDesc = isNightlife
-      ? `Experience the vibrant nightlife at local bars, cocktail lounges, and night entertainment districts in ${destination}.`
-      : `Dinner at a popular local restaurant enjoying the atmosphere in ${destination}.`;
+    // Morning place from candidatePool
+    if (candidatePool.length > 0) {
+      const place = candidatePool.shift();
+      dayPlaces.push(place.name);
+      activities.push({
+        title: `Visit ${place.name}`,
+        description: `Explore ${place.name} (${place.type || 'Attraction'}).`,
+        timeOfDay: 'Morning',
+        kind: 'place',
+        placeRef: place.id,
+      });
+    } else {
+      activities.push({
+        title: 'Morning Walk',
+        description: `Relaxing morning stroll around ${destination}.`,
+        timeOfDay: 'Morning',
+        kind: 'rest',
+        placeRef: null,
+      });
+    }
 
+    // Afternoon meal
+    activities.push({
+      title: 'Lunch at a local eatery',
+      description: 'Enjoy regional dishes and refreshments.',
+      timeOfDay: 'Afternoon',
+      kind: 'meal',
+      placeRef: null,
+    });
+
+    // Afternoon place or rest
+    if (candidatePool.length > 0) {
+      const place = candidatePool.shift();
+      dayPlaces.push(place.name);
+      activities.push({
+        title: `Explore ${place.name}`,
+        description: `Discover ${place.name} (${place.type || 'Attraction'}).`,
+        timeOfDay: 'Afternoon',
+        kind: 'place',
+        placeRef: place.id,
+      });
+    } else {
+      activities.push({
+        title: 'Free time',
+        description: 'Free time to relax and explore at your own pace.',
+        timeOfDay: 'Afternoon',
+        kind: 'rest',
+        placeRef: null,
+      });
+    }
+
+    // Evening
+    if (isLastDay) {
+      activities.push({
+        title: 'Departure Preparation',
+        description: `Conclude your visit to ${destination} and prepare for departure.`,
+        timeOfDay: 'Evening',
+        kind: 'transit',
+        placeRef: null,
+      });
+    } else {
+      activities.push({
+        title: 'Dinner at a local restaurant',
+        description: 'Casual evening dining featuring local cuisine.',
+        timeOfDay: 'Evening',
+        kind: 'meal',
+        placeRef: null,
+      });
+    }
+
+    const theme = dayPlaces.length > 0 ? dayPlaces.join(' and ') : `${destination} Highlights`;
     days.push({
-      dayNumber: i,
-      activities: [
-        {
-          title: `Explore ${attractionName}`,
-          name: `Explore ${attractionName}`,
-          description: `Discover local sights, landmarks, and highlights around ${attractionName} in ${destination}.`,
-          suggestedTime: 'Morning',
-          placeId: attractionObj?.placeId || null,
-          location: null,
-        },
-        {
-          title: hasHiddenGem && i === Math.min(2, diffDays) ? `Hidden Gem in ${destination}` : `${destination} Highlights`,
-          name: hasHiddenGem && i === Math.min(2, diffDays) ? `Hidden Gem in ${destination}` : `${destination} Highlights`,
-          description: gemActivityDesc,
-          suggestedTime: 'Afternoon',
-          placeId: null,
-          location: null,
-        },
-        {
-          title: isNightlife ? `Nightlife & Evening Entertainment` : `Local Dining & Evening Stroll`,
-          name: isNightlife ? `Nightlife & Evening Entertainment` : `Local Dining & Evening Stroll`,
-          description: eveningActivityDesc,
-          suggestedTime: 'Evening',
-          placeId: null,
-          location: null,
-        },
-      ],
-      estimatedCostINR: dailyCost,
-      accommodationSuggestion: defaultHotel,
+      dayNumber: d,
+      theme,
+      activities,
+      estimatedCostINR: isLastDay ? 0 : dailyRate,
+      accommodationSuggestion: isLastDay ? null : `Comfortable stay in central ${destination}`,
     });
   }
 
@@ -250,12 +415,9 @@ export const buildFallbackItineraryDays = (state) => {
 
 /**
  * Composer Node for LangGraph.
- * Combines destination, dates, budgetTier, interests, weather, attractions,
- * accommodationOptions, budgetEstimate, and personalizedContent into context.
- * Uses ChatGroq with .withStructuredOutput() to generate a coherent day-by-day plan.
- * Writes the result to state.itinerary.
- * @param {Object} state - Graph state containing all tool and personalization outputs
- * @returns {Promise<{itinerary: Array<Object>}>}
+ * Feeds ONLY the verified candidate places list to the planner prompt.
+ * Employs strict in-code validation, coordinate copy, pace enforcement, and grounding calculation.
+ * Writes result to state.itinerary and state.grounding.
  */
 export const composerNode = async (state) => {
   const apiKey = process.env.GROQ_API_KEY;
@@ -266,76 +428,60 @@ export const composerNode = async (state) => {
       ? Math.max(1, Math.round((new Date(state.endDate) - new Date(state.startDate)) / (1000 * 60 * 60 * 24)))
       : 3);
 
-  const budget = state?.budgetEstimate || 50000;
-  const perDayBudget = Math.round(budget / (state?.days || tripDays || 3));
+  const budget = state?.budgetEstimate || 30000;
+  const perDayBudget = Math.round(budget / Math.max(1, tripDays - 1));
 
+  const rawInterests = state?.interests;
   const interestsList =
-    Array.isArray(state?.interests) && state.interests.length > 0
-      ? state.interests.join(', ')
-      : typeof state?.interests === 'string' && state.interests.trim()
-      ? state.interests.trim()
-      : 'sightseeing and culture';
+    Array.isArray(rawInterests) && rawInterests.length > 0
+      ? rawInterests.join(', ')
+      : typeof rawInterests === 'string' && rawInterests.trim()
+      ? rawInterests.trim()
+      : 'not specified';
 
-  const attractions = Array.isArray(state?.attractions) ? state.attractions : [];
-  const formattedAttractions = attractions.length > 0
-    ? attractions
-        .map(
-          (a) =>
-            `- [placeId: "${a.placeId}"] ${a.name}${a.category ? ` (${a.category})` : ''}`
-        )
-        .join('\n')
-    : '(No verified attractions available for this destination)';
+  const candidates = Array.isArray(state?.attractions) ? state.attractions : [];
+  const formattedCandidates =
+    candidates.length > 0
+      ? candidates
+          .map(
+            (c) =>
+              `- [candidateId: "${c.id || c.placeId}"] ${c.name} (type: ${c.type || 'Attraction'}${c.note ? `, note: ${c.note}` : ''})`
+          )
+          .join('\n')
+      : '(No verified candidates found for this destination)';
 
   const systemPrompt = `You are an expert travel planner assistant.
-Your task is to create a coherent, realistic day-by-day travel plan based on the provided trip context.
+Your task is to create a coherent, realistic day-by-day travel plan based exclusively on the provided candidate places.
 
-You MUST strictly enforce the following rules:
+STRICT GROUNDING & CANDIDATE RULES:
+1. ONLY USE CANDIDATES FROM THE PROVIDED CANDIDATE LIST:
+   - For every activity with kind: "place", you MUST provide placeRef exactly matching one of the candidateId strings from the Candidate Places List.
+   - NEVER invent or name a place, attraction, viewpoint, beach, temple, or venue that is not in the Candidate Places List.
+   - If you want an activity that is not at one of the candidate places, set kind: "meal", "transit", or "rest" with placeRef: null.
+2. MEALS, TRANSIT & REST:
+   - Meals, transit, and rest activities MUST have placeRef: null.
+   - Do NOT name a specific restaurant, cafe, shop, tour operator, price, or opening hours. Use generic descriptions (e.g. "Lunch at a local cafe", "Evening dining at a traditional restaurant").
+3. DESCRIPTIONS:
+   - For place activities, only use facts present in the candidate record (type, note, best time). Do not invent tours, boat charters, sessions, or events unless explicitly supported by the candidate record.
+4. DAY HEADINGS & STAY:
+   - In 'theme' for each day, generate a descriptive theme from that day's place activities (e.g. "Cliff walks and beaches"). Do NOT mention accommodation in the theme.
+   - In 'accommodationSuggestion', suggest suitable accommodation for overnight stays on days 1 to ${tripDays - 1}.
+   - On the LAST day (Day ${tripDays}, departure day), there is NO overnight stay: set accommodationSuggestion to null or empty, and estimatedCostINR to 0.
+5. BUDGET ALLOCATION:
+   - Total budget: ${budget} INR. Allocate stay cost estimatedCostINR for days with overnight stays (~${perDayBudget} INR/night). Last day estimatedCostINR MUST be 0.
+6. PACE:
+   - Maximum 3 place activities per day for balanced pace.`;
 
-1. STRICT INTEREST & HIGHLIGHT ADHERENCE:
-   - Prioritize the user's explicit interests (${interestsList}).
-   - At least 60-70% of suggested activities MUST directly match these interests. If "nightlife" is selected, evenings MUST feature bars, clubs, izakayas, night markets, or evening entertainment districts.
-   - If the user requested "hidden gem" or "hidden gems", you MUST feature authentic, offbeat hidden gems and secret spots in the daily itinerary.
-
-2. GROUNDED PLACES & VENUE RULES (STRICT):
-   - You are provided with a verified list of attractions and landmarks for this destination, each having an exact "placeId" and name.
-   - When an activity involves a specific venue or landmark, placeId MUST be the exact placeId from the provided list.
-   - NEVER invent or hallucinate a venue, attraction, or landmark name that isn't in the provided list.
-   - Generic activities (such as check-in, check-out, transit/travel, airport/station transfers, rest, relaxation, or meals without a named venue from the list) MUST have placeId: null.
-   - In activity descriptions, only name places, venues, and landmarks that exist in the provided verified list.
-   - Do NOT generate coordinates or location fields directly.
-
-3. ACCOMMODATION & STAY SUGGESTIONS:
-   - In accommodationSuggestion for each day, recommend suitable areas to stay and types of accommodation matching the user's requested budget tier (e.g. for budget: recommended guesthouses, boutique hostels, or budget rooms in central areas; for luxury: 5-star beach resorts).
-
-4. CRITICAL BUDGET RULES:
-- You have a strict budget of ${budget} INR total.
-- This means you MUST allocate approximately ${perDayBudget} INR per day.
-- Do NOT output a low default budget like 1500 INR. 
-- The 'estimatedCostINR' for EACH day MUST be between ${Math.round(perDayBudget * 0.8)} INR and ${Math.round(perDayBudget * 1.2)} INR.
-- Suggest hotels and activities that actually cost this amount (e.g., boutique hotels, upscale dining, premium club entry).
-
-5. CONTEXT INTEGRATION & SCHEMA:
-   - Incorporate the destination (${state?.destination || 'N/A'}), weather forecast, verified attractions, and personalized content blurbs into the daily schedule.
-   - Output strictly structured output conforming to the itinerary schema with dayNumber, activities (array of objects with title, description, optional suggestedTime, and optional placeId), estimatedCostINR (number), and accommodationSuggestion (string) for each day.
-
-6. FORMATTING & CHAT BUBBLE RULES:
-   - In all activity descriptions, daily highlights, and replies, AVOID Markdown tables (| Col 1 | Col 2 |). Tables are an awkward fit for narrow mobile chat bubbles and itinerary cards. Prefer plain prose, clear section headings, or short bullet lists instead. Headings and bold text are supported, but do NOT format schedules or details as Markdown tables.`;
-
-  const userPrompt = `Here is the gathered trip context and research data:
+  const userPrompt = `Trip Context:
 - Destination: ${state?.destination || 'N/A'}
 - Dates: ${state?.startDate || 'N/A'} to ${state?.endDate || 'N/A'} (${tripDays} days)
-- Budget Tier: ${state?.budgetTier || 'mid'}
-- Total Budget Estimate: ${budget} INR (~${perDayBudget} INR/day)
 - Interests: ${interestsList}
-- Weather Forecast: ${JSON.stringify(state?.weather || {})}
-- Accommodation Options: ${JSON.stringify(state?.accommodationOptions || [])}
-- Personalized Content Blurbs: ${JSON.stringify(state?.personalizedContent || [])}
-- Raw Request: "${state?.rawRequest || ''}"
+- Total Budget: ${budget} INR
 
-Verified Attractions & Landmarks List (select placeId strictly from this list for venue/landmark activities):
-${formattedAttractions}
+Verified Candidate Places List:
+${formattedCandidates}
 
-Please create a detailed, day-by-day itinerary that strictly follows the rules above, focuses 60-70% on ${interestsList}, grounds specific venue activities using placeId from the verified list, and accurately targets between ${Math.round(perDayBudget * 0.8)} INR and ${Math.round(perDayBudget * 1.2)} INR for each day's estimatedCostINR.`;
+Please produce a day-by-day plan strictly following the schema and rules. For kind: "place", placeRef MUST match a candidateId above.`;
 
   try {
     if (!apiKey) {
@@ -354,20 +500,21 @@ Please create a detailed, day-by-day itinerary that strictly follows the rules a
       { role: 'user', content: userPrompt },
     ]);
 
-    const days = result?.days || (Array.isArray(result) ? result : []);
-
-    if (Array.isArray(days) && days.length > 0) {
-      const groundedDays = attachGroundingLocations(days, attractions);
+    const rawDays = result?.days || (Array.isArray(result) ? result : []);
+    if (Array.isArray(rawDays) && rawDays.length > 0) {
+      const { days: groundedDays, grounding } = validateAndGroundItinerary(rawDays, candidates, {
+        pace: state?.pace || 'balanced',
+      });
       return {
         itinerary: groundedDays,
+        grounding,
       };
     }
 
     throw new Error('Structured output did not contain valid days array');
   } catch (error) {
-    console.warn('ChatGroq composer error, attempting secondary fallback:', error.message);
+    console.warn('ChatGroq composer error, attempting secondary fallback or heuristic:', error.message);
 
-    // Try secondary model openai/gpt-oss-20b if different
     if (apiKey && (process.env.GROQ_MODEL || 'openai/gpt-oss-120b') !== 'openai/gpt-oss-20b') {
       try {
         const secondaryModel = new ChatGroq({
@@ -381,11 +528,14 @@ Please create a detailed, day-by-day itinerary that strictly follows the rules a
           { role: 'user', content: userPrompt },
         ]);
 
-        const days = secondaryResult?.days || (Array.isArray(secondaryResult) ? secondaryResult : []);
-        if (Array.isArray(days) && days.length > 0) {
-          const groundedDays = attachGroundingLocations(days, attractions);
+        const rawDays = secondaryResult?.days || (Array.isArray(secondaryResult) ? secondaryResult : []);
+        if (Array.isArray(rawDays) && rawDays.length > 0) {
+          const { days: groundedDays, grounding } = validateAndGroundItinerary(rawDays, candidates, {
+            pace: state?.pace || 'balanced',
+          });
           return {
             itinerary: groundedDays,
+            grounding,
           };
         }
       } catch (secErr) {
@@ -393,10 +543,13 @@ Please create a detailed, day-by-day itinerary that strictly follows the rules a
       }
     }
 
-    const fallbackDays = buildFallbackItineraryDays(state);
-    const groundedFallback = attachGroundingLocations(fallbackDays, attractions);
+    const fallbackDays = buildFallbackItineraryDays(state, candidates);
+    const { days: groundedFallback, grounding } = validateAndGroundItinerary(fallbackDays, candidates, {
+      pace: state?.pace || 'balanced',
+    });
     return {
       itinerary: groundedFallback,
+      grounding,
     };
   }
 };

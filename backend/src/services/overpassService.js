@@ -59,7 +59,7 @@ export const CATEGORY_OSM_MAPPING = {
   },
   all: {
     tagQl: [
-      'nwr["amenity"="place_of_worship"]["name"]',
+      'node["amenity"="place_of_worship"]["name"]',
       'nwr["natural"="beach"]["name"]',
       'nwr["tourism"="museum"]["name"]',
       'nwr["amenity"~"^(bar|nightclub|pub)$"]["name"]',
@@ -198,33 +198,46 @@ export async function findTaggedPlaces(lat, lon, category, destinationHint = '')
     return cached.data;
   }
 
-  const query = buildOverpassQuery(lat, lon, catKey);
-  const mapping = CATEGORY_OSM_MAPPING[catKey] || CATEGORY_OSM_MAPPING.all;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 18000);
-
   try {
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: {
-        'User-Agent': 'Travalastic/1.0 (contact: https://github.com/travalastic/travalastic)',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: controller.signal,
-    });
+    const query = buildOverpassQuery(lat, lon, catKey);
+    const mapping = CATEGORY_OSM_MAPPING[catKey] || CATEGORY_OSM_MAPPING.all;
 
-    clearTimeout(timeoutId);
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',
+  ];
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`Overpass API responded with HTTP ${response.status}: ${errText.slice(0, 100)}`);
+  let elements = [];
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'Travalastic/1.0 (contact: https://github.com/travalastic/travalastic)',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data?.elements)) {
+          elements = data.elements;
+          break;
+        }
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
     }
-
-    const data = await response.json();
-    const elements = Array.isArray(data?.elements) ? data.elements : [];
+  }
 
     const results = [];
     const seenNames = new Set();
@@ -272,8 +285,8 @@ export async function findTaggedPlaces(lat, lon, category, destinationHint = '')
 
     return results;
   } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
+    console.warn('[Overpass] Query failed:', err.message);
+    return [];
   }
 }
 

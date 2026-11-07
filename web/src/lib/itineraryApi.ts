@@ -4,7 +4,10 @@ export interface BackendActivity {
   title: string;
   name?: string;
   description: string;
+  timeOfDay?: string | null;
   suggestedTime: string | null;
+  kind?: 'place' | 'meal' | 'transit' | 'rest';
+  placeRef?: string | null;
   placeId: string | null;
   location?: {
     lat: number | null;
@@ -17,6 +20,7 @@ export interface BackendActivity {
 
 export interface BackendDayPlan {
   dayNumber: number;
+  theme?: string;
   activities: BackendActivity[];
   estimatedCostINR?: number;
   accommodationSuggestion?: string;
@@ -25,6 +29,11 @@ export interface BackendDayPlan {
 export interface BackendGenerateResponse {
   itineraryId: string;
   itinerary: BackendDayPlan[];
+  grounding?: {
+    candidateCount: number;
+    sources: string[];
+    limited: boolean;
+  };
 }
 
 export interface JourneyDNA {
