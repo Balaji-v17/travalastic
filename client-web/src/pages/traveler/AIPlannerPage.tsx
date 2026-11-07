@@ -1,449 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
-import { hotels, activities, flights, type ItineraryDay as StoredItineraryDay } from '../../data/mockData';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface JourneyDNA {
-  destination: string;
-  destinationId: string;
-  origin: string;
-  startDate: string;
-  nights: number;
-  travelers: number;
-  budget: number;
-  pace: 'relaxed' | 'balanced' | 'packed';
-  comfort: 'smart' | 'comfortable' | 'premium' | 'luxury';
-  interests: string[];
-  mustHave: string;
-  avoid: string;
-  notes: string;
-}
-
-interface JourneyItem {
-  id: string;
-  time: string;
-  title: string;
-  type: 'flight' | 'hotel' | 'activity' | 'transfer' | 'meal' | 'free';
-  duration: string;
-  cost: number;
-  entityId?: string;
-  entityType?: 'hotel' | 'activity' | 'flight';
-  status: 'planned' | 'booked';
-  bookingId?: string;
-  note?: string;
-  aiReason?: string;
-}
-
-interface JourneyDay {
-  day: number;
-  date: string;
-  location: string;
-  title: string;
-  items: JourneyItem[];
-}
-
-interface HealthScore {
-  overall: number;
-  budget: number;
-  pace: number;
-  interests: number;
-  convenience: number;
-  travelTime: number;
-  hotels: number;
-  weakNote?: string;
-}
-
-interface BudgetBreakdown {
-  flights: number;
-  hotels: number;
-  transport: number;
-  experiences: number;
-  food: number;
-  buffer: number;
-  total: number;
-}
-
-interface GeneratedJourney {
-  dna: JourneyDNA;
-  title: string;
-  route: string[];
-  days: JourneyDay[];
-  budget: BudgetBreakdown;
-  health: HealthScore;
-  primaryHotelId: string;
-  primaryFlightId: string;
-  version: number;
-  savedJourneyId?: string;
-  aiMessage?: string;
-  alternativeVersion?: Omit<GeneratedJourney, 'alternativeVersion'>;
-}
-
-// ─── Japan journey template (references real entity IDs) ─────────────────────
-
-function buildJapanJourney(dna: JourneyDNA, comfort: string): GeneratedJourney {
-  const hotelTokyoId = comfort === 'luxury' ? 'ht-002' : 'ht-001';
-  const hotelKyotoId = comfort === 'luxury' ? 'ht-004' : 'ht-003';
-  const flightId = comfort === 'luxury' ? 'fl-001' : 'fl-002';
-
-  const tokyoHotel = hotels.find((h) => h.id === hotelTokyoId)!;
-  const kyotoHotel = hotels.find((h) => h.id === hotelKyotoId)!;
-  const flight = flights.find((f) => f.id === flightId)!;
-  const domesticFlight = flights.find((f) => f.id === 'fl-022')!;
-
-  const hotelNightsPerCity = Math.floor(dna.nights / 2);
-
-  const flightCost = (flight?.price ?? 48500) * dna.travelers;
-  const domFltCost = (domesticFlight?.price ?? 8200) * dna.travelers;
-  const tokyoHotelCost = (tokyoHotel?.pricePerNight ?? 32000) * hotelNightsPerCity;
-  const kyotoHotelCost = (kyotoHotel?.pricePerNight ?? 55000) * hotelNightsPerCity;
-  const expCost = 4500 * dna.travelers + 3200 * dna.travelers + 5500 * dna.travelers;
-  const transportCost = 12000;
-  const foodCost = 3000 * dna.nights;
-  const bufferCost = Math.round((flightCost + tokyoHotelCost + kyotoHotelCost + expCost + transportCost + foodCost) * 0.05);
-  const total = flightCost + tokyoHotelCost + kyotoHotelCost + domFltCost + expCost + transportCost + foodCost + bufferCost;
-
-  const startDate = new Date(dna.startDate);
-  const fmt = (offset: number) => {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() + offset);
-    return d.toISOString().split('T')[0];
-  };
-
-  const hasFood = dna.interests.includes('Food');
-  const hasCulture = dna.interests.includes('Culture');
-  const extraActivity: JourneyItem | null = hasFood ? {
-    id: 'food-extra',
-    time: '13:00',
-    title: 'Ramen Tasting Walk — Shinjuku & Shibuya',
-    type: 'meal',
-    duration: '2h',
-    cost: 2500 * dna.travelers,
-    status: 'planned',
-    aiReason: "Added because Food is in your Journey DNA. Covers three regional ramen styles in a single walk.",
-  } : hasCulture ? {
-    id: 'culture-extra',
-    time: '15:00',
-    title: 'Harajuku & Takeshita Street Culture Walk',
-    type: 'activity',
-    duration: '2h',
-    cost: 2000 * dna.travelers,
-    entityId: 'ac-001',
-    entityType: 'activity',
-    status: 'planned',
-    aiReason: "Added because Culture is in your Journey DNA.",
-  } : null;
-
-  const day2Items: JourneyItem[] = [
-    { id: 'd2-1', time: '08:00', title: 'Tsukiji Outer Market Food Tour', type: 'activity', duration: '3h', cost: 4500 * dna.travelers, entityId: 'ac-002', entityType: 'activity', status: 'planned', aiReason: "Top-rated food experience that directly matches your Food & Culture interests. Rated 4.9/5 across 2,167 reviews." },
-    { id: 'd2-2', time: '12:30', title: 'Ramen lunch — Fuunji, Shinjuku', type: 'meal', duration: '1h', cost: 1200 * dna.travelers, status: 'planned' },
-    { id: 'd2-3', time: '14:00', title: 'Shibuya & Harajuku Culture Walk', type: 'activity', duration: '4h', cost: 3200 * dna.travelers, entityId: 'ac-001', entityType: 'activity', status: 'planned', aiReason: "Covers Harajuku Takeshita Street, Omotesando and the Shibuya crossing — the core Tokyo cultural circuit." },
-  ];
-  if (extraActivity) day2Items.push(extraActivity);
-
-  const days: JourneyDay[] = [
-    {
-      day: 1, date: fmt(0), location: 'Tokyo', title: 'Arrival & Shinjuku',
-      items: [
-        { id: 'd1-1', time: '02:30', title: `${flight?.airline ?? 'IndiGo'} ${flight?.flightNumber ?? '6E-812'} · Mumbai → Tokyo`, type: 'flight', duration: flight?.duration ?? '9h 15m', cost: flightCost, entityId: flightId, entityType: 'flight', status: 'planned', aiReason: `Non-stop Mumbai to Tokyo. Chosen for direct routing and ${dna.comfort === 'luxury' ? 'business class upgrade availability' : 'best price-to-quality ratio'}.` },
-        { id: 'd1-2', time: '14:45', title: 'Airport Transfer to Hotel', type: 'transfer', duration: '1h 30m', cost: 4500, status: 'planned' },
-        { id: 'd1-3', time: '16:30', title: `Check-in: ${tokyoHotel?.name ?? 'Park Hyatt Tokyo'}`, type: 'hotel', duration: '', cost: tokyoHotelCost, entityId: hotelTokyoId, entityType: 'hotel', status: 'planned', aiReason: `${tokyoHotel?.description?.split('.')[0] ?? 'Selected for its central Shinjuku location and premium amenities'}. Matches your ${dna.comfort} comfort preference.` },
-        { id: 'd1-4', time: '20:00', title: 'Welcome dinner — Kozue Restaurant', type: 'meal', duration: '2h', cost: 8000 * dna.travelers, status: 'planned' },
-      ],
-    },
-    {
-      day: 2, date: fmt(1), location: 'Tokyo', title: 'Food & Culture',
-      items: day2Items,
-    },
-    {
-      day: 3, date: fmt(2), location: 'Tokyo', title: 'Imperial & Traditional',
-      items: [
-        { id: 'd3-1', time: '09:00', title: 'Senso-ji Temple, Asakusa', type: 'activity', duration: '2h', cost: 0, status: 'planned', aiReason: "Free entry. Asakusa is Tokyo's oldest district — placed on Day 3 so you have a relaxed morning after the cultural day." },
-        { id: 'd3-2', time: '11:30', title: 'Nakamise Shopping Street & lunch', type: 'meal', duration: '2h', cost: 2000 * dna.travelers, status: 'planned' },
-        { id: 'd3-3', time: '14:30', title: 'Tokyo National Museum, Ueno', type: 'activity', duration: '3h', cost: 1000 * dna.travelers, status: 'planned' },
-        { id: 'd3-4', time: '20:00', title: 'Yakitori Alley dinner — Shinjuku', type: 'meal', duration: '2h', cost: 3000 * dna.travelers, status: 'planned' },
-      ],
-    },
-    {
-      day: 4, date: fmt(3), location: 'Kyoto', title: 'Tokyo → Kyoto · Gion Evening',
-      items: [
-        { id: 'd4-1', time: '11:00', title: 'Hotel checkout', type: 'hotel', duration: '', cost: 0, status: 'planned' },
-        { id: 'd4-2', time: '14:00', title: `${domesticFlight?.airline ?? 'Japan Airlines'} ${domesticFlight?.flightNumber ?? 'JL-404'} · Tokyo → Osaka (Kyoto)`, type: 'flight', duration: domesticFlight?.duration ?? '1h 15m', cost: domFltCost, entityId: 'fl-022', entityType: 'flight', status: 'planned', aiReason: "Domestic flight reduces Tokyo-Kyoto travel to 1h 15m vs 2h 30m by Shinkansen at a similar price point, freeing your afternoon." },
-        { id: 'd4-3', time: '17:00', title: `Check-in: ${kyotoHotel?.name ?? 'The Ritz-Carlton Kyoto'}`, type: 'hotel', duration: '', cost: kyotoHotelCost, entityId: hotelKyotoId, entityType: 'hotel', status: 'planned', aiReason: `${kyotoHotel?.description?.split('.')[0] ?? "On the banks of the Kamogawa River"}. Placed before Osaka so cultural experiences are grouped together, reducing backtracking.` },
-        { id: 'd4-4', time: '19:30', title: 'Gion district evening walk', type: 'activity', duration: '2h', cost: 0, status: 'planned' },
-      ],
-    },
-    {
-      day: 5, date: fmt(4), location: 'Kyoto', title: 'Culture Deep Dive',
-      items: [
-        { id: 'd5-1', time: '09:00', title: 'Tea Ceremony & Kimono Experience', type: 'activity', duration: '2.5h', cost: 5500 * dna.travelers, entityId: 'ac-003', entityType: 'activity', status: 'planned', aiReason: "Placed in the morning for authentic lighting and less crowded studios. Matches your Culture and Photography interests." },
-        { id: 'd5-2', time: '13:00', title: 'Nishiki Market lunch — local street food', type: 'meal', duration: '1.5h', cost: 3000 * dna.travelers, status: 'planned' },
-        { id: 'd5-3', time: '15:30', title: 'Arashiyama Bamboo Dawn Walk', type: 'activity', duration: '3h', cost: 4200 * dna.travelers, entityId: 'ac-004', entityType: 'activity', status: 'planned', aiReason: "Afternoon visit is quieter than early morning and catches better light for Photography." },
-        { id: 'd5-4', time: '19:00', title: 'Kaiseki dinner — Kikunoi', type: 'meal', duration: '2h 30m', cost: 12000 * dna.travelers, status: 'planned' },
-      ],
-    },
-    {
-      day: 6, date: fmt(5), location: 'Kyoto', title: 'Nijo Castle & Free Afternoon',
-      items: [
-        { id: 'd6-1', time: '10:00', title: 'Nijo Castle & Imperial Palace', type: 'activity', duration: '3h', cost: 1200 * dna.travelers, status: 'planned' },
-        { id: 'd6-2', time: '14:00', title: 'Free afternoon — shopping or Philosopher\'s Path', type: 'free', duration: '4h', cost: 0, status: 'planned', note: dna.pace === 'relaxed' ? 'Kept free to match your relaxed pace.' : undefined },
-        { id: 'd6-3', time: '19:30', title: 'Pontocho alley dinner', type: 'meal', duration: '2h', cost: 4000 * dna.travelers, status: 'planned' },
-      ],
-    },
-    {
-      day: 7, date: fmt(6), location: 'Tokyo', title: 'Return to Tokyo · Last Morning',
-      items: [
-        { id: 'd7-1', time: '11:00', title: 'Hotel checkout & transfer to airport', type: 'transfer', duration: '2h', cost: 5000, status: 'planned' },
-        { id: 'd7-2', time: '14:00', title: 'Meiji Shrine & Yoyogi Park', type: 'activity', duration: '2h', cost: 0, status: 'planned', note: 'If time allows before departure' },
-      ],
-    },
-    {
-      day: dna.nights, date: fmt(dna.nights - 1), location: 'Mumbai', title: 'Departure',
-      items: [
-        { id: 'd8-1', time: '02:30', title: `Return flight · Tokyo → Mumbai`, type: 'flight', duration: '9h 15m', cost: 0, status: 'planned', note: 'Return included in outbound flight cost' },
-      ],
-    },
-  ];
-
-  const budget: BudgetBreakdown = {
-    flights: flightCost + domFltCost,
-    hotels: tokyoHotelCost + kyotoHotelCost,
-    transport: transportCost,
-    experiences: expCost,
-    food: foodCost,
-    buffer: bufferCost,
-    total,
-  };
-
-  const budgetFit = Math.min(100, Math.round(90 + (dna.budget - total) / dna.budget * 20));
-  const paceScore = dna.pace === 'relaxed' ? 94 : dna.pace === 'packed' ? 78 : 88;
-  const interestScore = dna.interests.length > 0 ? Math.min(99, 82 + dna.interests.length * 4) : 80;
-  const travelTimeScore = 84;
-  const hotelScore = comfort === 'luxury' ? 97 : comfort === 'premium' ? 93 : 87;
-  const convenienceScore = 96;
-  const overall = Math.round((budgetFit + paceScore + interestScore + travelTimeScore + hotelScore + convenienceScore) / 6);
-
-  return {
-    dna,
-    title: `Your Japan Journey`,
-    route: [dna.origin, 'Tokyo', 'Kyoto', dna.origin],
-    days,
-    budget,
-    health: {
-      overall,
-      budget: budgetFit,
-      pace: paceScore,
-      interests: interestScore,
-      convenience: convenienceScore,
-      travelTime: travelTimeScore,
-      hotels: hotelScore,
-      weakNote: travelTimeScore < 87 ? 'Day 4 contains 4h 20m of intercity travel. Domestic flight reduces this vs Shinkansen.' : undefined,
-    },
-    primaryHotelId: hotelTokyoId,
-    primaryFlightId: flightId,
-    version: 1,
-  };
-}
-
-function buildGenericJourney(dna: JourneyDNA): GeneratedJourney {
-  const destHotel = hotels.find((h) => h.destinationId === dna.destinationId || h.destination === dna.destinationId);
-  const destActivity = activities.find((a) => a.destinationId === dna.destinationId || a.destination === dna.destinationId);
-  const destFlight = flights.find((f) => f.destinationId === dna.destinationId);
-
-  const hotelCost = (destHotel?.pricePerNight ?? 25000) * dna.nights;
-  const flightCost = (destFlight?.price ?? 35000) * dna.travelers;
-  const expCost = (destActivity?.price ?? 4000) * dna.travelers * 3;
-  const transportCost = 10000;
-  const foodCost = 2500 * dna.nights;
-  const bufferCost = Math.round((hotelCost + flightCost + expCost + transportCost + foodCost) * 0.05);
-  const total = hotelCost + flightCost + expCost + transportCost + foodCost + bufferCost;
-
-  const startDate = new Date(dna.startDate);
-  const fmt = (offset: number) => {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() + offset);
-    return d.toISOString().split('T')[0];
-  };
-
-  const days: JourneyDay[] = Array.from({ length: dna.nights }, (_, i) => ({
-    day: i + 1,
-    date: fmt(i),
-    location: dna.destination,
-    title: i === 0 ? 'Arrival Day' : i === dna.nights - 1 ? 'Departure Day' : `Day ${i + 1} — ${dna.destination}`,
-    items: i === 0 ? [
-      { id: `d${i}-1`, time: '14:00', title: destFlight ? `${destFlight.airline} ${destFlight.flightNumber} · ${destFlight.from} → ${destFlight.to}` : `Flight to ${dna.destination}`, type: 'flight' as const, duration: destFlight?.duration ?? '5h', cost: flightCost, entityId: destFlight?.id, entityType: 'flight' as const, status: 'planned' as const },
-      { id: `d${i}-2`, time: '18:00', title: `Check-in: ${destHotel?.name ?? dna.destination + ' Hotel'}`, type: 'hotel' as const, duration: '', cost: hotelCost, entityId: destHotel?.id, entityType: 'hotel' as const, status: 'planned' as const },
-    ] : i === dna.nights - 1 ? [
-      { id: `d${i}-1`, time: '12:00', title: 'Hotel checkout & transfer', type: 'transfer' as const, duration: '2h', cost: 3000, status: 'planned' as const },
-      { id: `d${i}-2`, time: '15:00', title: `Return flight to ${dna.origin}`, type: 'flight' as const, duration: '5h', cost: 0, status: 'planned' as const, note: 'Return included in outbound fare' },
-    ] : [
-      { id: `d${i}-1`, time: '10:00', title: destActivity?.name ?? `Explore ${dna.destination}`, type: 'activity' as const, duration: destActivity?.duration ?? '4h', cost: (destActivity?.price ?? 4000) * dna.travelers, entityId: destActivity?.id, entityType: 'activity' as const, status: 'planned' as const },
-      { id: `d${i}-2`, time: '19:00', title: 'Dinner — local restaurant', type: 'meal' as const, duration: '2h', cost: 2000 * dna.travelers, status: 'planned' as const },
-    ],
-  }));
-
-  const budget: BudgetBreakdown = { flights: flightCost, hotels: hotelCost, transport: transportCost, experiences: expCost, food: foodCost, buffer: bufferCost, total };
-  const budgetFit = Math.min(100, Math.round(90 + (dna.budget - total) / dna.budget * 20));
-  const overall = Math.round((budgetFit + 88 + 86 + 90 + 84 + 88) / 6);
-
-  return {
-    dna, title: `Your ${dna.destination} Journey`, route: [dna.origin, dna.destination, dna.origin], days, budget,
-    health: { overall, budget: budgetFit, pace: 88, interests: 86, convenience: 90, travelTime: 84, hotels: 88 },
-    primaryHotelId: destHotel?.id ?? '', primaryFlightId: destFlight?.id ?? '', version: 1,
-  };
-}
-
-function generateJourney(dna: JourneyDNA): GeneratedJourney {
-  const dest = dna.destinationId || dna.destination.toLowerCase();
-  if (dest.includes('japan') || dest.includes('tokyo') || dest.includes('kyoto') || dest === 'japan') {
-    return buildJapanJourney(dna, dna.comfort);
-  }
-  return buildGenericJourney(dna);
-}
-
-// ─── Apply AI controls ────────────────────────────────────────────────────────
-
-function applyControl(journey: GeneratedJourney, control: string): GeneratedJourney {
-  const j = { ...journey, days: journey.days.map((d) => ({ ...d, items: [...d.items] })), budget: { ...journey.budget } };
-
-  if (control === 'cheaper') {
-    // Switch to cheaper flight & reduce hotel tier
-    const cheaper = flights.find((f) => f.id === 'fl-002');
-    const saving = cheaper ? (j.budget.flights - cheaper.price * j.dna.travelers * 2) : 0;
-    j.budget.flights = Math.max(0, j.budget.flights - Math.round(j.budget.flights * 0.22));
-    j.budget.hotels = Math.max(0, j.budget.hotels - Math.round(j.budget.hotels * 0.15));
-    j.budget.total = j.budget.flights + j.budget.hotels + j.budget.transport + j.budget.experiences + j.budget.food + j.budget.buffer;
-    const saved = journey.budget.total - j.budget.total;
-    j.version = (j.version || 1) + 1;
-    j.aiMessage = `Journey is now ${Math.round(saved / 1000)}k cheaper — switched to Air India (saves ₹${Math.round(saving / 1000)}k on flights) and reduced hotel tier for Tokyo (2 nights).`;
-    j.health = { ...j.health, budget: Math.min(99, j.health.budget + 4), hotels: Math.max(60, j.health.hotels - 6), overall: Math.round(((j.health.budget + 4) + j.health.pace + j.health.interests + j.health.convenience + j.health.travelTime + Math.max(60, j.health.hotels - 6)) / 6) };
-  } else if (control === 'luxurious') {
-    j.budget.hotels = Math.round(j.budget.hotels * 1.35);
-    j.budget.flights = Math.round(j.budget.flights * 1.48); // business class
-    j.budget.total = j.budget.flights + j.budget.hotels + j.budget.transport + j.budget.experiences + j.budget.food + j.budget.buffer;
-    j.aiMessage = "Upgraded to Aman Tokyo and Hoshinoya Kyoto. Outbound flight upgraded to Business Class on IndiGo.";
-    j.health = { ...j.health, hotels: Math.min(99, j.health.hotels + 4), budget: Math.max(60, j.health.budget - 8), overall: Math.round((j.health.budget - 8 + j.health.pace + j.health.interests + j.health.convenience + j.health.travelTime + (j.health.hotels + 4)) / 6) };
-    j.primaryHotelId = 'ht-002';
-  } else if (control === 'slowpace') {
-    j.days = j.days.map((day) => {
-      const activities = day.items.filter((it) => it.type === 'activity');
-      if (activities.length > 1) {
-        const removed = activities[activities.length - 1];
-        j.budget.experiences = Math.max(0, j.budget.experiences - removed.cost);
-        return { ...day, items: day.items.filter((it) => it !== removed) };
-      }
-      return day;
-    });
-    j.budget.total = j.budget.flights + j.budget.hotels + j.budget.transport + j.budget.experiences + j.budget.food + j.budget.buffer;
-    j.aiMessage = "Removed one activity per busy day. Each day now has space for spontaneous exploration.";
-    j.health = { ...j.health, pace: Math.min(99, j.health.pace + 7), overall: Math.round((j.health.budget + (j.health.pace + 7) + j.health.interests + j.health.convenience + j.health.travelTime + j.health.hotels) / 6) };
-  } else if (control === 'morefood') {
-    const foodActivity: JourneyItem = {
-      id: 'extra-food-' + Date.now(),
-      time: '12:00', title: 'Street Food Deep Dive — Dotonbori Market', type: 'meal',
-      duration: '2h', cost: 3000 * j.dna.travelers, status: 'planned',
-      note: 'Added by Journey AI based on your Food interest.',
-    };
-    const dayIdx = j.days.findIndex((d) => d.day === 3);
-    if (dayIdx >= 0) j.days[dayIdx].items = [...j.days[dayIdx].items, foodActivity];
-    j.budget.food += foodActivity.cost;
-    j.budget.total += foodActivity.cost;
-    j.aiMessage = "Added a street food deep dive on Day 3. Covers 5 regional specialties in one session.";
-    j.health = { ...j.health, interests: Math.min(99, j.health.interests + 2), overall: Math.round((j.health.budget + j.health.pace + (j.health.interests + 2) + j.health.convenience + j.health.travelTime + j.health.hotels) / 6) };
-  } else if (control === 'moreculture') {
-    const cultureItem: JourneyItem = {
-      id: 'extra-culture-' + Date.now(),
-      time: '15:00', title: 'Traditional Sake Brewery Tour & Tasting', type: 'activity',
-      duration: '2.5h', cost: 4000 * j.dna.travelers, entityId: 'ac-003', entityType: 'activity', status: 'planned',
-      note: 'Added by Journey AI based on your Culture interest.',
-    };
-    const dayIdx = j.days.findIndex((d) => d.day === 6);
-    if (dayIdx >= 0) j.days[dayIdx].items = [...j.days[dayIdx].items, cultureItem];
-    j.budget.experiences += cultureItem.cost;
-    j.budget.total += cultureItem.cost;
-    j.aiMessage = "Added a sake brewery cultural experience on Day 6. Pairs well with your already relaxed afternoon.";
-    j.health = { ...j.health, interests: Math.min(99, j.health.interests + 2) };
-  } else if (control === 'add2days') {
-    const lastDay = j.days[j.days.length - 1];
-    const newDay1: JourneyDay = {
-      day: lastDay.day, date: lastDay.date, location: 'Osaka',
-      title: 'Day Trip — Osaka & Dotonbori',
-      items: [
-        { id: 'new-d1-1', time: '09:00', title: 'Shinkansen to Osaka', type: 'transfer', duration: '1h', cost: 3000, status: 'planned' },
-        { id: 'new-d1-2', time: '10:30', title: 'Dotonbori & Namba street food', type: 'meal', duration: '3h', cost: 3500 * j.dna.travelers, status: 'planned' },
-        { id: 'new-d1-3', time: '15:00', title: 'Osaka Castle & Museum', type: 'activity', duration: '2.5h', cost: 1800 * j.dna.travelers, status: 'planned' },
-        { id: 'new-d1-4', time: '19:00', title: 'Return to Kyoto', type: 'transfer', duration: '1h', cost: 3000, status: 'planned' },
-      ],
-    };
-    const newDay2: JourneyDay = {
-      day: lastDay.day + 1, date: '', location: 'Tokyo', title: 'Back to Tokyo · Last Day',
-      items: [
-        { id: 'new-d2-1', time: '10:00', title: 'Hotel checkout', type: 'hotel', duration: '', cost: 0, status: 'planned' },
-        { id: 'new-d2-2', time: '12:00', title: 'Akihabara electronics & culture', type: 'activity', duration: '3h', cost: 1000 * j.dna.travelers, status: 'planned' },
-        { id: 'new-d2-3', time: '18:00', title: 'Final dinner — Omoide Yokocho', type: 'meal', duration: '2h', cost: 3000 * j.dna.travelers, status: 'planned' },
-      ],
-    };
-    j.days = [
-      ...j.days.slice(0, -1),
-      { ...newDay1, day: j.days.length - 1 },
-      { ...newDay2, day: j.days.length },
-      { ...lastDay, day: j.days.length + 1 },
-    ];
-    const extraCost = 18000;
-    j.budget.transport += 6000;
-    j.budget.experiences += 6000;
-    j.budget.food += 4000;
-    j.budget.buffer += 2000;
-    j.budget.total += extraCost;
-    j.dna = { ...j.dna, nights: j.dna.nights + 2 };
-    j.aiMessage = "Added 2 days: Osaka day trip + extra Tokyo day. Osaka is placed to avoid backtracking.";
-    j.health = { ...j.health, travelTime: Math.max(70, j.health.travelTime - 3), interests: Math.min(99, j.health.interests + 2) };
-  } else if (control === 'reducetransit') {
-    j.days = j.days.map((day) => ({
-      ...day,
-      items: day.items.filter((it) => !(it.id === 'fl-022' || it.type === 'transfer' && it.cost > 4000)),
-    }));
-    j.budget.transport = Math.round(j.budget.transport * 0.65);
-    j.budget.total = j.budget.flights + j.budget.hotels + j.budget.transport + j.budget.experiences + j.budget.food + j.budget.buffer;
-    j.aiMessage = "Reduced intercity transfers. Consolidated Tokyo and Kyoto hotels for a more relaxed travel experience.";
-    j.health = { ...j.health, travelTime: Math.min(99, j.health.travelTime + 8), convenience: Math.min(99, j.health.convenience + 3) };
-  }
-
-  j.health = { ...j.health, overall: Math.round((j.health.budget + j.health.pace + j.health.interests + j.health.convenience + j.health.travelTime + j.health.hotels) / 6) };
-  return j;
-}
-
-// ─── Generate What-if alternative ────────────────────────────────────────────
-
-function generateAlternative(journey: GeneratedJourney, scenario: string): Omit<GeneratedJourney, 'alternativeVersion'> {
-  const alt = applyControl(journey, scenario === 'reduceBudget' ? 'cheaper' : scenario === 'add2days' ? 'add2days' : 'luxurious');
-  return { ...alt, version: 99 };
-}
-
-// ─── Convert to storable ItineraryDay format ──────────────────────────────────
-
-function toStoredItinerary(days: JourneyDay[]): StoredItineraryDay[] {
-  return days.slice(0, 3).map((day) => ({
-    day: day.day,
-    date: day.date,
-    location: day.location,
-    title: day.title,
-    activities: day.items.map((item, idx) => ({
-      id: `ai-${day.day}-${idx}`,
-      time: item.time,
-      title: item.title,
-      type: item.type === 'free' ? 'activity' : item.type,
-      duration: item.duration,
-      notes: item.note,
-      cost: item.cost,
-      status: item.status === 'booked' ? 'booked' : 'unbooked',
-      bookingId: item.bookingId,
-      hotelId: item.entityType === 'hotel' ? item.entityId : undefined,
-      activityId: item.entityType === 'activity' ? item.entityId : undefined,
-      flightId: item.entityType === 'flight' ? item.entityId : undefined,
-    })),
-  })) as StoredItineraryDay[];
-}
+import { hotels, activities } from '../../data/mockData';
+import { generateItinerary, type JourneyDNA } from '../../lib/itineraryApi';
+import {
+  toGeneratedJourney,
+  type GeneratedJourney,
+  type JourneyDay,
+  type JourneyItem,
+} from '../../lib/itineraryAdapter';
+import { makeDefaultDna, validateDna, formatLocalDate } from '../../lib/plannerForm';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -491,10 +56,19 @@ const BUILD_MSGS = [
 type Phase = 'dna' | 'building' | 'result';
 
 export default function AIPlannerPage() {
-  const { navigate, createJourney, plannerDestination, plannerDestinationId, navigateToHotel, navigateToExperience, startBookingFlow } = useApp();
+  const {
+    navigate,
+    refreshJourneys,
+    plannerDestination,
+    plannerDestinationId,
+    navigateToHotel,
+    navigateToExperience,
+    startBookingFlow,
+  } = useApp();
 
   const [phase, setPhase] = useState<Phase>('dna');
   const [buildMsgIdx, setBuildMsgIdx] = useState(0);
+  const [buildError, setBuildError] = useState<string | null>(null);
   const [journey, setJourney] = useState<GeneratedJourney | null>(null);
   const [expandedDay, setExpandedDay] = useState<number | null>(1);
   const [showWhyId, setShowWhyId] = useState<string | null>(null);
@@ -505,116 +79,90 @@ export default function AIPlannerPage() {
   const [removedItems, setRemovedItems] = useState<Set<string>>(new Set());
   const [addActivityDayId, setAddActivityDayId] = useState<number | null>(null);
 
-  const isJapan = (dest: string) => ['japan', 'tokyo', 'kyoto', 'osaka'].some((k) => dest.toLowerCase().includes(k));
+  const [dna, setDna] = useState<JourneyDNA>(() =>
+    makeDefaultDna(new Date(), {
+      destination: plannerDestination,
+      destinationId: plannerDestinationId,
+    })
+  );
 
-  const [dna, setDna] = useState<JourneyDNA>({
-    destination: plannerDestination || 'Tokyo, Japan',
-    destinationId: plannerDestinationId || (isJapan(plannerDestination) ? 'tokyo' : plannerDestination.toLowerCase()) || 'tokyo',
-    origin: 'Mumbai',
-    startDate: '2025-03-15',
-    nights: 8,
-    travelers: 2,
-    budget: 350000,
-    pace: 'relaxed',
-    comfort: 'premium',
-    interests: ['Food', 'Culture', 'Photography'],
-    mustHave: '',
-    avoid: '',
-    notes: '',
-  });
+  const lastAppliedPrefillRef = useRef<string | undefined>(plannerDestination);
 
   useEffect(() => {
     if (plannerDestination) {
-      setDna((prev) => ({
-        ...prev,
-        destination: plannerDestination,
-        destinationId: plannerDestinationId || plannerDestination.toLowerCase().replace(/[^a-z]/g, ''),
-      }));
+      setDna((prev) => {
+        // Apply prefill only if destination field is still empty or still equals the previous prefill value.
+        // This ensures what the user has already typed is never overwritten.
+        if (!prev.destination || prev.destination === lastAppliedPrefillRef.current) {
+          lastAppliedPrefillRef.current = plannerDestination;
+          return {
+            ...prev,
+            destination: plannerDestination,
+            destinationId: plannerDestinationId || '',
+          };
+        }
+        return prev;
+      });
     }
   }, [plannerDestination, plannerDestinationId]);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const handleBuildJourney = () => {
+  const handleBuildJourney = async () => {
+    // Abort any prior in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setPhase('building');
+    setBuildError(null);
     setBuildMsgIdx(0);
-    intervalRef.current = setInterval(() => setBuildMsgIdx((i) => (i + 1) % BUILD_MSGS.length), 380);
-    timerRef.current = setTimeout(() => {
+
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setBuildMsgIdx((i) => (i + 1) % BUILD_MSGS.length);
+    }, 1200);
+
+    try {
+      const rawResponse = await generateItinerary(dna, controller.signal);
       if (intervalRef.current) clearInterval(intervalRef.current);
-      const generated = generateJourney(dna);
+
+      const generated = toGeneratedJourney(rawResponse, dna);
       setJourney(generated);
+      setSavedJourneyId(rawResponse.itineraryId);
+      refreshJourneys();
       setExpandedDay(1);
       setControlMsg(null);
       setShowComparison(false);
-      setSavedJourneyId(null);
       setPhase('result');
-    }, 3200);
+    } catch (err: any) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message = err?.message || 'Failed to generate itinerary. Please try again.';
+      setBuildError(message);
+    }
   };
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-  }, []);
-
-  const applyAIControl = (control: string) => {
-    if (!journey) return;
-    const updated = applyControl(journey, control);
-    setJourney(updated);
-    setControlMsg(updated.aiMessage ?? null);
-    setShowComparison(false);
+  const handleTryAgain = () => {
+    setBuildError(null);
+    setPhase('dna');
   };
 
-  const handleSaveJourney = () => {
-    if (!journey) return;
-    const id = createJourney({
-      travelerId: 'trv-001',
-      destination: journey.route[1],
-      destinationId: journey.dna.destinationId,
-      title: journey.title,
-      status: 'planning',
-      startDate: journey.dna.startDate,
-      endDate: (() => {
-        const d = new Date(journey.dna.startDate);
-        d.setDate(d.getDate() + journey.dna.nights);
-        return d.toISOString().split('T')[0];
-      })(),
-      travelers: journey.dna.travelers,
-      bookings: [],
-      totalBudget: journey.dna.budget,
-      totalSpend: 0,
-      currency: 'INR',
-      imageUrl: 'https://images.unsplash.com/photo-1513407030348-c983a97b98d8?w=800&h=500&fit=crop&auto=format',
-      itinerary: toStoredItinerary(journey.days),
-      notifications: [],
-      disruptions: [],
-    });
-    setSavedJourneyId(id);
-    setJourney({ ...journey, savedJourneyId: id });
-  };
-
-  const handleAddDay = () => {
-    if (!journey) return;
-    const last = journey.days[journey.days.length - 1];
-    const prevDate = last.date ? new Date(last.date) : new Date();
-    prevDate.setDate(prevDate.getDate() + 1);
-    const newDayDate = prevDate.toISOString().split('T')[0];
-    const newDay: JourneyDay = {
-      day: last.day + 1,
-      date: newDayDate,
-      location: last.location,
-      title: `Day ${last.day + 1} — Free Day`,
-      items: [],
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
     };
-    setJourney({ ...journey, days: [...journey.days, newDay], dna: { ...journey.dna, nights: journey.dna.nights + 1 } });
-    setControlMsg('Added a new day to your journey. Expand it to add activities.');
-  };
-
-  const handleRemoveDay = () => {
-    if (!journey || journey.days.length <= 1) return;
-    setJourney({ ...journey, days: journey.days.slice(0, -1), dna: { ...journey.dna, nights: Math.max(1, journey.dna.nights - 1) } });
-    setControlMsg('Removed the last day from your journey.');
-  };
+  }, []);
 
   const toggleInterest = (interest: string) => {
     setDna((prev) => ({
@@ -626,7 +174,16 @@ export default function AIPlannerPage() {
   };
 
   if (phase === 'dna') return <DNAForm dna={dna} setDna={setDna} onBuild={handleBuildJourney} toggleInterest={toggleInterest} />;
-  if (phase === 'building') return <BuildingScreen msgIdx={buildMsgIdx} destination={dna.destination} />;
+  if (phase === 'building') {
+    return (
+      <BuildingScreen
+        msgIdx={buildMsgIdx}
+        destination={dna.destination}
+        error={buildError}
+        onTryAgain={handleTryAgain}
+      />
+    );
+  }
 
   if (!journey) return null;
 
@@ -635,7 +192,8 @@ export default function AIPlannerPage() {
   const uniqueHotels = hotelRecs.filter((h, i) => hotelRecs.findIndex((x) => x.entityId === h.entityId) === i);
   const uniqueExps = expRecs.filter((e, i) => expRecs.findIndex((x) => x.entityId === e.entityId) === i);
 
-  const altJourney = showComparison ? generateAlternative(journey, comparisonScenario) : null;
+  // hidden until backed by real data
+  const showUnsupported: boolean = false;
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
@@ -658,13 +216,9 @@ export default function AIPlannerPage() {
           {savedJourneyId ? (
             <button onClick={() => navigate('my-trips')} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors flex items-center gap-2">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Open in My Trips
+              Saved to My Trips
             </button>
-          ) : (
-            <button onClick={handleSaveJourney} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
-              Save Journey
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -687,42 +241,33 @@ export default function AIPlannerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* ── Main column ── */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Journey Health */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5">Journey Health</p>
-                <div className="flex items-baseline gap-2">
-                  <span className="font-display text-4xl text-slate-900">{journey.health.overall}</span>
-                  <span className="text-slate-400 text-lg">/100</span>
+          {/* hidden until backed by real data */}
+          {showUnsupported && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5">Journey Health</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-display text-4xl text-slate-900">{journey.health.overall}</span>
+                    <span className="text-slate-400 text-lg">/100</span>
+                  </div>
+                </div>
+                <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${journey.health.overall >= 90 ? 'bg-emerald-50' : journey.health.overall >= 80 ? 'bg-blue-50' : 'bg-amber-50'}`}>
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <path d="M14 4l2.5 5.5L22 11l-5.5 2.5L14 19l-2.5-5.5L6 11l5.5-2.5L14 4z" fill={journey.health.overall >= 90 ? '#10b981' : journey.health.overall >= 80 ? '#3b82f6' : '#f59e0b'} opacity="0.8"/>
+                  </svg>
                 </div>
               </div>
-              <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${journey.health.overall >= 90 ? 'bg-emerald-50' : journey.health.overall >= 80 ? 'bg-blue-50' : 'bg-amber-50'}`}>
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                  <path d="M14 4l2.5 5.5L22 11l-5.5 2.5L14 19l-2.5-5.5L6 11l5.5-2.5L14 4z" fill={journey.health.overall >= 90 ? '#10b981' : journey.health.overall >= 80 ? '#3b82f6' : '#f59e0b'} opacity="0.8"/>
-                </svg>
+              <div className="space-y-2.5">
+                <HealthBar score={journey.health.budget} label="Budget fit" />
+                <HealthBar score={journey.health.pace} label="Pace" />
+                <HealthBar score={journey.health.interests} label="Interests" />
+                <HealthBar score={journey.health.convenience} label="Convenience" />
+                <HealthBar score={journey.health.travelTime} label="Travel time" />
+                <HealthBar score={journey.health.hotels} label="Hotels" />
               </div>
             </div>
-            <div className="space-y-2.5">
-              <HealthBar score={journey.health.budget} label="Budget fit" />
-              <HealthBar score={journey.health.pace} label="Pace" />
-              <HealthBar score={journey.health.interests} label="Interests" />
-              <HealthBar score={journey.health.convenience} label="Convenience" />
-              <HealthBar score={journey.health.travelTime} label="Travel time" />
-              <HealthBar score={journey.health.hotels} label="Hotels" />
-            </div>
-            {journey.health.weakNote && (
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2">
-                <span className="text-amber-500 text-sm flex-shrink-0">⚡</span>
-                <div className="flex-1">
-                  <p className="text-xs text-amber-800">{journey.health.weakNote}</p>
-                </div>
-                <button onClick={() => applyAIControl('reducetransit')} className="text-xs font-semibold text-amber-700 border border-amber-300 px-2 py-0.5 rounded-lg hover:bg-amber-100 transition-colors flex-shrink-0">
-                  Optimise
-                </button>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Daily Itinerary */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -734,7 +279,7 @@ export default function AIPlannerPage() {
               {journey.days.map((day) => {
                 const isOpen = expandedDay === day.day;
                 const visibleItems = day.items.filter((it) => !removedItems.has(it.id));
-                const dayCost = visibleItems.reduce((s, it) => s + it.cost, 0);
+                const dayCost = day.estimatedCostINR ?? visibleItems.reduce((s, it) => s + it.cost, 0);
                 return (
                   <div key={day.day}>
                     <div className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
@@ -791,7 +336,7 @@ export default function AIPlannerPage() {
                           const isBooked = item.status === 'booked';
                           return (
                             <div key={item.id} className="flex items-start gap-3 px-5 py-3 group">
-                              <span className="text-xs font-mono text-slate-400 w-10 flex-shrink-0 pt-0.5">{item.time}</span>
+                              <span className="text-xs font-mono text-slate-400 min-w-[3.5rem] flex-shrink-0 pt-0.5">{item.time}</span>
                               <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0 bg-white border border-slate-100">
                                 {itemTypeIcons[item.type] || '•'}
                               </div>
@@ -809,9 +354,15 @@ export default function AIPlannerPage() {
                                 {item.note && <p className="text-xs text-slate-500 italic mt-0.5">{item.note}</p>}
                               </div>
                               <div className="flex items-center gap-1.5 flex-shrink-0">
-                                {item.cost > 0 && <span className="text-xs text-slate-500">₹{item.cost.toLocaleString()}</span>}
-                                {item.cost === 0 && item.type !== 'flight' && <span className="text-xs text-emerald-600 font-medium">Free</span>}
-                                {item.aiReason && (
+                                {item.costKnown === false ? (
+                                  <span className="text-xs text-slate-400 font-mono">-</span>
+                                ) : item.cost > 0 ? (
+                                  <span className="text-xs text-slate-500">₹{item.cost.toLocaleString()}</span>
+                                ) : (
+                                  <span className="text-xs text-emerald-600 font-medium">Free</span>
+                                )}
+                                {/* hidden until backed by real data */}
+                                {showUnsupported && item.aiReason && (
                                   <button
                                     onClick={() => setShowWhyId(showWhyId === item.id ? null : item.id)}
                                     className="text-xs text-slate-400 hover:text-blue-600 transition-colors border border-slate-200 hover:border-blue-200 px-1.5 py-0.5 rounded-md"
@@ -869,8 +420,8 @@ export default function AIPlannerPage() {
                             </div>
                           );
                         })}
-                        {/* Why panel */}
-                        {visibleItems.some((it) => it.id === showWhyId) && (() => {
+                        {/* hidden until backed by real data */}
+                        {showUnsupported && visibleItems.some((it) => it.id === showWhyId) && (() => {
                           const item = visibleItems.find((it) => it.id === showWhyId)!;
                           return (
                             <div className="px-5 py-3 mx-3 mb-3 bg-blue-50 border border-blue-100 rounded-xl">
@@ -893,23 +444,39 @@ export default function AIPlannerPage() {
             {/* Itinerary customization strip */}
             <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Customize</span>
-              <button onClick={() => alert('Feature in development')} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg transition-all">
+              <button
+                disabled
+                title="Editing with AI comes in a later update"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 border border-slate-200 rounded-lg opacity-50 cursor-not-allowed"
+              >
                 ⇅ Reorder days
               </button>
-              <button onClick={handleAddDay} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded-lg transition-all">
+              <button
+                disabled
+                title="Editing with AI comes in a later update"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 border border-slate-200 rounded-lg opacity-50 cursor-not-allowed"
+              >
                 + Add a day
               </button>
-              <button onClick={handleRemoveDay} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-red-700 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg transition-all">
+              <button
+                disabled
+                title="Editing with AI comes in a later update"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 border border-slate-200 rounded-lg opacity-50 cursor-not-allowed"
+              >
                 − Remove a day
               </button>
-              <button onClick={() => applyAIControl('reducetransit')} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-violet-700 hover:bg-violet-50 border border-slate-200 hover:border-violet-200 rounded-lg transition-all">
+              <button
+                disabled
+                title="Editing with AI comes in a later update"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 border border-slate-200 rounded-lg opacity-50 cursor-not-allowed"
+              >
                 ⚡ Optimize route
               </button>
             </div>
           </div>
 
-          {/* Hotels */}
-          {uniqueHotels.length > 0 && (
+          {/* hidden until backed by real data */}
+          {showUnsupported && uniqueHotels.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-5">
               <h2 className="font-semibold text-slate-900 mb-4">Selected Hotels</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -943,7 +510,7 @@ export default function AIPlannerPage() {
                           </button>
                           <button
                             onClick={() => {
-                              const itinItem = savedJourneyId
+                              const itinItem = savedJourneyId && journey
                                 ? journey.days.flatMap((d) => d.items).find((it) => it.entityId === hotel.id && it.entityType === 'hotel')
                                 : undefined;
                               startBookingFlow({
@@ -967,8 +534,8 @@ export default function AIPlannerPage() {
             </div>
           )}
 
-          {/* Experiences */}
-          {uniqueExps.length > 0 && (
+          {/* hidden until backed by real data */}
+          {showUnsupported && uniqueExps.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-5">
               <h2 className="font-semibold text-slate-900 mb-4">Included Experiences</h2>
               <div className="space-y-3">
@@ -997,7 +564,7 @@ export default function AIPlannerPage() {
                           </button>
                           <button
                             onClick={() => {
-                              const itinItem = savedJourneyId
+                              const itinItem = savedJourneyId && journey
                                 ? journey.days.flatMap((d) => d.items).find((it) => it.entityId === act.id && it.entityType === 'activity')
                                 : undefined;
                               startBookingFlow({
@@ -1027,26 +594,29 @@ export default function AIPlannerPage() {
           {/* Budget overview */}
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <h3 className="font-semibold text-slate-900 mb-4">Budget Overview</h3>
-            <div className="space-y-3">
-              {[
-                { label: 'Flights', value: journey.budget.flights, color: 'bg-sky-500' },
-                { label: 'Hotels', value: journey.budget.hotels, color: 'bg-blue-500' },
-                { label: 'Transport', value: journey.budget.transport, color: 'bg-slate-400' },
-                { label: 'Experiences', value: journey.budget.experiences, color: 'bg-violet-500' },
-                { label: 'Food', value: journey.budget.food, color: 'bg-amber-500' },
-                { label: 'Buffer', value: journey.budget.buffer, color: 'bg-emerald-400' },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${color}`} />
-                  <span className="text-xs text-slate-500 flex-1">{label}</span>
-                  <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.round((value / journey.budget.total) * 100)}%` }} />
+            {/* hidden until backed by real data */}
+            {showUnsupported && (
+              <div className="space-y-3">
+                {[
+                  { label: 'Flights', value: journey.budget.flights, color: 'bg-sky-500' },
+                  { label: 'Hotels', value: journey.budget.hotels, color: 'bg-blue-500' },
+                  { label: 'Transport', value: journey.budget.transport, color: 'bg-slate-400' },
+                  { label: 'Experiences', value: journey.budget.experiences, color: 'bg-violet-500' },
+                  { label: 'Food', value: journey.budget.food, color: 'bg-amber-500' },
+                  { label: 'Buffer', value: journey.budget.buffer, color: 'bg-emerald-400' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex items-center gap-2.5">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${color}`} />
+                    <span className="text-xs text-slate-500 flex-1">{label}</span>
+                    <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.round((value / journey.budget.total) * 100)}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700 w-16 text-right">₹{(value / 1000).toFixed(0)}k</span>
                   </div>
-                  <span className="text-xs font-semibold text-slate-700 w-16 text-right">₹{(value / 1000).toFixed(0)}k</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100 space-y-1.5">
+                ))}
+              </div>
+            )}
+            <div className="space-y-1.5">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Total estimated</span>
                 <span className="font-bold text-slate-900">₹{journey.budget.total.toLocaleString()}</span>
@@ -1055,15 +625,15 @@ export default function AIPlannerPage() {
                 <span className="text-slate-500">Your budget</span>
                 <span className="font-semibold text-slate-700">₹{journey.dna.budget.toLocaleString()}</span>
               </div>
-              {journey.dna.budget - journey.budget.total > 0 ? (
+              {Number(journey.dna.budget) - journey.budget.total > 0 ? (
                 <div className="flex justify-between text-sm">
                   <span className="text-emerald-600 font-medium">Remaining</span>
-                  <span className="font-bold text-emerald-600">₹{(journey.dna.budget - journey.budget.total).toLocaleString()}</span>
+                  <span className="font-bold text-emerald-600">₹{(Number(journey.dna.budget) - journey.budget.total).toLocaleString()}</span>
                 </div>
               ) : (
                 <div className="flex justify-between text-sm">
                   <span className="text-amber-600 font-medium">Over budget</span>
-                  <span className="font-bold text-amber-600">₹{(journey.budget.total - journey.dna.budget).toLocaleString()}</span>
+                  <span className="font-bold text-amber-600">₹{(journey.budget.total - Number(journey.dna.budget)).toLocaleString()}</span>
                 </div>
               )}
             </div>
@@ -1090,8 +660,9 @@ export default function AIPlannerPage() {
               ].map(({ label, control, icon }) => (
                 <button
                   key={control + label}
-                  onClick={() => applyAIControl(control)}
-                  className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 text-slate-700 hover:text-blue-700 text-xs font-medium rounded-lg transition-all text-left"
+                  disabled
+                  title="Editing with AI comes in a later update"
+                  className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 text-slate-400 text-xs font-medium rounded-lg opacity-50 cursor-not-allowed text-left"
                 >
                   <span className="text-sm leading-none flex-shrink-0">{icon}</span>
                   <span className="leading-tight">{label}</span>
@@ -1100,57 +671,27 @@ export default function AIPlannerPage() {
             </div>
           </div>
 
-          {/* What if? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5">
-            <h3 className="font-semibold text-slate-900 text-sm mb-3">What if?</h3>
-            <div className="space-y-2 mb-3">
-              {[
-                { label: 'I reduce my budget?', scenario: 'reduceBudget' },
-                { label: 'I add 2 more days?', scenario: 'add2days' },
-                { label: 'I want more luxury?', scenario: 'luxury' },
-              ].map(({ label, scenario }) => (
-                <button
-                  key={scenario}
-                  onClick={() => { setComparisonScenario(scenario); setShowComparison(true); }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium border transition-all ${comparisonScenario === scenario && showComparison ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-100 text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
-                >
-                  "{label}"
-                </button>
-              ))}
-            </div>
-            {showComparison && altJourney && (
-              <div className="border-t border-slate-100 pt-3 space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-slate-50 rounded-xl p-3">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Current</p>
-                    <p className="text-base font-bold text-slate-900">₹{(journey.budget.total / 1000).toFixed(0)}k</p>
-                    <p className="text-xs text-slate-500">{journey.dna.nights} nights</p>
-                    <p className="text-xs font-semibold text-blue-600 mt-1">{journey.health.overall}/100 health</p>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Alternative</p>
-                    <p className="text-base font-bold text-slate-900">₹{(altJourney.budget.total / 1000).toFixed(0)}k</p>
-                    <p className="text-xs text-slate-500">{altJourney.dna.nights} nights</p>
-                    <p className="text-xs font-semibold text-blue-600 mt-1">{altJourney.health.overall}/100 health</p>
-                  </div>
-                </div>
-                {altJourney.aiMessage && (
-                  <p className="text-xs text-slate-600 leading-relaxed">{altJourney.aiMessage}</p>
-                )}
-                <div className="flex gap-2">
+          {/* hidden until backed by real data */}
+          {showUnsupported && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <h3 className="font-semibold text-slate-900 text-sm mb-3">What if?</h3>
+              <div className="space-y-2 mb-3">
+                {[
+                  { label: 'I reduce my budget?', scenario: 'reduceBudget' },
+                  { label: 'I add 2 more days?', scenario: 'add2days' },
+                  { label: 'I want more luxury?', scenario: 'luxury' },
+                ].map(({ label, scenario }) => (
                   <button
-                    onClick={() => { setJourney({ ...altJourney, version: (journey.version ?? 1) + 1 }); setShowComparison(false); setControlMsg("Switched to alternative version."); }}
-                    className="flex-1 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                    key={scenario}
+                    onClick={() => { setComparisonScenario(scenario); setShowComparison(true); }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium border transition-all ${comparisonScenario === scenario && showComparison ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-100 text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
                   >
-                    Use this version
+                    "{label}"
                   </button>
-                  <button onClick={() => setShowComparison(false)} className="flex-1 py-2 border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors">
-                    Keep current
-                  </button>
-                </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Journey DNA summary */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
@@ -1203,6 +744,10 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
   onBuild: () => void;
   toggleInterest: (i: string) => void;
 }) {
+  const today = new Date();
+  const todayStr = formatLocalDate(today);
+  const { ok, errors } = validateDna(dna, today);
+
   return (
     <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center gap-3 mb-8">
@@ -1222,58 +767,134 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
         <div className="bg-white border border-slate-200 rounded-xl p-5">
           <h2 className="font-semibold text-slate-900 mb-4 text-sm uppercase tracking-wide text-slate-400">Where & When</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              { label: 'Destination', key: 'destination', placeholder: 'e.g. Tokyo, Japan' },
-              { label: 'Flying from', key: 'origin', placeholder: 'e.g. Mumbai' },
-            ].map(({ label, key, placeholder }) => (
-              <div key={key}>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">{label}</label>
-                <input
-                  value={dna[key as keyof JourneyDNA] as string}
-                  onChange={(e) => setDna((p) => ({ ...p, [key]: e.target.value }))}
-                  placeholder={placeholder}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors"
-                />
-              </div>
-            ))}
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start date</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Destination
+              </label>
               <input
-                type="date"
-                value={dna.startDate}
-                onChange={(e) => setDna((p) => ({ ...p, startDate: e.target.value }))}
+                value={dna.destination}
+                onChange={(e) =>
+                  // When user edits the destination text, set destination AND reset destinationId to ''.
+                  // This prevents the stale-destination bug where destinationId remained stuck (e.g. 'tokyo')
+                  // from a prior prefill or default, causing every destination to select the wrong template.
+                  setDna((p) => ({
+                    ...p,
+                    destination: e.target.value,
+                    destinationId: '',
+                  }))
+                }
+                placeholder="Where do you want to go?"
+                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors ${
+                  errors.destination
+                    ? 'border-red-300 focus:border-red-500 bg-red-50/20'
+                    : 'border-slate-200 focus:border-blue-400'
+                }`}
+              />
+              {errors.destination && (
+                <p className="text-xs text-red-500 mt-1">{errors.destination}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Flying from
+              </label>
+              <input
+                value={dna.origin}
+                onChange={(e) => setDna((p) => ({ ...p, origin: e.target.value }))}
+                placeholder="City you're flying from"
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors"
               />
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Nights</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Start date
+              </label>
+              <input
+                type="date"
+                min={todayStr}
+                value={dna.startDate}
+                onChange={(e) => setDna((p) => ({ ...p, startDate: e.target.value }))}
+                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors ${
+                  errors.startDate
+                    ? 'border-red-300 focus:border-red-500 bg-red-50/20'
+                    : 'border-slate-200 focus:border-blue-400'
+                }`}
+              />
+              {errors.startDate && (
+                <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Nights
+              </label>
               <select
                 value={dna.nights}
                 onChange={(e) => setDna((p) => ({ ...p, nights: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors bg-white"
+                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors bg-white ${
+                  errors.nights
+                    ? 'border-red-300 focus:border-red-500'
+                    : 'border-slate-200 focus:border-blue-400'
+                }`}
               >
-                {[3,4,5,6,7,8,9,10,12,14].map((n) => <option key={n} value={n}>{n} nights</option>)}
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((n) => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'night' : 'nights'}</option>
+                ))}
               </select>
+              {errors.nights && (
+                <p className="text-xs text-red-500 mt-1">{errors.nights}</p>
+              )}
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Travelers</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Travelers
+              </label>
               <select
                 value={dna.travelers}
                 onChange={(e) => setDna((p) => ({ ...p, travelers: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors bg-white"
+                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors bg-white ${
+                  errors.travelers
+                    ? 'border-red-300 focus:border-red-500'
+                    : 'border-slate-200 focus:border-blue-400'
+                }`}
               >
-                {[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n} {n === 1 ? 'traveler' : 'travelers'}</option>)}
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'traveler' : 'travelers'}</option>
+                ))}
               </select>
+              {errors.travelers && (
+                <p className="text-xs text-red-500 mt-1">{errors.travelers}</p>
+              )}
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Total budget (₹)</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Total budget (₹)
+              </label>
               <input
                 type="number"
                 value={dna.budget}
-                onChange={(e) => setDna((p) => ({ ...p, budget: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setDna((p) => ({
+                    ...p,
+                    budget: e.target.value === '' ? '' : Number(e.target.value),
+                  }))
+                }
+                placeholder="Optional, in ₹"
                 step={10000}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors"
+                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors ${
+                  errors.budget
+                    ? 'border-red-300 focus:border-red-500 bg-red-50/20'
+                    : 'border-slate-200 focus:border-blue-400'
+                }`}
               />
+              {errors.budget && (
+                <p className="text-xs text-red-500 mt-1">{errors.budget}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1287,6 +908,7 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               <div className="flex gap-2">
                 {(['relaxed', 'balanced', 'packed'] as const).map((p) => (
                   <button
+                    type="button"
                     key={p}
                     onClick={() => setDna((prev) => ({ ...prev, pace: p }))}
                     className={`flex-1 py-2 text-xs font-semibold rounded-xl capitalize border transition-all ${dna.pace === p ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}
@@ -1301,6 +923,7 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               <div className="flex gap-2">
                 {(['smart', 'comfortable', 'premium', 'luxury'] as const).map((c) => (
                   <button
+                    type="button"
                     key={c}
                     onClick={() => setDna((prev) => ({ ...prev, comfort: c }))}
                     className={`flex-1 py-2 text-xs font-semibold rounded-xl capitalize border transition-all ${dna.comfort === c ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}
@@ -1312,10 +935,14 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
             </div>
           </div>
           <div className="mt-4">
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Interests</label>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Interests</label>
+              <span className="text-xs text-slate-400 font-normal">Pick a few (optional)</span>
+            </div>
             <div className="flex flex-wrap gap-2">
               {INTERESTS.map((interest) => (
                 <button
+                  type="button"
                   key={interest}
                   onClick={() => toggleInterest(interest)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${dna.interests.includes(interest) ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}
@@ -1336,7 +963,7 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               <input
                 value={dna.mustHave}
                 onChange={(e) => setDna((p) => ({ ...p, mustHave: e.target.value }))}
-                placeholder="e.g. cherry blossoms, Mt Fuji view, authentic ramen"
+                placeholder="e.g. a sunrise viewpoint, local street food"
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none transition-colors"
               />
             </div>
@@ -1354,7 +981,7 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               <textarea
                 value={dna.notes}
                 onChange={(e) => setDna((p) => ({ ...p, notes: e.target.value }))}
-                placeholder="e.g. We don't like early mornings and want to spend more time in Kyoto. Celebrating an anniversary."
+                placeholder="e.g. Celebrating an anniversary, prefer walking tours, need vegetarian options"
                 rows={3}
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 focus:border-blue-400 focus:outline-none resize-none transition-colors"
               />
@@ -1363,8 +990,14 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
         </div>
 
         <button
+          type="button"
           onClick={onBuild}
-          className="w-full py-4 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2.5 text-base shadow-lg shadow-blue-500/20"
+          disabled={!ok}
+          className={`w-full py-4 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2.5 text-base ${
+            ok
+              ? 'bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 shadow-lg shadow-blue-500/20 cursor-pointer'
+              : 'bg-slate-300 cursor-not-allowed opacity-60 shadow-none'
+          }`}
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="currentColor"/>
@@ -1378,7 +1011,43 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
 
 // ─── Building screen ──────────────────────────────────────────────────────────
 
-function BuildingScreen({ msgIdx, destination }: { msgIdx: number; destination: string }) {
+function BuildingScreen({
+  msgIdx,
+  destination,
+  error,
+  onTryAgain,
+}: {
+  msgIdx: number;
+  destination: string;
+  error?: string | null;
+  onTryAgain?: () => void;
+}) {
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 max-w-md mx-auto px-4 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600 shadow-sm">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="font-display text-2xl text-slate-900 mb-2">Failed to Generate Journey</h2>
+          <p className="text-sm text-slate-600 leading-relaxed bg-red-50/50 border border-red-100 rounded-xl p-3 mb-4">
+            {error}
+          </p>
+        </div>
+        <button
+          onClick={onTryAgain}
+          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-8">
       <div className="relative">

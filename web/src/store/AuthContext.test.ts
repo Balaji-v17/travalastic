@@ -41,10 +41,10 @@ const eventListeners: Record<string, ((event: any) => void)[]> = {};
   }
 };
 
-process.env.VITE_API_BASE_URL = 'http://localhost:8000';
+process.env.VITE_API_BASE_URL = 'https://api.travalastic.test';
 
 import { getToken, setToken, clearToken } from '../lib/auth.ts';
-import { apiFetch, ApiError } from '../lib/api.ts';
+import { apiFetch, ApiError, getApiBaseUrl } from '../lib/api.ts';
 
 describe('Auth flow and contracts', () => {
   const originalFetch = globalThis.fetch;
@@ -86,7 +86,7 @@ describe('Auth flow and contracts', () => {
     };
 
     const res = await apiFetch<{ user: any }>('/auth/me');
-    assert.equal(capturedUrl, 'http://localhost:8000/auth/me');
+    assert.equal(capturedUrl, `${getApiBaseUrl()}/auth/me`);
     assert.equal(capturedHeaders.get('Authorization'), 'Bearer valid-jwt-token');
     assert.equal(res.user.email, 'traveler@luxury.com');
     assert.equal(res.user.name, 'Sophia Laurent');
@@ -157,7 +157,7 @@ describe('Auth flow and contracts', () => {
       body: { email: 'arjun@example.com', password: 'secretpassword' },
     });
 
-    assert.equal(capturedUrl, 'http://localhost:8000/auth/login');
+    assert.equal(capturedUrl, `${getApiBaseUrl()}/auth/login`);
     assert.equal(capturedMethod, 'POST');
     assert.equal(
       capturedBody,
@@ -223,7 +223,7 @@ describe('Auth flow and contracts', () => {
       body: { email: 'newuser@luxury.com', password: 'newpassword123' },
     });
 
-    assert.equal(capturedUrl, 'http://localhost:8000/auth/signup');
+    assert.equal(capturedUrl, `${getApiBaseUrl()}/auth/signup`);
     assert.equal(
       capturedBody,
       JSON.stringify({ email: 'newuser@luxury.com', password: 'newpassword123' })

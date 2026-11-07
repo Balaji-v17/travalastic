@@ -118,7 +118,7 @@ export default function CommandCenter() {
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                     <span className="text-xs text-red-700 font-semibold">LIVE</span>
                   </div>
-                  <p className="font-semibold text-red-900">IndiGo 6E-812 delayed 45min — Journey jrn-001 affected</p>
+                  <p className="font-semibold text-red-900">Flight delay 45min — Journey jrn-001 affected</p>
                   <p className="text-xs text-red-700 mt-1">Traveler: Arjun Mehta · Destination: Tokyo NRT · Transfer reviewed: no impact</p>
                   <div className="mt-3 flex gap-2">
                     <button onClick={() => navigate('journey-control-tower')} className="px-3 py-1.5 bg-red-700 text-white text-xs font-semibold rounded-lg hover:bg-red-800">Open in Control Tower</button>

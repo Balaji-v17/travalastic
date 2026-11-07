@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { useApp } from '../../store/AppContext';
 import { deals } from '../../data/mockData';
 import { allPackages, formatPackagePrice } from '../../data/packagesData';
+import { SHOW_SAMPLE_PAGES } from '../../config/features';
+import AirportInput from '../../components/flights/AirportInput';
+import { validateStay } from '../../lib/stay';
+import { STYLE_KEYS, STYLE_COLLECTIONS } from '../../data/styleCollections';
 
 type SearchTab = 'flights' | 'hotels' | 'experiences' | 'journey';
 
@@ -32,25 +36,28 @@ function StyleItem({ label, onNavigate }: { label: string; onNavigate: () => voi
 }
 
 export default function HomePage() {
-  const { navigate, setSearchQuery, setPlannerDestination, journeys, navigateToPackage } = useApp();
+  const { navigate, setSearchQuery, setPlannerDestination, journeys, navigateToPackage, openHotels, openStyle, openTransport } = useApp();
 
   // Search state
-  const [searchTab, setSearchTab] = useState<SearchTab>('flights');
-  const [flightFrom, setFlightFrom] = useState('Mumbai (BOM)');
-  const [flightTo, setFlightTo] = useState('Tokyo (NRT)');
-  const [flightDep, setFlightDep] = useState('2027-03-15');
-  const [flightRet, setFlightRet] = useState('2027-03-22');
-  const [flightCabin, setFlightCabin] = useState('Business');
-  const [hotelDest, setHotelDest] = useState('Tokyo');
-  const [hotelCheckIn, setHotelCheckIn] = useState('2027-03-15');
-  const [hotelCheckOut, setHotelCheckOut] = useState('2027-03-22');
-  const [expDest, setExpDest] = useState('Tokyo');
-  const [expDate, setExpDate] = useState('2027-03-17');
+  const [searchTab, setSearchTab] = useState<SearchTab>('journey');
+  const [flightFromIata, setFlightFromIata] = useState<string | null>(null);
+  const [flightToIata, setFlightToIata] = useState<string | null>(null);
+  const [flightDep, setFlightDep] = useState('');
+  const [flightAdults, setFlightAdults] = useState(2);
+  const [flightError, setFlightError] = useState('');
+  const [hotelDest, setHotelDest] = useState('');
+  const [hotelCheckIn, setHotelCheckIn] = useState('');
+  const [hotelCheckOut, setHotelCheckOut] = useState('');
+  const [hotelGuests, setHotelGuests] = useState(2);
+  const [hotelRooms, setHotelRooms] = useState(1);
+  const [hotelError, setHotelError] = useState('');
+  const [expDest, setExpDest] = useState('');
+  const [expDate, setExpDate] = useState('');
   const [expCategory, setExpCategory] = useState('Food & Culture');
-  const [journeyDest, setJourneyDest] = useState('Japan');
-  const [journeyWhen, setJourneyWhen] = useState('March 2027');
+  const [journeyDest, setJourneyDest] = useState('');
+  const [journeyWhen, setJourneyWhen] = useState('');
   const [journeyTravelers, setJourneyTravelers] = useState(2);
-  const [journeyBudget, setJourneyBudget] = useState('₹2.5L–₹5L');
+  const [journeyBudget, setJourneyBudget] = useState('');
   const [journeyStyle, setJourneyStyle] = useState('Relaxed');
 
   const activeJourney =
@@ -81,13 +88,71 @@ export default function HomePage() {
     return null;
   }
 
+  const todayLocalDate = (() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  })();
+
   function handleFlightSearch() {
-    setSearchQuery({ from: flightFrom, destination: flightTo, dates: `${flightDep} – ${flightRet}`, checkIn: flightDep, checkOut: flightRet, type: 'flights', cabin: flightCabin, travelers: 2 });
+    setFlightError('');
+    if (!flightFromIata && !flightToIata && !flightDep) {
+      navigate('search');
+      return;
+    }
+    if (!flightFromIata) {
+      setFlightError('Please choose a departure airport.');
+      return;
+    }
+    if (!flightToIata) {
+      setFlightError('Please choose a destination airport.');
+      return;
+    }
+    if (flightFromIata === flightToIata) {
+      setFlightError('Origin and destination cannot be the same airport.');
+      return;
+    }
+    if (flightDep && flightDep < todayLocalDate) {
+      setFlightError('Departure date cannot be in the past.');
+      return;
+    }
+
+    setSearchQuery({
+      from: flightFromIata || undefined,
+      destination: flightToIata || undefined,
+      dates: flightDep || '',
+      type: 'flights',
+      travelers: flightAdults,
+    });
     navigate('search');
   }
   function handleHotelSearch() {
-    setSearchQuery({ destination: hotelDest, checkIn: hotelCheckIn, checkOut: hotelCheckOut, dates: `${hotelCheckIn} – ${hotelCheckOut}`, type: 'hotels', travelers: 2 });
-    navigate('search');
+    const val = validateStay(
+      {
+        destination: hotelDest,
+        checkIn: hotelCheckIn,
+        checkOut: hotelCheckOut,
+        guests: hotelGuests,
+        rooms: hotelRooms,
+      },
+      todayLocalDate
+    );
+
+    if (!val.ok) {
+      setHotelError(val.errorList[0] || 'Please check your stay details.');
+      return;
+    }
+
+    setHotelError('');
+    openHotels({
+      destination: hotelDest,
+      checkIn: hotelCheckIn,
+      checkOut: hotelCheckOut,
+      guests: hotelGuests,
+      rooms: hotelRooms,
+    });
   }
   function handleExpSearch() {
     setSearchQuery({ destination: expDest, dates: expDate, type: 'experiences', travelers: 2 });
@@ -147,7 +212,7 @@ export default function HomePage() {
           >
             {/* Tab links */}
             <div className="scrollbar-hide mb-5 flex gap-5 overflow-x-auto border-b border-stone pb-3 sm:gap-6 lg:mb-6 lg:pb-4" role="tablist" aria-label="Search type">
-              {(['flights', 'hotels', 'experiences', 'journey'] as SearchTab[]).map((t) => (
+              {(SHOW_SAMPLE_PAGES ? (['flights', 'hotels', 'experiences', 'journey'] as SearchTab[]) : (['journey', 'flights', 'hotels'] as SearchTab[])).map((t) => (
                 <button
                   key={t}
                   onClick={() => setSearchTab(t)}
@@ -168,46 +233,61 @@ export default function HomePage() {
             {/* Flights */}
             {searchTab === 'flights' && (
               <div>
-                <div className="grid grid-cols-2 lg:grid-cols-6 gap-x-6 gap-y-4">
-                  <div className="col-span-2 lg:col-span-1">
-                    <label className={labelCls}>From</label>
-                    <input className={inputCls} value={flightFrom} onChange={(e) => setFlightFrom(e.target.value)} placeholder="City or airport" />
-                  </div>
-                  <div className="col-span-2 lg:col-span-1">
-                    <label className={labelCls}>To</label>
-                    <input className={inputCls} value={flightTo} onChange={(e) => setFlightTo(e.target.value)} placeholder="City or airport" />
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <AirportInput
+                    label="From"
+                    value={flightFromIata}
+                    onChange={(code) => {
+                      setFlightFromIata(code);
+                      if (flightError) setFlightError('');
+                    }}
+                    placeholder="Origin airport or city"
+                  />
+                  <AirportInput
+                    label="To"
+                    value={flightToIata}
+                    onChange={(code) => {
+                      setFlightToIata(code);
+                      if (flightError) setFlightError('');
+                    }}
+                    placeholder="Destination airport or city"
+                  />
                   <div>
-                    <label className={labelCls}>Depart</label>
-                    <input type="date" className={inputCls} value={flightDep} onChange={(e) => setFlightDep(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Return</label>
-                    <input type="date" className={inputCls} value={flightRet} onChange={(e) => setFlightRet(e.target.value)} />
+                    <label className={labelCls}>Departure Date</label>
+                    <input
+                      type="date"
+                      min={todayLocalDate}
+                      className={inputCls}
+                      value={flightDep}
+                      onChange={(e) => {
+                        setFlightDep(e.target.value);
+                        if (flightError) setFlightError('');
+                      }}
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>Travelers</label>
-                    <input className={inputCls} defaultValue="2 Adults" readOnly />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Cabin</label>
-                    <select className={inputCls} value={flightCabin} onChange={(e) => setFlightCabin(e.target.value)}>
-                      {['Economy', 'Premium Economy', 'Business', 'First'].map((c) => <option key={c}>{c}</option>)}
+                    <select
+                      className={inputCls}
+                      value={flightAdults}
+                      onChange={(e) => setFlightAdults(parseInt(e.target.value, 10))}
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                        <option key={n} value={n}>
+                          {n} adult{n > 1 ? 's' : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
-                <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-wrap gap-3">
-                    {['Tokyo', 'Paris', 'Maldives', 'Dubai'].map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => { setFlightTo(d); }}
-                        className="text-xs text-[#77736C] hover:text-[#252525] transition-colors"
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
+
+                {flightError && (
+                  <p className="mt-3 text-xs text-rose-600 font-medium animate-fade-in">
+                    ⚠️ {flightError}
+                  </p>
+                )}
+
+                <div className="mt-5 flex justify-end">
                   <button
                     onClick={handleFlightSearch}
                     className="w-full px-6 py-3 text-sm font-semibold text-white transition-colors sm:w-auto sm:py-2.5"
@@ -227,24 +307,93 @@ export default function HomePage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                   <div className="col-span-2 lg:col-span-1">
                     <label className={labelCls}>Destination</label>
-                    <input className={inputCls} value={hotelDest} onChange={(e) => setHotelDest(e.target.value)} placeholder="City, area or hotel" />
+                    <input
+                      className={inputCls}
+                      value={hotelDest}
+                      onChange={(e) => {
+                        setHotelDest(e.target.value);
+                        if (hotelError) setHotelError('');
+                      }}
+                      placeholder="City, area or hotel"
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>Check-in</label>
-                    <input type="date" className={inputCls} value={hotelCheckIn} onChange={(e) => setHotelCheckIn(e.target.value)} />
+                    <input
+                      type="date"
+                      min={todayLocalDate}
+                      className={inputCls}
+                      value={hotelCheckIn}
+                      onChange={(e) => {
+                        setHotelCheckIn(e.target.value);
+                        if (hotelError) setHotelError('');
+                      }}
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>Check-out</label>
-                    <input type="date" className={inputCls} value={hotelCheckOut} onChange={(e) => setHotelCheckOut(e.target.value)} />
+                    <input
+                      type="date"
+                      min={hotelCheckIn || todayLocalDate}
+                      className={inputCls}
+                      value={hotelCheckOut}
+                      onChange={(e) => {
+                        setHotelCheckOut(e.target.value);
+                        if (hotelError) setHotelError('');
+                      }}
+                    />
                   </div>
                   <div>
-                    <label className={labelCls}>Guests</label>
-                    <input className={inputCls} defaultValue="2 Adults · 1 Room" readOnly />
+                    <label className={labelCls}>Guests & Rooms</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className={inputCls}
+                        value={hotelGuests}
+                        onChange={(e) => {
+                          const g = parseInt(e.target.value, 10);
+                          setHotelGuests(g);
+                          if (hotelRooms > g) setHotelRooms(g);
+                          if (hotelError) setHotelError('');
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                          <option key={n} value={n}>
+                            {n} {n === 1 ? 'Guest' : 'Guests'}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className={inputCls}
+                        value={hotelRooms}
+                        onChange={(e) => {
+                          setHotelRooms(parseInt(e.target.value, 10));
+                          if (hotelError) setHotelError('');
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <option key={n} value={n} disabled={n > hotelGuests}>
+                            {n} {n === 1 ? 'Room' : 'Rooms'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
+
+                {hotelError && (
+                  <p className="mt-3 text-xs text-rose-600 font-medium animate-fade-in">
+                    ⚠️ {hotelError}
+                  </p>
+                )}
+
                 <div className="mt-5 flex justify-end">
-                  <button onClick={handleHotelSearch} className="w-full px-6 py-3 text-sm font-semibold text-white transition-colors sm:w-auto sm:py-2.5" style={{ backgroundColor: '#111111', borderRadius: '2px' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#252525')} onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#111111')}>
+                  <button
+                    onClick={handleHotelSearch}
+                    className="w-full px-6 py-3 text-sm font-semibold text-white transition-colors sm:w-auto sm:py-2.5"
+                    style={{ backgroundColor: '#111111', borderRadius: '2px' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#252525')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#111111')}
+                  >
                     Search hotels
                   </button>
                 </div>
@@ -445,7 +594,14 @@ export default function HomePage() {
                 <div
                   className="lg:col-span-6 relative overflow-hidden group cursor-pointer"
                   style={{ height: '560px', borderRadius: '2px' }}
-                  onClick={() => navigateToPackage(p.id)}
+                  onClick={() => {
+                    if (SHOW_SAMPLE_PAGES) {
+                      navigateToPackage(p.id);
+                    } else {
+                      setPlannerDestination(p.destination, '');
+                      navigate('ai-planner');
+                    }
+                  }}
                 >
                   <img
                     src={p.imageUrl}
@@ -483,7 +639,14 @@ export default function HomePage() {
                   key={p.id}
                   className="relative flex-1 overflow-hidden group cursor-pointer"
                   style={{ minHeight: '268px', borderRadius: '2px' }}
-                  onClick={() => navigateToPackage(p.id)}
+                  onClick={() => {
+                    if (SHOW_SAMPLE_PAGES) {
+                      navigateToPackage(p.id);
+                    } else {
+                      setPlannerDestination(p.destination, '');
+                      navigate('ai-planner');
+                    }
+                  }}
                 >
                   <img
                     src={p.imageUrl}
@@ -515,13 +678,19 @@ export default function HomePage() {
           {/* CTA */}
           <div className="mt-10 flex justify-center">
             <button
-              onClick={() => navigate('journeys')}
+              onClick={() => {
+                if (SHOW_SAMPLE_PAGES) {
+                  navigate('journeys');
+                } else {
+                  navigate('ai-planner');
+                }
+              }}
               className="px-8 py-3.5 text-sm font-semibold text-white tracking-[0.08em] uppercase transition-colors"
               style={{ backgroundColor: '#111111', borderRadius: '2px', border: '1px solid rgba(255,255,255,0.15)' }}
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)')}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
             >
-              Explore all journeys &rarr;
+              {SHOW_SAMPLE_PAGES ? 'Explore all journeys →' : 'Plan your journey with AI →'}
             </button>
           </div>
         </div>
@@ -534,15 +703,12 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] mb-10" style={{ color: '#77736C' }}>Travel by Style</p>
           <div className="divide-y" style={{ borderTop: '1px solid #E8E4DC', borderBottom: '1px solid #E8E4DC' }}>
-            {[
-              'Private Escapes',
-              'Honeymoons',
-              'Wellness',
-              'Family',
-              'Adventure',
-              'Celebrations',
-            ].map((style) => (
-              <StyleItem key={style} label={style} onNavigate={() => navigate('journeys')} />
+            {STYLE_KEYS.map((key) => (
+              <StyleItem
+                key={key}
+                label={STYLE_COLLECTIONS[key].label}
+                onNavigate={() => openStyle(key)}
+              />
             ))}
           </div>
         </div>
@@ -564,13 +730,19 @@ export default function HomePage() {
               </h2>
             </div>
             <button
-              onClick={() => navigate('explore')}
+              onClick={() => {
+                if (SHOW_SAMPLE_PAGES) {
+                  navigate('explore');
+                } else {
+                  navigate('ai-planner');
+                }
+              }}
               className="hidden lg:flex items-center gap-2 text-sm group"
               style={{ color: '#77736C' }}
               onMouseEnter={(e) => (e.currentTarget.style.color = '#F7F5F0')}
               onMouseLeave={(e) => (e.currentTarget.style.color = '#77736C')}
             >
-              Explore all
+              {SHOW_SAMPLE_PAGES ? 'Explore all' : 'Plan with Journey AI'}
               <span className="arrow-nudge">→</span>
             </button>
           </div>
@@ -581,7 +753,14 @@ export default function HomePage() {
             <div
               className="lg:col-span-3 relative overflow-hidden group cursor-pointer"
               style={{ height: '520px', borderRadius: '2px' }}
-              onClick={() => navigate('destination', { selectedDestinationId: featuredDestinations[0].id })}
+              onClick={() => {
+                if (SHOW_SAMPLE_PAGES) {
+                  navigate('destination', { selectedDestinationId: featuredDestinations[0].id });
+                } else {
+                  setPlannerDestination(featuredDestinations[0].name, '');
+                  navigate('ai-planner');
+                }
+              }}
             >
               <img
                 src={featuredDestinations[0].image}
@@ -596,7 +775,7 @@ export default function HomePage() {
                 </h3>
                 <p className="text-sm max-w-xs mb-5" style={{ color: 'rgba(255,255,255,0.65)' }}>{featuredDestinations[0].tagline}</p>
                 <span className="text-xs font-medium group transition-colors" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  Explore destination <span className="arrow-nudge inline-block">→</span>
+                  {SHOW_SAMPLE_PAGES ? 'Explore destination' : 'Plan a trip here'} <span className="arrow-nudge inline-block">→</span>
                 </span>
               </div>
             </div>
@@ -608,7 +787,14 @@ export default function HomePage() {
                   key={dest.id}
                   className="relative flex-1 overflow-hidden group cursor-pointer"
                   style={{ minHeight: '248px', borderRadius: '2px' }}
-                  onClick={() => navigate('destination', { selectedDestinationId: dest.id })}
+                  onClick={() => {
+                    if (SHOW_SAMPLE_PAGES) {
+                      navigate('destination', { selectedDestinationId: dest.id });
+                    } else {
+                      setPlannerDestination(dest.name, '');
+                      navigate('ai-planner');
+                    }
+                  }}
                 >
                   <img
                     src={dest.image}
@@ -626,8 +812,18 @@ export default function HomePage() {
           </div>
 
           <div className="mt-8 lg:hidden">
-            <button onClick={() => navigate('explore')} className="text-sm" style={{ color: '#77736C' }}>
-              Explore all destinations →
+            <button
+              onClick={() => {
+                if (SHOW_SAMPLE_PAGES) {
+                  navigate('explore');
+                } else {
+                  navigate('ai-planner');
+                }
+              }}
+              className="text-sm"
+              style={{ color: '#77736C' }}
+            >
+              {SHOW_SAMPLE_PAGES ? 'Explore all destinations →' : 'Plan with Journey AI →'}
             </button>
           </div>
         </div>
@@ -742,11 +938,18 @@ export default function HomePage() {
               <div className="grid sm:grid-cols-2 gap-0">
                 {[
                   { num: '01', title: 'Flights', desc: 'Global inventory. Economy through First Class. Multi-city and open-jaw routing.', action: () => { setSearchQuery({ type: 'flights', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
-                  { num: '02', title: 'Hotels', desc: 'Independent properties, boutique stays and global chains. Curated by destination.', action: () => { setSearchQuery({ type: 'hotels', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
-                  { num: '03', title: 'Experiences', desc: 'Private tours, cultural immersions, culinary journeys and adventure activities.', action: () => { setSearchQuery({ type: 'experiences', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
-                  { num: '04', title: 'Transfers', desc: 'Airport pickups, intercity travel and private ground transport, pre-arranged.', action: () => navigate('search') },
-                  { num: '05', title: 'Visa', desc: 'Eligibility checks, document guidance and application support for 190+ countries.', action: () => navigate('visa-center') },
-                  { num: '06', title: 'Journey AI', desc: 'Intelligent trip planning. One conversation. A complete itinerary built for you.', action: () => navigate('ai-planner') },
+                  { num: '02', title: 'Hotels', desc: 'Independent properties, boutique stays and global chains. Curated by destination.', action: () => openHotels() },
+                  ...(SHOW_SAMPLE_PAGES
+                    ? [
+                        { num: '03', title: 'Experiences', desc: 'Private tours, cultural immersions, culinary journeys and adventure activities.', action: () => { setSearchQuery({ type: 'experiences', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
+                        { num: '04', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openTransport('cab') },
+                        { num: '05', title: 'Visa', desc: 'Eligibility checks, document guidance and application support for 190+ countries.', action: () => navigate('visa-center') },
+                        { num: '06', title: 'Journey AI', desc: 'Intelligent trip planning. One conversation. A complete itinerary built for you.', action: () => navigate('ai-planner') },
+                      ]
+                    : [
+                        { num: '03', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openTransport('cab') },
+                        { num: '04', title: 'Journey AI', desc: 'Intelligent trip planning. One conversation. A complete itinerary built for you.', action: () => navigate('ai-planner') },
+                      ]),
                 ].map((item, idx, arr) => (
                   <button
                     key={item.num}
@@ -775,83 +978,85 @@ export default function HomePage() {
       </section>
 
       {/* ══════════════════════════════════════════════════════════
-          DEALS — horizontal editorial, asymmetric
+          DEALS — horizontal editorial, asymmetric (Sample only)
       ══════════════════════════════════════════════════════════ */}
-      <section className="py-20 lg:py-28" style={{ backgroundColor: '#F7F5F0' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] mb-3" style={{ color: '#77736C' }}>Limited availability</p>
-              <h2 className="font-display leading-tight" style={{ fontSize: 'clamp(2rem, 3.5vw, 3rem)', color: '#111111', letterSpacing: '-0.01em' }}>
-                Worth reserving now.
-              </h2>
-            </div>
-            <button
-              onClick={() => navigate('deals')}
-              className="hidden lg:flex items-center gap-2 text-sm"
-              style={{ color: '#77736C' }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#252525')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = '#77736C')}
-            >
-              All offers <span className="arrow-nudge">→</span>
-            </button>
-          </div>
-
-          {/* 60/40 layout: one featured + two narrow */}
-          <div className="grid lg:grid-cols-5 gap-5">
-            {/* Featured deal */}
-            {featuredDeals[0] && (
+      {SHOW_SAMPLE_PAGES && (
+        <section className="py-20 lg:py-28" style={{ backgroundColor: '#F7F5F0' }}>
+          <div className="max-w-7xl mx-auto px-6 lg:px-12">
+            <div className="flex items-end justify-between mb-12">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] mb-3" style={{ color: '#77736C' }}>Limited availability</p>
+                <h2 className="font-display leading-tight" style={{ fontSize: 'clamp(2rem, 3.5vw, 3rem)', color: '#111111', letterSpacing: '-0.01em' }}>
+                  Worth reserving now.
+                </h2>
+              </div>
               <button
                 onClick={() => navigate('deals')}
-                className="lg:col-span-3 group text-left relative overflow-hidden"
-                style={{ borderRadius: '2px', height: '400px' }}
+                className="hidden lg:flex items-center gap-2 text-sm"
+                style={{ color: '#77736C' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#252525')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#77736C')}
               >
-                <img
-                  src={featuredDeals[0].imageUrl}
-                  alt={featuredDeals[0].title}
-                  className="w-full h-full object-cover img-zoom transition-transform duration-700"
-                />
-                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(17,17,17,0.90) 0%, rgba(17,17,17,0.1) 60%)' }} />
-                <div className="absolute bottom-0 left-0 right-0 p-7">
-                  <p className="text-[10px] uppercase tracking-[0.15em] mb-2" style={{ color: '#C9A96E' }}>{featuredDeals[0].subtitle}</p>
-                  <h3 className="font-display text-white text-2xl mb-4">{featuredDeals[0].title}</h3>
-                  <div className="flex items-end gap-4">
-                    <div>
-                      <p className="text-white font-semibold text-2xl">₹{featuredDeals[0].dealPrice.toLocaleString('en-IN')}</p>
-                      <p className="text-xs line-through" style={{ color: '#77736C' }}>₹{featuredDeals[0].originalPrice.toLocaleString('en-IN')}</p>
-                    </div>
-                    <p className="text-xs pb-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Ends in {featuredDeals[0].expiresIn}</p>
-                  </div>
-                </div>
+                All offers <span className="arrow-nudge">→</span>
               </button>
-            )}
+            </div>
 
-            {/* Two stacked deals */}
-            <div className="lg:col-span-2 flex flex-col gap-5">
-              {featuredDeals.slice(1, 3).map((deal) => (
+            {/* 60/40 layout: one featured + two narrow */}
+            <div className="grid lg:grid-cols-5 gap-5">
+              {/* Featured deal */}
+              {featuredDeals[0] && (
                 <button
-                  key={deal.id}
                   onClick={() => navigate('deals')}
-                  className="group text-left relative overflow-hidden flex-1"
-                  style={{ borderRadius: '2px', minHeight: '188px' }}
+                  className="lg:col-span-3 group text-left relative overflow-hidden"
+                  style={{ borderRadius: '2px', height: '400px' }}
                 >
                   <img
-                    src={deal.imageUrl}
-                    alt={deal.title}
+                    src={featuredDeals[0].imageUrl}
+                    alt={featuredDeals[0].title}
                     className="w-full h-full object-cover img-zoom transition-transform duration-700"
                   />
-                  <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(17,17,17,0.85) 0%, rgba(17,17,17,0.05) 60%)' }} />
-                  <div className="absolute bottom-0 left-0 right-0 p-5">
-                    <p className="text-[10px] uppercase tracking-[0.12em] mb-1" style={{ color: '#C9A96E' }}>{deal.subtitle}</p>
-                    <h3 className="font-display text-white text-lg mb-2">{deal.title}</h3>
-                    <p className="text-white text-sm font-semibold">₹{deal.dealPrice.toLocaleString('en-IN')}</p>
+                  <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(17,17,17,0.90) 0%, rgba(17,17,17,0.1) 60%)' }} />
+                  <div className="absolute bottom-0 left-0 right-0 p-7">
+                    <p className="text-[10px] uppercase tracking-[0.15em] mb-2" style={{ color: '#C9A96E' }}>{featuredDeals[0].subtitle}</p>
+                    <h3 className="font-display text-white text-2xl mb-4">{featuredDeals[0].title}</h3>
+                    <div className="flex items-end gap-4">
+                      <div>
+                        <p className="text-white font-semibold text-2xl">₹{featuredDeals[0].dealPrice.toLocaleString('en-IN')}</p>
+                        <p className="text-xs line-through" style={{ color: '#77736C' }}>₹{featuredDeals[0].originalPrice.toLocaleString('en-IN')}</p>
+                      </div>
+                      <p className="text-xs pb-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Ends in {featuredDeals[0].expiresIn}</p>
+                    </div>
                   </div>
                 </button>
-              ))}
+              )}
+
+              {/* Two stacked deals */}
+              <div className="lg:col-span-2 flex flex-col gap-5">
+                {featuredDeals.slice(1, 3).map((deal) => (
+                  <button
+                    key={deal.id}
+                    onClick={() => navigate('deals')}
+                    className="group text-left relative overflow-hidden flex-1"
+                    style={{ borderRadius: '2px', minHeight: '188px' }}
+                  >
+                    <img
+                      src={deal.imageUrl}
+                      alt={deal.title}
+                      className="w-full h-full object-cover img-zoom transition-transform duration-700"
+                    />
+                    <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(17,17,17,0.85) 0%, rgba(17,17,17,0.05) 60%)' }} />
+                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                      <p className="text-[10px] uppercase tracking-[0.12em] mb-1" style={{ color: '#C9A96E' }}>{deal.subtitle}</p>
+                      <h3 className="font-display text-white text-lg mb-2">{deal.title}</h3>
+                      <p className="text-white text-sm font-semibold">₹{deal.dealPrice.toLocaleString('en-IN')}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ══════════════════════════════════════════════════════════
           FINAL CTA — full-bleed, minimal

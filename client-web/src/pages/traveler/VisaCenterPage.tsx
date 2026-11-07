@@ -131,8 +131,11 @@ function AIChatModal({ app, onClose }: { app: VisaApplication; onClose: () => vo
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col" style={{ maxHeight: '80vh' }}>
         <div className="flex items-center gap-3 p-4 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-white text-sm font-bold">AI</div>
-          <div>
-            <p className="font-semibold text-slate-900 text-sm">Visa AI Assistant</p>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-slate-900 text-sm">Visa AI Assistant</p>
+              <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">Demo assistant: replies are scripted</span>
+            </div>
             <p className="text-xs text-slate-500">{app.country} · {app.referenceNumber ?? 'Draft'}</p>
           </div>
           <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>

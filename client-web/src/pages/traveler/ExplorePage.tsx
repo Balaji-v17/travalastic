@@ -1,6 +1,9 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../store/AppContext';
 import { destinations, type Destination } from '../../data/mockData';
+import { SHOW_SAMPLE_PAGES } from '../../config/features';
+import { apiFetch } from '../../lib/api';
+import type { PlaceResult } from '../../lib/destinationView';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -240,7 +243,7 @@ function CompareBar({ items, onRemove, onClear, onPlanAI }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ExplorePage() {
-  const { navigate, setPlannerDestination, searchQuery, setSearchQuery, savedDestinationIds, toggleSaveDestination } = useApp();
+  const { navigate, setPlannerDestination, openPlace, searchQuery, setSearchQuery, savedDestinationIds, toggleSaveDestination } = useApp();
 
   const [searchText, setSearchText] = useState('');
   const [activeStyle, setActiveStyle] = useState<string | null>(searchQuery.travelStyle ?? null);
@@ -252,15 +255,61 @@ export default function ExplorePage() {
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const trendingRef = useRef<HTMLDivElement>(null);
 
+  const [backendResults, setBackendResults] = useState<PlaceResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
   const incomingStyle = searchQuery.travelStyle;
   const incomingDest = searchQuery.destination && searchQuery.destination !== '' ? searchQuery.destination : null;
 
+  useEffect(() => {
+    const q = (searchText || incomingDest || '').trim();
+    if (!q) {
+      setBackendResults([]);
+      setHasSearched(false);
+      setIsSearching(false);
+      return;
+    }
+
+    let active = true;
+    setIsSearching(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiFetch<{
+          results?: PlaceResult[];
+          destinations?: PlaceResult[];
+        }>(`/destinations/search?q=${encodeURIComponent(q)}`);
+        if (active) {
+          const res = data.results || data.destinations || [];
+          setBackendResults(res);
+          setHasSearched(true);
+        }
+      } catch {
+        if (active) {
+          setBackendResults([]);
+          setHasSearched(true);
+        }
+      } finally {
+        if (active) setIsSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchText, incomingDest]);
+
   const clearContext = () => {
+    setSearchText('');
     setSearchQuery({ travelStyle: undefined, destination: '' });
     setActiveStyle(null);
     setActiveRegion(null);
     setActiveTravelerType(null);
     setActiveExperience(null);
+    setBackendResults([]);
+    setHasSearched(false);
   };
 
   const effectiveStyles = useMemo(() => {
@@ -295,7 +344,13 @@ export default function ExplorePage() {
   const seasonal = useMemo(() => destinations.filter((d) => d.bestMonths.includes(CURRENT_MONTH)), []);
   const featured = filtered[featuredIdx % Math.max(filtered.length, 1)] ?? destinations[0];
 
-  const handleNavigateDest = (dest: Destination) => navigate('destination', { selectedDestinationId: dest.id });
+  const handleNavigateDest = (dest: Destination) => {
+    if (SHOW_SAMPLE_PAGES) {
+      navigate('destination', { selectedDestinationId: dest.id });
+    } else {
+      handlePlanAI(dest);
+    }
+  };
   const handlePlanAI = (dest: Destination) => { setPlannerDestination(dest.name, dest.id); navigate('ai-planner'); };
   const toggleSave = (id: string) => toggleSaveDestination(id);
   const toggleCompare = (dest: Destination) => setCompareList((prev) => {
@@ -310,10 +365,11 @@ export default function ExplorePage() {
     setActiveExperience(null);
   };
 
+  const isSearchActive = Boolean((searchText.trim() || incomingDest) && hasSearched);
   let contextLabel = 'Explore the world';
   let contextClearable = false;
-  if (incomingStyle) { contextLabel = `Exploring: ${incomingStyle}`; contextClearable = true; }
-  else if (incomingDest) { contextLabel = `Results for ${incomingDest}`; contextClearable = true; }
+  if (searchText.trim() || incomingDest) { contextLabel = `Results for "${searchText.trim() || incomingDest}"`; contextClearable = true; }
+  else if (incomingStyle) { contextLabel = `Exploring: ${incomingStyle}`; contextClearable = true; }
   else if (activeRegion) { contextLabel = activeRegion; contextClearable = true; }
   else if (activeStyle) { contextLabel = `Style: ${activeStyle}`; contextClearable = true; }
   else if (activeTravelerType) { const t = TRAVELER_TYPES.find((x) => x.id === activeTravelerType); contextLabel = t ? `${t.label} travel` : contextLabel; contextClearable = true; }
@@ -374,16 +430,20 @@ export default function ExplorePage() {
               </button>
             )}
           </div>
-          <span className="text-sm text-[#77736C] font-medium">{filtered.length} destination{filtered.length !== 1 ? 's' : ''}</span>
+          <span className="text-sm text-[#77736C] font-medium">
+            {isSearchActive
+              ? `${backendResults.length} place${backendResults.length !== 1 ? 's' : ''}`
+              : `${filtered.length} destination${filtered.length !== 1 ? 's' : ''}`}
+          </span>
         </div>
 
         {/* ── Featured Destination ── */}
-        {featured && (
+        {!isSearchActive && featured && (
           <div className="mt-8 mb-10">
             <div
               className="relative overflow-hidden h-[440px] sm:h-[540px] cursor-pointer group"
               style={{ borderRadius: '2px' }}
-              onClick={() => handleNavigateDest(featured)}
+              onClick={() => handlePlanAI(featured)}
             >
               <img
                 src={featured.heroImageUrl || featured.imageUrl}
@@ -410,18 +470,11 @@ export default function ExplorePage() {
                   </div>
                   <div className="flex gap-3 flex-wrap">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleNavigateDest(featured); }}
-                      className="px-6 py-2.5 bg-white text-[#111111] text-sm font-semibold hover:bg-[#F7F5F0] transition-colors"
-                      style={{ borderRadius: '2px' }}
-                    >
-                      Explore {featured.name}
-                    </button>
-                    <button
                       onClick={(e) => { e.stopPropagation(); handlePlanAI(featured); }}
                       className="px-6 py-2.5 text-[#111111] text-sm font-semibold transition-colors"
                       style={{ backgroundColor: '#C9A96E', borderRadius: '2px' }}
                     >
-                      Plan with Journey AI
+                      Plan a trip here
                     </button>
                   </div>
                 </div>
@@ -480,15 +533,140 @@ export default function ExplorePage() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <p className="text-[10px] uppercase tracking-[0.18em] font-medium mb-1" style={{ color: '#C9A96E' }}>
-                {(activeStyle || activeRegion || activeTravelerType || activeExperience || searchText) ? 'Filtered' : 'All'}
+                {isSearchActive
+                  ? 'Search Results'
+                  : (activeStyle || activeRegion || activeTravelerType || activeExperience || searchText)
+                  ? 'Filtered'
+                  : 'All'}
               </p>
               <h2 className="text-xl font-display font-bold text-[#111111]">
-                {(activeStyle || activeRegion || activeTravelerType || activeExperience || searchText) ? 'Filtered Destinations' : 'All Destinations'}
+                {isSearchActive
+                  ? `Places for "${searchText.trim() || incomingDest}"`
+                  : (activeStyle || activeRegion || activeTravelerType || activeExperience || searchText)
+                  ? 'Filtered Destinations'
+                  : 'All Destinations'}
               </h2>
             </div>
           </div>
 
-          {filtered.length === 0 ? (
+          {isSearching ? (
+            <div className="text-center py-20 border border-[#E8E4DC] bg-white" style={{ borderRadius: '2px' }}>
+              <div className="w-8 h-8 border-2 border-[#E8E4DC] border-t-[#111111] rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs uppercase tracking-widest text-[#77736C]">Searching attractions & destinations…</p>
+            </div>
+          ) : isSearchActive ? (
+            backendResults.length === 0 ? (
+              <div className="text-center py-20 border border-[#E8E4DC] bg-white" style={{ borderRadius: '2px' }}>
+                <p className="text-lg font-display font-semibold text-[#252525] mb-2">
+                  No attractions found for "{searchText.trim() || incomingDest}".
+                </p>
+                <p className="text-[#77736C] mb-6">Try searching for another place, or build a custom itinerary with Journey AI.</p>
+                <div className="flex gap-3 justify-center flex-wrap">
+                  <button onClick={clearContext} className="px-5 py-2.5 border border-[#E8E4DC] text-[#252525] font-medium hover:border-[#C9A96E] transition-colors" style={{ borderRadius: '2px' }}>
+                    Clear search
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPlannerDestination(searchText.trim() || incomingDest || '', '');
+                      navigate('ai-planner');
+                    }}
+                    className="px-5 py-2.5 bg-[#111111] text-white font-medium hover:bg-[#252525] transition-colors"
+                    style={{ borderRadius: '2px' }}
+                  >
+                    Plan with Journey AI
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {backendResults[0]?.fallbackNotice && (
+                  <div className="mb-6 p-4 bg-[#F7F5F0] border border-[#E8E4DC] flex items-center gap-3" style={{ borderRadius: '2px' }}>
+                    <span className="text-base">ℹ️</span>
+                    <span className="text-xs text-[#77736C] font-medium">{backendResults[0].fallbackNotice}</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {backendResults.map((place, idx) => {
+                    const heroImg = place.photoUrl || place.image || place.imageUrl;
+                    return (
+                      <div
+                        key={place.placeId || place._id || idx}
+                        className="border border-[#E8E4DC] bg-white overflow-hidden flex flex-col justify-between group hover:border-[#C9A96E] transition-all"
+                        style={{ borderRadius: '2px' }}
+                      >
+                        <div>
+                          <div className="h-44 relative bg-[#1c1c1c] overflow-hidden">
+                            {heroImg ? (
+                              <img
+                                src={heroImg}
+                                alt={place.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              />
+                            ) : (
+                              <div
+                                className="w-full h-full flex items-center justify-center font-display text-5xl font-bold text-white/10 select-none"
+                                style={{ background: 'linear-gradient(135deg, #252525 0%, #111111 100%)' }}
+                              >
+                                {place.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
+                              <span
+                                className="px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase"
+                                style={{
+                                  borderRadius: '2px',
+                                  backgroundColor: place.isCurated ? '#C9A96E' : 'rgba(17,17,17,0.75)',
+                                  color: place.isCurated ? '#111111' : '#FFFFFF',
+                                }}
+                              >
+                                {place.isCurated ? 'Curated' : 'Nearby, not curated'}
+                              </span>
+                              {(place.category || place.type) && (
+                                <span className="px-2 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium tracking-wide" style={{ borderRadius: '2px' }}>
+                                  {place.category || place.type}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="p-4">
+                            <h3 className="font-display font-bold text-lg text-[#111111] mb-1 leading-snug">{place.name}</h3>
+                            <p className="text-xs text-[#77736C] mb-2">
+                              {place.address || [place.city, place.state].filter(Boolean).join(', ')}
+                            </p>
+                            {place.significance && (
+                              <p className="text-xs text-[#252525] line-clamp-2 leading-relaxed mb-3">
+                                {place.significance}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="p-4 pt-0 border-t border-[#E8E4DC] mt-2 flex gap-2">
+                          <button
+                            onClick={() => {
+                              setPlannerDestination(place.name, '');
+                              navigate('ai-planner');
+                            }}
+                            className="flex-1 py-2 bg-[#111111] hover:bg-[#252525] text-white text-xs font-semibold transition-colors"
+                            style={{ borderRadius: '2px' }}
+                          >
+                            Plan a trip here
+                          </button>
+                          <button
+                            onClick={() => openPlace(place)}
+                            className="px-3.5 py-2 border border-[#E8E4DC] hover:border-[#111111] text-[#111111] text-xs font-semibold transition-colors"
+                            style={{ borderRadius: '2px' }}
+                          >
+                            View details
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          ) : filtered.length === 0 ? (
             <div className="text-center py-20 border border-[#E8E4DC]" style={{ borderRadius: '2px' }}>
               <p className="text-lg font-display font-semibold text-[#252525] mb-2">No destinations match these preferences.</p>
               <p className="text-[#77736C] mb-6">Try adjusting your filters, or let Journey AI find something for you.</p>

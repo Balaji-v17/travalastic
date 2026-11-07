@@ -4,13 +4,21 @@ const rawBaseUrl =
   import.meta.env?.VITE_API_BASE_URL ??
   (typeof process !== 'undefined' ? process.env?.VITE_API_BASE_URL : undefined);
 
-if (!rawBaseUrl || typeof rawBaseUrl !== 'string' || !rawBaseUrl.trim()) {
-  throw new Error(
-    'Missing required environment variable VITE_API_BASE_URL. Please set VITE_API_BASE_URL in your .env file (e.g. VITE_API_BASE_URL=http://localhost:8000).'
-  );
-}
+export const hasValidApiBase = Boolean(
+  rawBaseUrl && typeof rawBaseUrl === 'string' && rawBaseUrl.trim()
+);
 
-const API_BASE_URL = rawBaseUrl.trim().replace(/\/+$/, '');
+export function getApiBaseUrl(): string {
+  const current =
+    import.meta.env?.VITE_API_BASE_URL ??
+    (typeof process !== 'undefined' ? process.env?.VITE_API_BASE_URL : undefined);
+  if (!current || typeof current !== 'string' || !current.trim()) {
+    throw new Error(
+      'Missing required environment variable VITE_API_BASE_URL. Please set VITE_API_BASE_URL in your environment or .env file.'
+    );
+  }
+  return current.trim().replace(/\/+$/, '');
+}
 
 export class ApiError extends Error {
   status: number;
@@ -34,8 +42,9 @@ export async function apiFetch<T>(
   path: string,
   options?: ApiFetchOptions
 ): Promise<T> {
+  const baseUrl = getApiBaseUrl();
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = `${API_BASE_URL}${normalizedPath}`;
+  const url = `${baseUrl}${normalizedPath}`;
 
   const headers = new Headers(options?.headers);
   if (!headers.has('Content-Type')) {

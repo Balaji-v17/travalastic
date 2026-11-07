@@ -199,6 +199,13 @@ export interface ItineraryActivity {
   hotelId?: string;
   activityId?: string;
   flightId?: string;
+  location?: {
+    lat?: number | null;
+    lon?: number | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    placeName?: string | null;
+  } | null;
 }
 
 export interface ItineraryDay {

@@ -374,7 +374,10 @@ export default function SupportPage() {
           <div className="flex items-center gap-3 p-4 bg-slate-950 text-white">
             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold">T</div>
             <div className="flex-1">
-              <p className="text-sm font-semibold">Travalastic Support</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold">Travalastic Support</p>
+                <span className="text-[10px] text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded font-medium">Demo assistant: replies are scripted</span>
+              </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span className="text-xs text-emerald-400">Online</span>

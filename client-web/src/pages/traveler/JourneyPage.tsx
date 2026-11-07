@@ -1,188 +1,13 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
+import { useAuth } from '../../store/AuthContext';
 import type { Journey } from '../../data/mockData';
 import { visaRequirements } from '../../data/mockData';
-
-// ─── Ask Journey AI panel ────────────────────────────────────────────────────
-
-interface AIMessage {
-  role: 'user' | 'ai';
-  text: string;
-}
-
-function buildAIResponse(question: string, journey: Journey, bookedCount: number, totalSpend: number, totalBudget: number): string {
-  const q = question.toLowerCase();
-  const allItems = journey.itinerary.flatMap((d) => d.activities);
-  const unbooked = allItems.filter((a) => a.status !== 'booked');
-  const booked = allItems.filter((a) => a.status === 'booked');
-
-  if (q.includes('budget') || q.includes('spent') || q.includes('left') || q.includes('remaining') || q.includes('money')) {
-    const remaining = Math.max(0, totalBudget - totalSpend);
-    return `You have spent ₹${totalSpend.toLocaleString()} of your ₹${totalBudget.toLocaleString()} budget. Remaining: ₹${remaining.toLocaleString()}. ${remaining > 0 ? "I can suggest experiences that fit within the remaining amount — would you like to see options?" : "Your budget is fully committed across confirmed bookings."}`;
-  }
-  if (q.includes('booked') || q.includes("what's confirmed") || q.includes('confirmed')) {
-    if (bookedCount === 0) return "Nothing is booked yet. Your journey is in planning mode. I can help you start with the flight or hotel — which would you like to book first?";
-    return `${bookedCount} item${bookedCount > 1 ? 's are' : ' is'} confirmed: ${booked.map((a) => a.title).slice(0, 3).join(', ')}${booked.length > 3 ? ` and ${booked.length - 3} more` : ''}. All confirmed bookings will appear in your Documents tab.`;
-  }
-  if (q.includes('unbooked') || q.includes("haven't booked") || q.includes('still need')) {
-    if (unbooked.length === 0) return "Everything in your itinerary is confirmed. Your journey is fully booked!";
-    return `${unbooked.length} item${unbooked.length > 1 ? 's' : ''} still need${unbooked.length === 1 ? 's' : ''} to be booked: ${unbooked.map((a) => a.title).slice(0, 4).join(', ')}. Head to the Itinerary tab to book them.`;
-  }
-  if (q.includes('hotel') && q.includes('cheaper')) {
-    return `Your current hotel is among the top-rated in ${journey.destination}. For a more budget-friendly alternative, I'd recommend looking at 4-star properties in the same area — typically 30–40% less with similar access. Would you like me to find alternatives?`;
-  }
-  if (q.includes('busiest') || q.includes('densest') || q.includes('packed')) {
-    const busiest = journey.itinerary.reduce((max, d) => d.activities.length > max.activities.length ? d : max, journey.itinerary[0]);
-    if (!busiest) return "Your itinerary looks well-paced across all days.";
-    return `Day ${busiest.day} (${busiest.title}) is your busiest with ${busiest.activities.length} activities: ${busiest.activities.map((a) => a.title).join(', ')}. Would you like to move one to another day?`;
-  }
-  if (q.includes('free time') || q.includes('how much time')) {
-    const freeDays = journey.itinerary.filter((d) => d.activities.some((a) => a.type === 'free'));
-    return freeDays.length > 0
-      ? `You have free time on Day${freeDays.length > 1 ? 's' : ''} ${freeDays.map((d) => d.day).join(', ')}. These blocks are intentionally unstructured for spontaneous exploration.`
-      : "Your itinerary is currently fully scheduled. I can create free time by moving an activity if you need breathing room.";
-  }
-  if (q.includes('delayed') || q.includes('flight delay') || q.includes('delay')) {
-    return `If your outbound flight is delayed, here is the impact on your journey:\n\n✓ Hotel check-in is flexible until midnight — unaffected.\n⚠ Airport transfer should move by the same duration as the delay.\n✓ Day 1 evening dinner has no strict reservation — unaffected.\n\nWould you like me to flag this to your hotel and adjust the transfer timing?`;
-  }
-  if (q.includes('pack') || q.includes('bring') || q.includes('luggage')) {
-    return `For ${journey.destination} at this time of year: lightweight layers for indoor/outdoor temperature changes, comfortable walking shoes (expect 8–12k steps/day), a compact umbrella, and any prescription medicine. If you're attending the tea ceremony, modest dress is recommended.`;
-  }
-  if (q.includes('food') || q.includes('eat') || q.includes('restaurant')) {
-    return `${journey.destination} has excellent food options built into your itinerary. I've included market visits and local restaurants. If you want to add a dedicated food experience, the Tsukiji Market Tour or a ramen walking tour can slot into your free afternoons.`;
-  }
-  if (q.includes("what's next") || q.includes('whats next') || q.includes('next step') || q.includes('what should i do next')) {
-    if (bookedCount === 0) return `Your next step is to confirm your flight — that locks in your travel dates and makes everything else bookable. Head to the Itinerary tab and look for the outbound flight.`;
-    const nextUnbooked = unbooked[0];
-    if (!nextUnbooked) return "All items are confirmed! Your journey is fully booked. Just make sure to check in for your flights 24 hours before departure.";
-    return `Your next step is to book: ${nextUnbooked.title}. You have ${unbooked.length} item${unbooked.length > 1 ? 's' : ''} still unconfirmed. Tap on it in the Itinerary tab to continue.`;
-  }
-  if (q.includes('add') && (q.includes('food') || q.includes('restaurant') || q.includes('eat'))) {
-    return `Great idea! For ${journey.destination}, I recommend the local food market tour — it usually runs 3–4 hours in the morning and covers street food, local produce, and cooking traditions. It slots well into a free morning. Go to Experiences in the destination page to browse and add it to your itinerary.`;
-  }
-  if (q.includes('food') || q.includes('eat') || q.includes('restaurant')) {
-    return `${journey.destination} has excellent food options built into your itinerary. I've included market visits and local restaurants. If you want to add a dedicated food experience, browse the Experiences tab on the destination page — there are food tours and cooking classes available.`;
-  }
-  if (q.includes('weather')) {
-    return `March in ${journey.destination} is typically cool (8–15°C), dry and clear — ideal travel weather. Cherry blossom season usually starts mid-March in Tokyo and reaches peak bloom around March 25–April 5. Kyoto follows about 1 week later.`;
-  }
-
-  return `I understand your question about "${question}". Based on your current ${journey.destination} journey (${journey.itinerary.length} days, ${journey.status} status), I'm here to help with anything from budget questions to itinerary adjustments. Could you be more specific about what you need?`;
-}
-
-function AskJourneyAI({ journey, onClose }: { journey: Journey; onClose: () => void }) {
-  const { bookings } = useApp();
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<AIMessage[]>([
-    { role: 'ai', text: `Hello! I know your ${journey.destination} journey inside out — ${journey.itinerary.length} days, ${journey.travelers} traveler${journey.travelers > 1 ? 's' : ''}, ${journey.status} status. Ask me anything.` },
-  ]);
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const journeyBookings = bookings.filter((b) => journey.bookings.includes(b.id));
-  const bookedCount = journey.itinerary.flatMap((d) => d.activities).filter((a) => a.status === 'booked').length;
-  const totalSpend = journey.totalSpend;
-  const totalBudget = journey.totalBudget ?? Math.max(totalSpend * 2, 350000);
-
-  const QUICK = ["How much budget do I have left?", "What's booked already?", "Which day is the busiest?", "What's next?", "What if my flight is delayed?"];
-
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
-    const userMsg: AIMessage = { role: 'user', text };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setLoading(true);
-    setTimeout(() => {
-      const response = buildAIResponse(text, journey, bookedCount, totalSpend, totalBudget);
-      setMessages((prev) => [...prev, { role: 'ai', text: response }]);
-      setLoading(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-    }, 600);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full sm:w-[480px] bg-white rounded-t-3xl sm:rounded-xl shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-900 text-sm">Ask Journey AI</p>
-              <p className="text-xs text-slate-400">{journey.destination} · {journey.itinerary.length} days</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors text-slate-400">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" strokeLinecap="round"/></svg>
-          </button>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-2`}>
-              {msg.role === 'ai' && (
-                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-white text-[8px] font-bold">J</span>
-                </div>
-              )}
-              <div className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-line ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'}`}>
-                {msg.text}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex gap-2 items-center">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-[8px] font-bold">J</span>
-              </div>
-              <div className="flex gap-1 px-3.5 py-2.5 bg-slate-100 rounded-xl rounded-bl-sm">
-                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Quick prompts */}
-        {messages.length <= 1 && (
-          <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-            {QUICK.map((q) => (
-              <button key={q} onClick={() => sendMessage(q)} className="px-2.5 py-1.5 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-medium rounded-lg transition-all">
-                {q}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Input */}
-        <div className="px-4 py-3 border-t border-slate-100 flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-            placeholder="Ask about your journey..."
-            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
-          />
-          <button
-            onClick={() => sendMessage(input)}
-            disabled={!input.trim()}
-            className="w-9 h-9 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M12 7H2M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import TripChatPanel from '../../components/chat/TripChatPanel';
+import DisruptionBanner from '../../components/disruptions/DisruptionBanner';
+import DisruptionReviewModal from '../../components/disruptions/DisruptionReviewModal';
+import SimulateDelayControl from '../../components/disruptions/SimulateDelayControl';
+import { tripStayDates } from '../../lib/stay';
 
 const statusConfig = {
   discovering: { label: 'Discovering', color: 'bg-slate-100 text-slate-600' },
@@ -204,18 +29,52 @@ const typeIcons: Record<string, string> = {
 };
 
 export default function JourneyPage() {
-  const { journeys, bookings, traveler, selectedJourneyId, resolveDisruption, activeDisruption, disruptionSimulated, navigate, dismissDisruption, navigateToHotel, navigateToExperience, navigateToFlight, visaApplications } = useApp();
+  const { journeys, journeysStatus, refreshJourneys, bookings, selectedJourneyId, navigate, navigateToHotel, navigateToExperience, navigateToFlight, openHotels, visaApplications } = useApp();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'itinerary' | 'bookings' | 'documents' | 'expenses' | 'journey-ai'>('overview');
   const [showAI, setShowAI] = useState(false);
   const [removedJourneyItems, setRemovedJourneyItems] = useState<Set<string>>(new Set());
+  const [selectedDisruptionId, setSelectedDisruptionId] = useState<string | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [disruptionsRefreshKey, setDisruptionsRefreshKey] = useState(0);
+  const reviewButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const journey = journeys.find((j) => j.id === selectedJourneyId);
+
+  if (journeysStatus === 'loading' && !journey) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-600 font-medium">Loading journey details…</p>
+      </div>
+    );
+  }
+
+  if (journeysStatus === 'error' && !journey) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center">
+        <div className="w-12 h-12 rounded-xl bg-red-100 text-red-600 flex items-center justify-center text-2xl mx-auto mb-4">
+          ⚠️
+        </div>
+        <h2 className="text-lg font-semibold text-slate-800 mb-1">Failed to load journey</h2>
+        <p className="text-slate-500 text-sm mb-6">We couldn't retrieve the details for this journey. Please try again.</p>
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={() => navigate('my-trips')} className="px-5 py-2.5 border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-colors">
+            Go to My Trips
+          </button>
+          <button onClick={() => refreshJourneys()} className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!journey) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <p className="text-4xl mb-4">🗺️</p>
-        <h2 className="text-xl font-semibold text-slate-800 mb-2">Journey not found</h2>
+        <h2 className="text-xl font-semibold text-slate-800 mb-2">Trip not found</h2>
         <p className="text-slate-500 mb-6">This journey may have been removed or the link is invalid.</p>
         <button onClick={() => navigate('my-trips')} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">
           Go to My Trips
@@ -225,9 +84,10 @@ export default function JourneyPage() {
   }
 
   const journeyBookings = bookings.filter((b) => journey.bookings.includes(b.id));
-  const totalBudget = journey.totalBudget ?? Math.max(journey.totalSpend * 2, 350000);
-  const budgetPct = Math.min(100, Math.round((journey.totalSpend / totalBudget) * 100));
-  const budgetWarning = budgetPct >= 85;
+  const hasBudget = typeof journey.totalBudget === 'number' && journey.totalBudget > 0;
+  const totalBudget = journey.totalBudget;
+  const budgetPct = hasBudget && totalBudget ? Math.min(100, Math.round((journey.totalSpend / totalBudget) * 100)) : 0;
+  const budgetWarning = hasBudget && budgetPct >= 85;
 
   // Journey Health score (simplified from 6 factors)
   const allItems = journey.itinerary.flatMap((d) => d.activities);
@@ -235,68 +95,36 @@ export default function JourneyPage() {
   const bookingProgress = allItems.length > 0 ? Math.round((bookedItems.length / allItems.length) * 100) : 0;
   const healthScore = Math.min(100, Math.round(
     (bookingProgress * 0.4) +
-    (budgetPct < 85 ? 30 : budgetPct < 100 ? 15 : 0) +
+    (!hasBudget ? 20 : budgetPct < 85 ? 30 : budgetPct < 100 ? 15 : 0) +
     (journey.itinerary.length > 0 ? 20 : 0) +
     (journeyBookings.length > 0 ? 10 : 0)
   ));
-
-  // Next unbooked item
-  const nextUnbooked = allItems.find((a) => a.status !== 'booked' && ['flight', 'hotel', 'activity'].includes(a.type));
 
   // Today's items for travel day mode
   const today = new Date().toISOString().split('T')[0];
   const todayItinerary = journey.itinerary.find((d) => d.date.startsWith(today));
   const isTravelDay = journey.status === 'in-travel';
 
-  const disruption = journey.disruptions[0];
-
   // Visa readiness
   const visaReq = visaRequirements.find((r) => r.destinationId === journey.destinationId || journey.destination.toLowerCase().includes(r.country.toLowerCase().split(' ')[0].toLowerCase()));
   const journeyVisaApp = visaApplications.find((a) => a.journeyId === journey.id || (visaReq && a.country === visaReq.country));
   const visaNeeded = visaReq && visaReq.requiresVisa && visaReq.visaType !== 'visa-free';
-  const liveDisruption = activeDisruption || (disruptionSimulated && disruption ? { ...disruption, status: 'investigating' as const } : null);
 
   const statusConf = statusConfig[journey.status];
   const unreadNotifications = journey.notifications.filter((n) => !n.read).length;
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
-      {/* Disruption banner */}
-      {liveDisruption && liveDisruption.status !== 'resolved' && (
-        <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between animate-slide-up">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
-              <span className="text-xl">✈️</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">Travel Update</span>
-              </div>
-              <h3 className="font-semibold text-slate-900">Your flight has been delayed.</h3>
-              <p className="text-slate-600 text-sm mt-1">IndiGo 6E-812 is delayed by 45 minutes. New departure time: <strong>03:15 IST</strong>.</p>
-              <div className="mt-2.5 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                <p className="text-blue-800 text-sm"><span className="font-semibold">What this means for you:</span> {liveDisruption.impact}</p>
-              </div>
-              <p className="text-slate-600 text-sm mt-2">💡 {liveDisruption.recommendation}</p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 flex-shrink-0 sm:min-w-[140px]">
-            <button
-              onClick={() => navigate('support')}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors text-center"
-            >
-              Get Help
-            </button>
-            <button
-              onClick={dismissDisruption}
-              className="px-4 py-2.5 border border-amber-200 text-amber-700 text-sm font-medium rounded-xl hover:bg-amber-50 transition-colors text-center"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Disruption Guardian banner */}
+      <DisruptionBanner
+        journeyId={journey.id}
+        refreshKey={disruptionsRefreshKey}
+        reviewButtonRef={reviewButtonRef}
+        onReview={(disruptionId) => {
+          setSelectedDisruptionId(disruptionId);
+          setIsReviewModalOpen(true);
+        }}
+      />
 
       {/* Travel Day Mode Banner */}
       {isTravelDay && todayItinerary && (
@@ -335,7 +163,7 @@ export default function JourneyPage() {
                 </span>
               )}
             </div>
-            <h1 className="font-display text-2xl sm:text-3xl text-white">{journey.title}</h1>
+            <h1 className="font-display text-2xl sm:text-3xl text-white">{journey.title || journey.destination || '—'}</h1>
             <p className="text-white/70 text-sm mt-1">
               {new Date(journey.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} —{' '}
               {new Date(journey.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -360,35 +188,74 @@ export default function JourneyPage() {
           <div className="bg-white p-4">
             <p className="text-xs text-slate-500 mb-1">Spent</p>
             <p className="text-xl font-bold text-slate-900">₹{(journey.totalSpend / 1000).toFixed(0)}k</p>
-            <p className="text-xs text-slate-400">of ₹{(totalBudget / 1000).toFixed(0)}k</p>
+            <p className="text-xs text-slate-400">
+              {hasBudget && totalBudget ? `of ₹${(totalBudget / 1000).toFixed(0)}k` : 'No budget set'}
+            </p>
           </div>
           <div className="bg-white p-4">
             <p className="text-xs text-slate-500 mb-1">Remaining</p>
             <p className={`text-xl font-bold ${budgetWarning ? 'text-amber-600' : 'text-slate-900'}`}>
-              ₹{Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}
+              {hasBudget && totalBudget ? `₹${Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}` : '—'}
             </p>
-            <p className={`text-xs ${budgetWarning ? 'text-amber-500' : 'text-slate-400'}`}>{budgetPct}% used</p>
+            <p className={`text-xs ${budgetWarning ? 'text-amber-500' : 'text-slate-400'}`}>
+              {hasBudget ? `${budgetPct}% used` : 'No budget set'}
+            </p>
           </div>
         </div>
         {/* Budget bar */}
-        <div className="px-5 py-3 flex items-center gap-3 border-t border-slate-100">
-          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-              style={{ width: `${budgetPct}%` }}
-            />
-          </div>
+        <div className="px-5 py-3 flex items-center gap-3 border-t border-slate-100 flex-wrap">
+          {hasBudget ? (
+            <div className="flex-1 min-w-[120px] h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                style={{ width: `${budgetPct}%` }}
+              />
+            </div>
+          ) : (
+            <span className="text-xs text-slate-400 italic">No budget set</span>
+          )}
           <span className="text-xs text-slate-500">Budget</span>
-          <button
-            onClick={() => setShowAI(true)}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-violet-600 text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
-            Ask Journey AI
-          </button>
-          <button onClick={() => navigate('my-trips')} className="px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
-            My Trips
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <SimulateDelayControl
+              itineraryId={journey.id}
+              days={journey.itinerary}
+              onSimulated={() => {
+                setDisruptionsRefreshKey((k) => k + 1);
+              }}
+            />
+            <button
+              onClick={() => {
+                const stay = tripStayDates(journey.itinerary);
+                if (stay) {
+                  openHotels({
+                    destination: journey.destination,
+                    checkIn: stay.checkIn,
+                    checkOut: stay.checkOut,
+                    guests: journey.travelers,
+                  });
+                } else {
+                  openHotels({
+                    destination: journey.destination,
+                    guests: journey.travelers,
+                  });
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-700 bg-white text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors min-h-[36px]"
+            >
+              <span>🏨</span>
+              <span>Find hotels for this trip</span>
+            </button>
+            <button
+              onClick={() => setShowAI(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-violet-600 text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity min-h-[36px]"
+            >
+              <svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
+              Ask Journey AI
+            </button>
+            <button onClick={() => navigate('my-trips')} className="px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors min-h-[36px]">
+              My Trips
+            </button>
+          </div>
         </div>
       </div>
 
@@ -418,28 +285,6 @@ export default function JourneyPage() {
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            {/* Next up */}
-            {nextUnbooked && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
-                    {typeIcons[nextUnbooked.type] || '📌'}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-0.5">Needs Booking</p>
-                    <p className="font-semibold text-slate-900">{nextUnbooked.title}</p>
-                    {nextUnbooked.notes && <p className="text-xs text-slate-500 mt-0.5">{nextUnbooked.notes}</p>}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setActiveTab('itinerary')}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap"
-                >
-                  Book Now
-                </button>
-              </div>
-            )}
-
             {/* Journey Health */}
             <div className="bg-white border border-slate-200 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
@@ -451,7 +296,7 @@ export default function JourneyPage() {
               </div>
               <div className="space-y-3">
                 {[
-                  { label: 'Budget Fit', value: budgetPct < 85 ? 'Excellent' : budgetPct < 100 ? 'Tight' : 'Over', score: budgetPct < 85 ? 5 : budgetPct < 100 ? 3 : 1 },
+                  { label: 'Budget Fit', value: !hasBudget ? 'No budget' : budgetPct < 85 ? 'Excellent' : budgetPct < 100 ? 'Tight' : 'Over', score: !hasBudget ? 3 : budgetPct < 85 ? 5 : budgetPct < 100 ? 3 : 1 },
                   { label: 'Booking Progress', value: bookingProgress === 100 ? 'Complete' : bookingProgress > 50 ? 'Good' : 'Needs attention', score: bookingProgress === 100 ? 5 : bookingProgress > 50 ? 3 : 2 },
                   { label: 'Pace', value: journey.itinerary.length > 0 ? 'Balanced' : 'Not planned', score: journey.itinerary.length > 0 ? 4 : 1 },
                   { label: 'Hotels', value: journeyBookings.filter(b => b.type === 'hotel').length > 0 ? 'Confirmed' : 'Not booked', score: journeyBookings.filter(b => b.type === 'hotel').length > 0 ? 5 : 2 },
@@ -583,11 +428,11 @@ export default function JourneyPage() {
                 </div>
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>Budget</span>
-                  <span>₹{totalBudget.toLocaleString()}</span>
+                  <span>{hasBudget && totalBudget ? `₹${totalBudget.toLocaleString()}` : '—'}</span>
                 </div>
                 <div className={`flex justify-between text-xs font-medium ${budgetWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
                   <span>Remaining</span>
-                  <span>₹{Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}</span>
+                  <span>{hasBudget && totalBudget ? `₹${Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}` : '—'}</span>
                 </div>
               </div>
             </div>
@@ -757,13 +602,13 @@ export default function JourneyPage() {
               <p className="text-slate-400 text-sm mt-1">Documents will appear here once you make bookings.</p>
             </div>
           )}
-          {/* Passport always shown */}
+          {/* Identity & travel documents notice */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl">🛂</div>
               <div>
-                <p className="font-semibold text-slate-900 text-sm">Indian Passport — {traveler.name}</p>
-                <p className="text-xs text-slate-500">{traveler.passportNumber} · Expires Aug 2031</p>
+                <p className="font-semibold text-slate-900 text-sm">Travel Identity — {user?.name || 'Traveler'}</p>
+                <p className="text-xs text-slate-500">Keep physical and digital copies ready for border control</p>
               </div>
             </div>
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700">Valid</span>
@@ -820,7 +665,9 @@ export default function JourneyPage() {
               <h3 className="font-semibold text-slate-900 mb-4">Budget Overview</h3>
               <div className="grid grid-cols-3 gap-4 mb-5">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-slate-900">₹{totalBudget.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {hasBudget && totalBudget ? `₹${totalBudget.toLocaleString()}` : '—'}
+                  </p>
                   <p className="text-xs text-slate-500 mt-0.5">Total Budget</p>
                 </div>
                 <div className="text-center">
@@ -829,18 +676,24 @@ export default function JourneyPage() {
                 </div>
                 <div className="text-center">
                   <p className={`text-2xl font-bold ${budgetWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    ₹{Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}
+                    {hasBudget && totalBudget ? `₹${Math.max(0, totalBudget - journey.totalSpend).toLocaleString()}` : '—'}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">Remaining</p>
                 </div>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                  style={{ width: `${budgetPct}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-500 mt-2">{budgetPct}% of budget used</p>
+              {hasBudget ? (
+                <>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${budgetPct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">{budgetPct}% of budget used</p>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No budget set for this trip.</p>
+              )}
             </div>
 
             {/* Category breakdown */}
@@ -922,41 +775,46 @@ export default function JourneyPage() {
         </div>
       )}
 
-      {/* Ask Journey AI floating button */}
-      <div className="fixed bottom-6 right-6 z-40">
+      {/* Trip Chat floating button (positioned above Travel Assistant FAB) */}
+      <div className="fixed bottom-22 right-6 z-30">
         <button
           onClick={() => setShowAI(true)}
-          className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white font-semibold rounded-xl shadow-xl shadow-blue-500/25 transition-all hover:scale-105"
+          aria-label="Ask about your trip"
+          className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium text-sm rounded-full shadow-lg shadow-blue-500/20 transition-all hover:scale-105 min-h-[48px]"
         >
-          <div className="w-5 h-5 rounded-md bg-white/20 flex items-center justify-center flex-shrink-0">
+          <div className="w-5 h-5 rounded-md bg-white/20 flex items-center justify-center shrink-0">
             <svg width="10" height="10" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
           </div>
-          Ask Journey AI
+          <span>Ask about your trip</span>
         </button>
       </div>
 
       {/* Journey AI tab */}
       {activeTab === 'journey-ai' && (
         <div className="max-w-2xl mx-auto">
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="bg-slate-950 px-6 py-5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
-                  <svg width="14" height="14" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
-                </div>
-                <div>
-                  <p className="font-semibold text-white text-sm">Journey AI</p>
-                  <p className="text-slate-400 text-xs">Knows your {journey.destination} trip inside out</p>
-                </div>
-              </div>
-            </div>
-            <AskJourneyAI journey={journey} onClose={() => setActiveTab('overview')} />
-          </div>
+          <TripChatPanel journey={journey} onClose={() => setActiveTab('overview')} isInline />
         </div>
       )}
 
-      {/* Ask Journey AI panel (floating) */}
-      {showAI && <AskJourneyAI journey={journey} onClose={() => setShowAI(false)} />}
+      {/* Trip Chat panel (floating modal) */}
+      {showAI && <TripChatPanel journey={journey} onClose={() => setShowAI(false)} />}
+
+      {/* Disruption Review Modal */}
+      {isReviewModalOpen && selectedDisruptionId && (
+        <DisruptionReviewModal
+          isOpen={isReviewModalOpen}
+          disruptionId={selectedDisruptionId}
+          itineraryDays={journey.itinerary}
+          triggerRef={reviewButtonRef}
+          onClose={() => {
+            setIsReviewModalOpen(false);
+            setSelectedDisruptionId(null);
+          }}
+          onDisruptionUpdated={() => {
+            setDisruptionsRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

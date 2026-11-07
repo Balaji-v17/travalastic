@@ -41,10 +41,10 @@ const eventListeners: Record<string, ((event: any) => void)[]> = {};
   }
 };
 
-process.env.VITE_API_BASE_URL = 'http://localhost:8000';
+process.env.VITE_API_BASE_URL = 'https://api.travalastic.test';
 
 import { getToken, setToken, clearToken } from './auth.ts';
-import { apiFetch, pingHealth, ApiError } from './api.ts';
+import { apiFetch, pingHealth, ApiError, getApiBaseUrl } from './api.ts';
 
 describe('Auth storage helper (web/src/lib/auth.ts)', () => {
   beforeEach(() => {
@@ -99,7 +99,7 @@ describe('Web API client (web/src/lib/api.ts)', () => {
 
   it('pingHealth calls /health and returns { status: "ok" }', async () => {
     globalThis.fetch = async (url: any, options: any) => {
-      assert.equal(url.toString(), 'http://localhost:8000/health');
+      assert.equal(url.toString(), `${getApiBaseUrl()}/health`);
       return new Response(JSON.stringify({ status: 'ok' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -132,7 +132,7 @@ describe('Web API client (web/src/lib/api.ts)', () => {
       body: { title: 'Trip to Tokyo' } as any,
     });
 
-    assert.equal(capturedUrl, 'http://localhost:8000/itinerary/custom');
+    assert.equal(capturedUrl, `${getApiBaseUrl()}/itinerary/custom`);
     assert.equal(capturedHeaders?.get('Authorization'), 'Bearer user-jwt-456');
     assert.equal(capturedHeaders?.get('Content-Type'), 'application/json');
     assert.equal(capturedBody, JSON.stringify({ title: 'Trip to Tokyo' }));

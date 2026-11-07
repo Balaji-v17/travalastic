@@ -34,6 +34,7 @@ import TravelAssistantPanel from './components/chat/TravelAssistantPanel';
 import SampleDataBanner from './components/common/SampleDataBanner';
 import { SHOW_SAMPLE_PAGES } from './config/features';
 import { isPageAvailable, resolvePage, PAGE_STATUS } from './lib/pageStatus';
+import { hasValidApiBase } from './lib/api.ts';
 
 const GATED_PAGES: Page[] = ['ai-planner', 'my-trips', 'journey', 'my-bookings', 'profile'];
 
@@ -143,6 +144,25 @@ function AuthJourneySync() {
 }
 
 export default function App() {
+  if (!hasValidApiBase) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#111111] text-white p-6">
+        <div className="max-w-md text-center">
+          <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-red-950/80 border border-red-500/30 flex items-center justify-center text-red-400 text-xl font-bold">
+            !
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Configuration Error</h1>
+          <p className="text-sm text-stone-300 leading-relaxed mb-4">
+            Missing required environment variable <code className="text-amber-300 bg-stone-900 px-1.5 py-0.5 rounded font-mono text-xs">VITE_API_BASE_URL</code>.
+          </p>
+          <p className="text-xs text-stone-500">
+            Please configure <code className="text-stone-400">VITE_API_BASE_URL</code> in your deployment environment settings.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppProvider>
       <AuthProvider>

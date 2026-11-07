@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
 import type { Journey } from '../../data/mockData';
+import TripChatPanel from '../../components/chat/TripChatPanel';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ function getBookingProgress(journey: Journey) {
 }
 
 function getBudget(journey: Journey) {
-  const total = journey.totalBudget ?? Math.max(journey.totalSpend * 1.5, 350000);
+  const total = journey.totalBudget;
   return { spent: journey.totalSpend, total };
 }
 
@@ -42,128 +43,7 @@ function fmtAmount(n: number) {
   return `₹${n.toLocaleString()}`;
 }
 
-// ─── AI response builder ──────────────────────────────────────────────────────
 
-interface AIMessage { role: 'user' | 'ai'; text: string; }
-
-function buildAIResponse(question: string, journey: Journey): string {
-  const q = question.toLowerCase();
-  const allItems = journey.itinerary.flatMap((d) => d.activities);
-  const booked = allItems.filter((a) => a.status === 'booked');
-  const unbooked = allItems.filter((a) => a.status !== 'booked');
-  const { spent, total } = getBudget(journey);
-  const remaining = Math.max(0, total - spent);
-
-  if (q.includes('budget') || q.includes('left') || q.includes('remaining') || q.includes('how much')) {
-    return `You have spent ${fmtAmount(spent)} of your ${fmtAmount(total)} budget. Remaining: ${fmtAmount(remaining)}.${remaining > 0 ? " I can suggest experiences that fit within the remaining amount — would you like to see options?" : " Your budget is fully committed."}`;
-  }
-  if (q.includes("what's booked") || q.includes('confirmed') || q.includes('booked')) {
-    if (booked.length === 0) return "Nothing is confirmed yet. Your journey is in planning mode. I can help you start with the flight or hotel — which first?";
-    return `${booked.length} item${booked.length > 1 ? 's are' : ' is'} confirmed: ${booked.map((a) => a.title).slice(0, 3).join(', ')}${booked.length > 3 ? ` and ${booked.length - 3} more` : ''}.`;
-  }
-  if (q.includes('still need') || q.includes("needs booking")) {
-    if (unbooked.length === 0) return "Everything in your itinerary is confirmed. Your journey is fully booked!";
-    return `${unbooked.length} item${unbooked.length > 1 ? 's' : ''} still need booking: ${unbooked.map((a) => a.title).slice(0, 4).join(', ')}.`;
-  }
-  if (q.includes("what's next") || q.includes('whats next') || q.includes('next step')) {
-    const next = unbooked[0];
-    if (!next) return "All items are confirmed! Make sure to check in for your flights 24 hours before departure.";
-    return `Your next step is to book: ${next.title}. You have ${unbooked.length} item${unbooked.length > 1 ? 's' : ''} still unconfirmed.`;
-  }
-  return `I know your ${journey.destination} journey inside out — ${journey.itinerary.length} days, ${journey.travelers} traveler${journey.travelers > 1 ? 's' : ''}, ${journey.status} status. Ask me anything about budget, bookings, or your itinerary.`;
-}
-
-// ─── Ask Journey AI panel ─────────────────────────────────────────────────────
-
-function AskJourneyAI({ journey, onClose }: { journey: Journey; onClose: () => void }) {
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<AIMessage[]>([
-    { role: 'ai', text: `Hello! I know your ${journey.destination} journey inside out — ${journey.itinerary.length} days, ${journey.travelers} traveler${journey.travelers > 1 ? 's' : ''}, ${journey.status} status. Ask me anything.` },
-  ]);
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const QUICK = ["What's next?", "What's booked?", "How much left?", "What still needs booking?"];
-
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
-    setMessages((prev) => [...prev, { role: 'user', text }]);
-    setInput('');
-    setLoading(true);
-    setTimeout(() => {
-      setMessages((prev) => [...prev, { role: 'ai', text: buildAIResponse(text, journey) }]);
-      setLoading(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-    }, 600);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:w-[480px] bg-white rounded-t-3xl sm:rounded-xl shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shrink-0">
-              <svg width="14" height="14" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.5 3.5L14 7l-3.5 1.5L9 12l-1.5-3.5L4 7l3.5-1.5L9 2z" fill="white"/></svg>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-900 text-sm">Ask Journey AI</p>
-              <p className="text-xs text-slate-400">{journey.destination} · {journey.itinerary.length} days</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" strokeLinecap="round"/></svg>
-          </button>
-        </div>
-
-        {/* Quick prompts */}
-        <div className="px-4 pt-3 pb-2 flex gap-2 flex-wrap border-b border-slate-100">
-          {QUICK.map((q) => (
-            <button key={q} onClick={() => sendMessage(q)} className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-xs font-medium rounded-full transition-colors">
-              {q}
-            </button>
-          ))}
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] px-4 py-3 rounded-xl text-sm leading-relaxed ${m.role === 'user' ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'}`}>
-                {m.text}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-100 px-4 py-3 rounded-xl rounded-bl-sm flex gap-1">
-                {[0, 1, 2].map((i) => <span key={i} className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Input */}
-        <div className="px-4 py-4 border-t border-slate-100">
-          <div className="flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
-              placeholder="Ask anything about your journey…"
-              className="flex-1 px-4 py-2.5 bg-slate-100 rounded-xl text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200"
-            />
-            <button onClick={() => sendMessage(input)} disabled={!input.trim()} className="px-4 py-2.5 bg-blue-600 disabled:opacity-40 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
-              Send
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Featured Journey card ────────────────────────────────────────────────────
 
@@ -171,8 +51,9 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
   const { navigate } = useApp();
   const { booked, total } = getBookingProgress(journey);
   const { spent, total: budget } = getBudget(journey);
+  const hasBudget = typeof budget === 'number' && budget > 0;
   const pct = total > 0 ? Math.round((booked / total) * 100) : 0;
-  const budgetPct = Math.min(100, Math.round((spent / budget) * 100));
+  const budgetPct = hasBudget && budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
   const isActive = journey.status === 'in-travel';
 
   return (
@@ -195,7 +76,7 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
         <p className="text-white/60 text-xs uppercase tracking-widest mb-2 font-medium">
           {isActive ? 'Currently Travelling' : 'Featured Journey'}
         </p>
-        <h2 className="font-display text-3xl sm:text-4xl text-white leading-tight mb-1">{journey.title}</h2>
+        <h2 className="font-display text-3xl sm:text-4xl text-white leading-tight mb-1">{journey.title || journey.destination || '—'}</h2>
         <p className="text-white/70 text-sm mb-5">
           {journey.destination} &middot; {fmtDate(journey.startDate, { day: 'numeric', month: 'short' })} – {fmtDate(journey.endDate)} &middot; {journey.travelers} traveler{journey.travelers > 1 ? 's' : ''}
         </p>
@@ -216,12 +97,16 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
           {/* Budget */}
           <div className="flex-1 min-w-[140px]">
             <p className="text-white/50 text-[11px] uppercase tracking-wide mb-1.5">Budget</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${budgetPct > 85 ? 'bg-red-400' : 'bg-amber-400'}`} style={{ width: `${budgetPct}%` }} />
+            {hasBudget && budget ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${budgetPct > 85 ? 'bg-red-400' : 'bg-amber-400'}`} style={{ width: `${budgetPct}%` }} />
+                </div>
+                <span className="text-white text-xs font-semibold shrink-0">{fmtAmount(spent)} / {fmtAmount(budget)}</span>
               </div>
-              <span className="text-white text-xs font-semibold shrink-0">{fmtAmount(spent)} / {fmtAmount(budget)}</span>
-            </div>
+            ) : (
+              <span className="text-white text-xs font-semibold shrink-0">No budget set</span>
+            )}
           </div>
         </div>
 
@@ -332,6 +217,7 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
   const cfg = statusConfig[journey.status] ?? statusConfig['discovering'];
   const { booked, total } = getBookingProgress(journey);
   const { spent, total: budget } = getBudget(journey);
+  const hasBudget = typeof budget === 'number' && budget > 0;
   const pct = total > 0 ? Math.round((booked / total) * 100) : 0;
 
   return (
@@ -353,7 +239,7 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
 
       {/* Body */}
       <div className="p-4 flex flex-col flex-1">
-        <h3 className="font-semibold text-slate-900 leading-snug group-hover:text-blue-700 transition-colors">{journey.title}</h3>
+        <h3 className="font-semibold text-slate-900 leading-snug group-hover:text-blue-700 transition-colors">{journey.title || journey.destination || '—'}</h3>
         <p className="text-slate-500 text-xs mt-0.5">{journey.destination} &middot; {journey.travelers} traveler{journey.travelers > 1 ? 's' : ''}</p>
 
         {/* Booking progress */}
@@ -371,25 +257,11 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
         <div className="mt-2.5 flex items-center justify-between">
           <div>
             <p className="text-sm font-bold text-slate-900">{fmtAmount(spent)}</p>
-            <p className="text-[11px] text-slate-400">of {fmtAmount(budget)} budget</p>
+            <p className="text-[11px] text-slate-400">
+              {hasBudget && budget ? `of ${fmtAmount(budget)} budget` : 'No budget set'}
+            </p>
           </div>
         </div>
-
-        {/* Next up item */}
-        {(() => {
-          const nextUnbooked = journey.itinerary.flatMap((d) => d.activities).find((a) => a.status !== 'booked' && ['flight', 'hotel', 'activity'].includes(a.type));
-          if (!nextUnbooked) return null;
-          const typeIcon: Record<string, string> = { flight: '✈️', hotel: '🏨', activity: '🎫', transfer: '🚗' };
-          return (
-            <div className="mt-3 flex items-center gap-2.5 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-              <span className="text-sm">{typeIcon[nextUnbooked.type] ?? '📌'}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">Next up</p>
-                <p className="text-xs text-slate-700 truncate">{nextUnbooked.title}</p>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* CTAs */}
         <div className="mt-auto pt-4 flex gap-2">
@@ -422,7 +294,7 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
 
 function EmptyState({ filter, onPlan, onExplore }: { filter: FilterTab; onPlan: () => void; onExplore: () => void }) {
   const messages: Record<FilterTab, [string, string]> = {
-    all: ["Your next journey starts here.", "Start by exploring destinations or letting AI plan your next adventure."],
+    all: ["No trips yet", "Start by exploring destinations or letting AI plan your next adventure."],
     upcoming: ["No upcoming trips.", "Book a journey to see it here."],
     planning: ["Nothing in planning.", "Start planning your next escape."],
     'in-progress': ["No active journeys.", "When you start travelling, your journey appears here."],
@@ -455,7 +327,7 @@ function EmptyState({ filter, onPlan, onExplore }: { filter: FilterTab; onPlan: 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function MyTripsPage() {
-  const { journeys, navigate } = useApp();
+  const { journeys, journeysStatus, refreshJourneys, navigate } = useApp();
   const [filter, setFilter] = useState<FilterTab>('all');
   const [aiJourney, setAiJourney] = useState<Journey | null>(null);
 
@@ -512,80 +384,105 @@ export default function MyTripsPage() {
         </button>
       </div>
 
-      {/* Stats strip */}
-      <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 mb-8">
-        {[
-          { label: 'Upcoming', value: upcomingCount, sub: 'booked · pre-travel · active', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-100' },
-          { label: 'Planning', value: planningCount, sub: 'planning · discovering', color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
-          { label: 'Completed', value: completedCount, sub: 'finished journeys', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-        ].map((stat) => (
-          <div key={stat.label} className={`${stat.bg} border ${stat.border} rounded-xl p-4`}>
-            <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-            <p className="text-sm font-semibold text-slate-700 mt-0.5">{stat.label}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{stat.sub}</p>
+      {journeysStatus === 'loading' ? (
+        <div className="py-24 flex flex-col items-center justify-center text-center">
+          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-slate-600 font-medium">Loading your trips…</p>
+        </div>
+      ) : journeysStatus === 'error' ? (
+        <div className="py-16 px-6 bg-red-50/50 border border-red-100 rounded-2xl text-center my-8 max-w-lg mx-auto">
+          <div className="w-12 h-12 rounded-xl bg-red-100 text-red-600 flex items-center justify-center text-2xl mx-auto mb-4">
+            ⚠️
           </div>
-        ))}
-      </div>
-
-      {/* Featured / active journey */}
-      {featuredJourney && (
-        <FeaturedJourney journey={featuredJourney} onAskAI={() => setAiJourney(featuredJourney)} />
-      )}
-
-      {/* Upcoming timeline */}
-      {featuredJourney && <UpcomingTimeline journey={featuredJourney} />}
-
-      {/* Continue planning */}
-      {planningJourney && (
-        <ContinuePlanning
-          journey={planningJourney}
-          onNavigate={() => navigate('journey', { selectedJourneyId: planningJourney.id })}
-        />
-      )}
-
-      {/* Filter tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 w-fit overflow-x-auto">
-        {filterTabs.map((t) => (
+          <h2 className="text-lg font-semibold text-slate-900 mb-1">Failed to load trips</h2>
+          <p className="text-slate-500 text-sm mb-6">We couldn't retrieve your saved journeys. Please check your connection and try again.</p>
           <button
-            key={t.key}
-            onClick={() => setFilter(t.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filter === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            onClick={() => refreshJourneys()}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
           >
-            {t.label}
-            {t.count > 0 && <span className="ml-1.5 text-xs opacity-60">({t.count})</span>}
-          </button>
-        ))}
-      </div>
-
-      {/* Journey grid or empty state */}
-      {filtered.length === 0 ? (
-        <EmptyState filter={filter} onPlan={() => navigate('ai-planner')} onExplore={() => navigate('explore')} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filtered.map((journey) => (
-            <JourneyCard key={journey.id} journey={journey} onAskAI={() => setAiJourney(journey)} />
-          ))}
-
-          {/* Add trip slot */}
-          <button
-            onClick={() => navigate('ai-planner')}
-            className="text-left border-2 border-dashed border-slate-200 rounded-xl p-8 hover:border-blue-300 hover:bg-blue-50/50 transition-all group flex flex-col items-center justify-center gap-3 min-h-[280px]"
-          >
-            <div className="w-12 h-12 bg-slate-100 group-hover:bg-blue-100 rounded-xl flex items-center justify-center transition-colors">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-slate-400 group-hover:text-blue-600 transition-colors">
-                <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-slate-600 group-hover:text-blue-700 transition-colors">Plan a new trip</p>
-              <p className="text-xs text-slate-400 mt-0.5">AI creates your itinerary in seconds</p>
-            </div>
+            Retry
           </button>
         </div>
+      ) : journeys.length === 0 ? (
+        <EmptyState filter="all" onPlan={() => navigate('ai-planner')} onExplore={() => navigate('explore')} />
+      ) : (
+        <>
+          {/* Stats strip */}
+          <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 mb-8">
+            {[
+              { label: 'Upcoming', value: upcomingCount, sub: 'booked · pre-travel · active', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-100' },
+              { label: 'Planning', value: planningCount, sub: 'planning · discovering', color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
+              { label: 'Completed', value: completedCount, sub: 'finished journeys', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+            ].map((stat) => (
+              <div key={stat.label} className={`${stat.bg} border ${stat.border} rounded-xl p-4`}>
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                <p className="text-sm font-semibold text-slate-700 mt-0.5">{stat.label}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{stat.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Featured / active journey */}
+          {featuredJourney && (
+            <FeaturedJourney journey={featuredJourney} onAskAI={() => setAiJourney(featuredJourney)} />
+          )}
+
+          {/* Upcoming timeline */}
+          {featuredJourney && <UpcomingTimeline journey={featuredJourney} />}
+
+          {/* Continue planning */}
+          {planningJourney && (
+            <ContinuePlanning
+              journey={planningJourney}
+              onNavigate={() => navigate('journey', { selectedJourneyId: planningJourney.id })}
+            />
+          )}
+
+          {/* Filter tabs */}
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 w-fit overflow-x-auto">
+            {filterTabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setFilter(t.key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filter === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                {t.label}
+                {t.count > 0 && <span className="ml-1.5 text-xs opacity-60">({t.count})</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Journey grid or empty state */}
+          {filtered.length === 0 ? (
+            <EmptyState filter={filter} onPlan={() => navigate('ai-planner')} onExplore={() => navigate('explore')} />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filtered.map((journey) => (
+                <JourneyCard key={journey.id} journey={journey} onAskAI={() => setAiJourney(journey)} />
+              ))}
+
+              {/* Add trip slot */}
+              <button
+                onClick={() => navigate('ai-planner')}
+                className="text-left border-2 border-dashed border-slate-200 rounded-xl p-8 hover:border-blue-300 hover:bg-blue-50/50 transition-all group flex flex-col items-center justify-center gap-3 min-h-[280px]"
+              >
+                <div className="w-12 h-12 bg-slate-100 group-hover:bg-blue-100 rounded-xl flex items-center justify-center transition-colors">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-slate-400 group-hover:text-blue-600 transition-colors">
+                    <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-slate-600 group-hover:text-blue-700 transition-colors">Plan a new trip</p>
+                  <p className="text-xs text-slate-400 mt-0.5">AI creates your itinerary in seconds</p>
+                </div>
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Ask Journey AI panel */}
-      {aiJourney && <AskJourneyAI journey={aiJourney} onClose={() => setAiJourney(null)} />}
+      {/* Trip Chat Panel */}
+      {aiJourney && <TripChatPanel journey={aiJourney} onClose={() => setAiJourney(null)} />}
     </div>
   );
 }
