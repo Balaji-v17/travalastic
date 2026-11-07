@@ -29,10 +29,14 @@ const PORT = process.env.PORT || 8000;
 
 connectDB();
 
-const allowedOrigins = (process.env.WEB_ORIGINS || 'http://localhost:5173,http://localhost:8443')
+const allowedOrigins = (process.env.WEB_ORIGINS || 'http://localhost:5173,http://localhost:8443,https://travalastic.vercel.app')
   .split(',')
   .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean);
+
+if (!allowedOrigins.includes('https://travalastic.vercel.app')) {
+  allowedOrigins.push('https://travalastic.vercel.app');
+}
 
 app.use(
   cors({
@@ -44,6 +48,8 @@ app.use(
         callback(null, false);
       }
     },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
   })
 );
