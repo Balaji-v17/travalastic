@@ -9,6 +9,8 @@ import {
   type JourneyItem,
 } from '../../lib/itineraryAdapter';
 import { makeDefaultDna, validateDna, formatLocalDate } from '../../lib/plannerForm';
+import ItineraryMap from '../../components/itinerary/ItineraryMap';
+import ChangeJourneyPanel from '../../components/itinerary/ChangeJourneyPanel';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -173,6 +175,26 @@ export default function AIPlannerPage() {
     }));
   };
 
+  const handleItineraryUpdated = (updatedResponse: any, newPace?: string) => {
+    if (!journey) return;
+    const rawDays = updatedResponse.itinerary || updatedResponse.days || [];
+    const updatedPace = (newPace || updatedResponse.pace || journey.dna.pace) as any;
+    const newDna = {
+      ...journey.dna,
+      pace: updatedPace,
+    };
+    const updated = toGeneratedJourney(
+      {
+        itineraryId: updatedResponse.itineraryId || savedJourneyId || journey.itineraryId || '',
+        itinerary: rawDays,
+        grounding: journey.grounding,
+      },
+      newDna
+    );
+    setJourney(updated);
+    refreshJourneys();
+  };
+
   if (phase === 'dna') return <DNAForm dna={dna} setDna={setDna} onBuild={handleBuildJourney} toggleInterest={toggleInterest} />;
   if (phase === 'building') {
     return (
@@ -275,6 +297,23 @@ export default function AIPlannerPage() {
               <p>We found few verified places for {journey.dna.destination.split(',')[0].trim()}. Parts of this plan are general suggestions.</p>
             </div>
           )}
+
+          {/* Mobile Collapsible Map */}
+          <div className="block lg:hidden">
+            <details className="bg-white border border-slate-200 rounded-xl overflow-hidden group">
+              <summary className="px-5 py-3.5 font-semibold text-slate-900 cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors list-none">
+                <span className="flex items-center gap-2">
+                  <span>🗺️</span>
+                  <span>Trip Map</span>
+                </span>
+                <span className="text-xs text-blue-600 font-medium group-open:hidden">Show map</span>
+                <span className="text-xs text-slate-400 font-medium hidden group-open:inline">Hide map</span>
+              </summary>
+              <div className="p-3 pt-0 border-t border-slate-100">
+                <ItineraryMap itinerary={journey.days} />
+              </div>
+            </details>
+          </div>
 
           {/* Daily Itinerary */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -662,37 +701,12 @@ export default function AIPlannerPage() {
             })()}
           </div>
 
-          {/* AI Controls */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-5 h-5 rounded bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-[9px] font-bold">J</span>
-              </div>
-              <h3 className="font-semibold text-slate-900 text-sm">Change my journey</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { label: 'Make it cheaper', control: 'cheaper', icon: '↓' },
-                { label: 'More luxurious', control: 'luxurious', icon: '✦' },
-                { label: 'Slow pace down', control: 'slowpace', icon: '◌' },
-                { label: 'Add more food', control: 'morefood', icon: '🍜' },
-                { label: 'Add more culture', control: 'moreculture', icon: '🏛' },
-                { label: 'Add 2 days', control: 'add2days', icon: '+2' },
-                { label: 'Reduce transit', control: 'reducetransit', icon: '⇢' },
-                { label: 'Surprise me', control: 'morefood', icon: '✨' },
-              ].map(({ label, control, icon }) => (
-                <button
-                  key={control + label}
-                  disabled
-                  title="Editing with AI comes in a later update"
-                  className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 text-slate-400 text-xs font-medium rounded-lg opacity-50 cursor-not-allowed text-left"
-                >
-                  <span className="text-sm leading-none flex-shrink-0">{icon}</span>
-                  <span className="leading-tight">{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* AI Controls - Change my journey */}
+          <ChangeJourneyPanel
+            itineraryId={savedJourneyId || journey.itineraryId || null}
+            journey={journey}
+            onItineraryUpdated={handleItineraryUpdated}
+          />
 
           {/* hidden until backed by real data */}
           {showUnsupported && (
@@ -740,6 +754,11 @@ export default function AIPlannerPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Desktop Sticky Map */}
+          <div className="hidden lg:block sticky top-20">
+            <ItineraryMap itinerary={journey.days} />
           </div>
 
           {savedJourneyId && (

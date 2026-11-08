@@ -206,6 +206,7 @@ export interface ItineraryActivity {
     longitude?: number | null;
     placeName?: string | null;
   } | null;
+  kind?: 'place' | 'meal' | 'transit' | 'rest';
 }
 
 export interface ItineraryDay {

@@ -8,6 +8,7 @@ import DisruptionBanner from '../../components/disruptions/DisruptionBanner';
 import DisruptionReviewModal from '../../components/disruptions/DisruptionReviewModal';
 import SimulateDelayControl from '../../components/disruptions/SimulateDelayControl';
 import { tripStayDates } from '../../lib/stay';
+import ItineraryMap from '../../components/itinerary/ItineraryMap';
 
 const statusConfig = {
   discovering: { label: 'Discovering', color: 'bg-slate-100 text-slate-600' },
@@ -462,7 +463,7 @@ export default function JourneyPage() {
 
       {/* Itinerary */}
       {activeTab === 'itinerary' && (
-        <div className="space-y-4">
+        <div>
           {journey.itinerary.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-slate-400 mb-4">No itinerary yet</p>
@@ -471,7 +472,27 @@ export default function JourneyPage() {
               </button>
             </div>
           ) : (
-            journey.itinerary.map((day) => (
+            <div>
+              {/* Mobile Collapsible Map */}
+              <div className="block lg:hidden mb-4">
+                <details className="bg-white border border-slate-200 rounded-xl overflow-hidden group">
+                  <summary className="px-5 py-3.5 font-semibold text-slate-900 cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors list-none">
+                    <span className="flex items-center gap-2">
+                      <span>🗺️</span>
+                      <span>Trip Map</span>
+                    </span>
+                    <span className="text-xs text-blue-600 font-medium group-open:hidden">Show map</span>
+                    <span className="text-xs text-slate-400 font-medium hidden group-open:inline">Hide map</span>
+                  </summary>
+                  <div className="p-3 pt-0 border-t border-slate-100">
+                    <ItineraryMap itinerary={journey.itinerary} />
+                  </div>
+                </details>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-4">
+                  {journey.itinerary.map((day) => (
               <div key={day.day} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <div>
@@ -535,13 +556,23 @@ export default function JourneyPage() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            {/* Desktop Sticky Map in Right Column */}
+            <div className="hidden lg:block space-y-4">
+              <div className="sticky top-20">
+                <ItineraryMap itinerary={journey.itinerary} />
               </div>
-            ))
-          )}
+            </div>
+          </div>
         </div>
       )}
+    </div>
+  )}
 
       {/* Bookings */}
       {activeTab === 'bookings' && (

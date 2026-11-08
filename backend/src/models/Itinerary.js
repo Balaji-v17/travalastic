@@ -137,6 +137,10 @@ const EditHistorySchema = new mongoose.Schema({
     ref: 'Disruption',
     default: null,
   },
+  previousPace: {
+    type: String,
+    default: null,
+  },
 });
 
 const ItinerarySchema = new mongoose.Schema({
@@ -157,6 +161,11 @@ const ItinerarySchema = new mongoose.Schema({
   destinationCoordinates: {
     lat: { type: Number, default: null },
     lon: { type: Number, default: null },
+  },
+  pace: {
+    type: String,
+    enum: ['relaxed', 'balanced', 'packed'],
+    default: 'balanced',
   },
   startDate: {
     type: String,

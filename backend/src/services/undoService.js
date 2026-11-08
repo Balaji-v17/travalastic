@@ -88,6 +88,7 @@ export async function saveItineraryEditSnapshot({
   tag = null,
   label = null,
   disruptionId = null,
+  previousPace = null,
 }) {
   const snapshotId = new mongoose.Types.ObjectId();
   const snapshotEntry = {
@@ -100,6 +101,7 @@ export async function saveItineraryEditSnapshot({
     tag,
     label,
     disruptionId,
+    previousPace,
   };
 
   const query = userId ? { _id: itineraryId, userId } : { _id: itineraryId };

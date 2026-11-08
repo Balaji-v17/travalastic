@@ -86,7 +86,7 @@ app.get('/health/db', (req, res) => {
 app.use('/health', healthRoute);
 app.use('/destinations', destinationsRoute);
 app.use('/auth', authRoute);
-app.use('/itinerary', itineraryRoute);
+app.use(['/itinerary', '/itineraries'], itineraryRoute);
 app.use('/flights', flightsRoute);
 app.use('/hotels', hotelsRoute);
 app.use('/cars', carsRoute);

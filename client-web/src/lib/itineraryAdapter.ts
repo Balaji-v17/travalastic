@@ -21,7 +21,13 @@ export interface JourneyItem {
   note?: string;
   aiReason?: string;
   placeId?: string | null;
-  location?: { lat?: number; lon?: number };
+  location?: {
+    lat?: number | null;
+    lon?: number | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    placeName?: string | null;
+  } | null;
   kind?: 'place' | 'meal' | 'transit' | 'rest';
   placeRef?: string;
 }
@@ -169,6 +175,7 @@ export function backendDaysToItineraryDays(
             ? String(matchedBooking._id || matchedBooking.id || '')
             : undefined,
           location: act.location,
+          kind: (act as any).kind || ((act as any).type === 'activity' ? 'place' : undefined),
         };
       }
     );

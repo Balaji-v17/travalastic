@@ -31,6 +31,12 @@ import { applyOrder } from '../services/reorderService.js';
 import { toInr } from '../services/fxRates.js';
 import PackingTemplate from '../models/PackingTemplate.js';
 import { mergeTemplateItems } from '../services/packingTemplateService.js';
+import {
+  previewAdjust,
+  executeAdjust,
+  computeBaseHash,
+} from '../services/journeyAdjust.js';
+import { retrieveCandidates } from '../services/candidateRetrieval.js';
 
 const reschedulePreviewLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -41,6 +47,17 @@ const reschedulePreviewLimiter = rateLimit({
   legacyHeaders: false,
   statusCode: 429,
   message: { error: 'Too many reschedule previews requested. Please try again after an hour.' },
+});
+
+const adjustLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) => (req.userId ? req.userId.toString() : 'anonymous'),
+  validate: { keyGeneratorIpFallback: false },
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many adjustment requests. Please try again after a few minutes.' },
 });
 
 const router = express.Router();
@@ -1467,15 +1484,6 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
     const targetId = req.params.id || req.params.itineraryId;
     const { expectedEditId } = req.body || {};
 
-    if (!expectedEditId || typeof expectedEditId !== 'string' || !expectedEditId.trim()) {
-      return res.status(400).json({ error: 'expectedEditId is required' });
-    }
-
-    const trimmedExpectedId = expectedEditId.trim();
-    if (!mongoose.Types.ObjectId.isValid(trimmedExpectedId)) {
-      return res.status(400).json({ error: 'Invalid expectedEditId format' });
-    }
-
     const itinerary = await findUserItinerary(targetId, req.userId);
     if (!itinerary) {
       return res.status(404).json({ error: 'Itinerary not found' });
@@ -1489,14 +1497,27 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
     const newestSnapshot = history[history.length - 1];
     const newestIdStr = newestSnapshot._id ? newestSnapshot._id.toString() : null;
 
-    if (newestIdStr !== trimmedExpectedId) {
-      return res.status(409).json({ error: 'Expected edit ID does not match latest edit snapshot' });
+    let targetEditId = newestIdStr;
+    if (expectedEditId && typeof expectedEditId === 'string' && expectedEditId.trim()) {
+      const trimmedExpectedId = expectedEditId.trim();
+      if (!mongoose.Types.ObjectId.isValid(trimmedExpectedId)) {
+        return res.status(400).json({ error: 'Invalid expectedEditId format' });
+      }
+      if (newestIdStr !== trimmedExpectedId) {
+        return res.status(409).json({ error: 'Expected edit ID does not match latest edit snapshot' });
+      }
+      targetEditId = trimmedExpectedId;
     }
 
     const restoredDays = applySnapshot(itinerary.days, newestSnapshot);
-    const expectedObjId = new mongoose.Types.ObjectId(trimmedExpectedId);
+    const expectedObjId = new mongoose.Types.ObjectId(targetEditId);
 
-    // Atomic update: verify the last element is still expectedObjId, set restored days, and pop snapshot
+    const updateSet = { days: restoredDays };
+    if (newestSnapshot.previousPace) {
+      updateSet.pace = newestSnapshot.previousPace;
+    }
+
+    // Atomic update: verify the last element is still expectedObjId, set restored days/pace, and pop snapshot
     const updatedItinerary = await Itinerary.findOneAndUpdate(
       {
         _id: itinerary._id,
@@ -1509,7 +1530,7 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
         },
       },
       {
-        $set: { days: restoredDays },
+        $set: updateSet,
         $pop: { editHistory: 1 },
       },
       { new: true }
@@ -1606,5 +1627,127 @@ router.get('/:itineraryId', authenticate, async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * POST /itinerary/:id/adjust/preview (and /itineraries/:id/adjust/preview)
+ * Body: { action: 'slow_pace' | 'reduce_transit' | 'surprise_me', seed? }
+ * Authenticates, validates ownership, computes adjustment preview. NO writes.
+ */
+router.post(
+  ['/:id/adjust/preview', '/:itineraryId/adjust/preview'],
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const targetId = req.params.id || req.params.itineraryId;
+      const { action, seed } = req.body || {};
+
+      if (!['slow_pace', 'reduce_transit', 'surprise_me'].includes(action)) {
+        return res.status(400).json({
+          error: "Action must be one of 'slow_pace', 'reduce_transit', or 'surprise_me'",
+        });
+      }
+
+      const itinerary = await findUserItinerary(targetId, req.userId);
+      if (!itinerary) {
+        return res.status(404).json({ error: 'Itinerary not found' });
+      }
+
+      const options = { seed };
+      if (action === 'surprise_me') {
+        const candidates = await retrieveCandidates(itinerary.destination);
+        options.candidates = candidates;
+      }
+
+      const previewResult = await previewAdjust(itinerary, action, options);
+      return res.status(200).json(previewResult);
+    } catch (error) {
+      if (error.statusCode === 422) {
+        return res.status(422).json({ error: error.message });
+      }
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /itinerary/:id/adjust/apply (and /itineraries/:id/adjust/apply)
+ * Body: { action: 'slow_pace' | 'reduce_transit' | 'surprise_me', seed?, baseHash }
+ * Authenticates, validates ownership, verifies baseHash hasn't changed (409 on mismatch),
+ * recomputes changes server-side from action+seed, saves snapshot for undo, writes changes.
+ */
+router.post(
+  ['/:id/adjust/apply', '/:itineraryId/adjust/apply'],
+  authenticate,
+  adjustLimiter,
+  async (req, res, next) => {
+    try {
+      const targetId = req.params.id || req.params.itineraryId;
+      const { action, seed, baseHash } = req.body || {};
+
+      if (!['slow_pace', 'reduce_transit', 'surprise_me'].includes(action)) {
+        return res.status(400).json({
+          error: "Action must be one of 'slow_pace', 'reduce_transit', or 'surprise_me'",
+        });
+      }
+
+      if (!baseHash || typeof baseHash !== 'string' || !baseHash.trim()) {
+        return res.status(400).json({ error: 'baseHash is required' });
+      }
+
+      const itinerary = await findUserItinerary(targetId, req.userId);
+      if (!itinerary) {
+        return res.status(404).json({ error: 'Itinerary not found' });
+      }
+
+      // Concurrency check against concurrent modifications
+      const currentBaseHash = computeBaseHash(itinerary);
+      if (currentBaseHash !== baseHash.trim()) {
+        return res.status(409).json({ error: 'Your trip changed, preview again' });
+      }
+
+      const options = { seed };
+      if (action === 'surprise_me') {
+        const candidates = await retrieveCandidates(itinerary.destination);
+        options.candidates = candidates;
+      }
+
+      const result = await executeAdjust(itinerary, action, options);
+
+      const modifiedDayNumbers = result.newDays.map((d) => d.dayNumber);
+      const { updatedItinerary, editId } = await saveItineraryEditSnapshot({
+        itineraryId: itinerary._id,
+        userId: req.userId,
+        newDays: result.newDays,
+        modifiedDayNumbers,
+        previousDays: itinerary.days,
+        tag: action,
+        label: result.summary,
+        previousPace: itinerary.pace || 'balanced',
+      });
+
+      if (action === 'slow_pace') {
+        await Itinerary.updateOne({ _id: itinerary._id }, { $set: { pace: 'relaxed' } });
+        updatedItinerary.pace = 'relaxed';
+      }
+
+      return res.status(200).json({
+        message: 'Changes applied successfully',
+        itineraryId: updatedItinerary._id,
+        itinerary: updatedItinerary.days,
+        pace: updatedItinerary.pace || (action === 'slow_pace' ? 'relaxed' : 'balanced'),
+        undo: formatUndo(updatedItinerary.editHistory),
+        editId,
+        changes: result.changes,
+        summary: result.summary,
+        metrics: result.metrics,
+      });
+    } catch (error) {
+      if (error.statusCode === 422) {
+        return res.status(422).json({ error: error.message });
+      }
+      next(error);
+    }
+  }
+);
 
 export default router;
