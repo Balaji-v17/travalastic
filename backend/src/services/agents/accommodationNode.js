@@ -12,7 +12,9 @@ export const accommodationNode = async (state) => {
     const destination = (state?.destination || '').trim();
     const budgetTier = (state?.budgetTier || '').trim().toLowerCase();
 
-    const query = {};
+    const query = {
+      hidden: { $ne: true },
+    };
     if (destination) {
       query.destination = new RegExp(`^${destination}$`, 'i');
     }

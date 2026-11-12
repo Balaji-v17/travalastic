@@ -28,9 +28,10 @@ router.get('/search', async (req, res, next) => {
     const cleanCheckin = typeof checkinDate === 'string' ? checkinDate.trim() : '';
     const cleanCheckout = typeof checkoutDate === 'string' ? checkoutDate.trim() : '';
 
-    // Build filter for CuratedHotel: case-insensitive destination match
+    // Build filter for CuratedHotel: case-insensitive destination match and public visibility
     const filter = {
       destination: new RegExp(`^${cleanDest}$`, 'i'),
+      hidden: { $ne: true },
     };
 
     if (cleanBudgetTier) {

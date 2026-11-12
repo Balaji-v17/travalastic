@@ -35,9 +35,11 @@ export async function retrieveCandidates(destination) {
   }
 
   // (a) Curated places from TouristPlace by exact/fuzzy city
+  // Must use hidden: { $ne: true } so legacy records lacking the field are included, but hidden places are excluded.
   try {
     const textRegex = new RegExp(cleanDest, 'i');
     const curatedMatches = await TouristPlace.find({
+      hidden: { $ne: true },
       $or: [{ city: textRegex }, { name: textRegex }],
     })
       .select('-embedding')

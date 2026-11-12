@@ -106,7 +106,7 @@ const FALLBACK_PEXELS_PHOTOS = {
  * @param {string} name - Destination query name (e.g. "Goa", "Jaipur")
  * @returns {Promise<{ photoUrl: string, photographerName: string, photographerUrl: string }>}
  */
-export async function getPhotoForDestination(name) {
+export async function getPhotoForDestination(name, { fallback = true } = {}) {
   const cleanName = (name || '').trim();
   const lowerKey = cleanName.toLowerCase();
   const apiKey = process.env.PEXELS_API_KEY;
@@ -143,6 +143,10 @@ export async function getPhotoForDestination(name) {
   // Fallback to curated Pexels photo for this destination
   if (FALLBACK_PEXELS_PHOTOS[lowerKey]) {
     return FALLBACK_PEXELS_PHOTOS[lowerKey];
+  }
+
+  if (!fallback) {
+    return null;
   }
 
   // Generic fallback if not in the curated dictionary

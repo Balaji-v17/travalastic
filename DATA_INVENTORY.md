@@ -170,3 +170,39 @@ Travalastic is an AI-powered travel planning and itinerary management platform. 
 3. **Flight Booking Guest Checkout**: Should flight booking require user registration/login upfront, or should guest booking be retained with an explicit email-based deletion flow?
 4. **Third-Party CDN Migration**: Can destination images and Google Fonts be bundled into the web static build assets to achieve zero third-party browser network calls?
 5. **Customer Support & Privacy Contact**: What email address should receive data subject access and deletion requests submitted via the hosted delete-account web page?
+
+---
+
+## J. Admin Panel & Operational Data Access
+
+### 1. What Is Stored
+* **`adminusers` Collection**:
+  * `email`: Admin work email address.
+  * `passwordHash`: Bcrypt-hashed password (salt rounds = 10); plaintext passwords are never stored.
+  * `role`: Administrative role (`super_admin`, `content_editor`, `support_agent`).
+  * `active`: Account status boolean (inactive accounts rejected immediately on all calls).
+  * `mustChangePassword`: Boolean flag requiring password change at next login.
+  * `passwordChangedAt`: Timestamp of last password change.
+  * `tokensValidAfter`: Token invalidation cutoff timestamp (tokens issued prior are revoked).
+  * `createdAt`: Account provisioning date.
+  * `lastLoginAt`: Timestamp of last successful administrative sign-in.
+  * `createdBy`: Reference to the Super Admin who provisioned the account.
+* **`auditlogs` Collection**:
+  * Fields: `at`, `actorId`, `actorEmail`, `actorRole`, `action`, `targetType`, `targetId`, `summary`, `changes`.
+  * **Privacy Guarantee**: Audit logs **never store passwords or traveler emails**. Traveler accounts are referenced strictly by database `userId`; email lookup operations record only whether a match occurred without persisting queried emails.
+
+### 2. Role-Based Access Control Matrix
+* **Super Admin (`super_admin`)**: Complete administrative control: manage admin accounts, reassign roles, reset passwords, inspect the operational audit log, manage places and hotels, edit style collections, search traveler accounts by exact email, and execute audited account deletions.
+* **Content Editor (`content_editor`)**: Curated catalog management only: create, edit, hide, and restore tourist places and curated hotels; edit style collection picks. Zero access to admin accounts, audit logs, or traveler accounts.
+* **Support Agent (`support_agent`)**: Traveler assistance only: exact-email account lookup and preview-then-confirm permanent account deletion with reason logging. Support agents never see trip itineraries, conversations, bookings, or expenses. Zero access to catalog editing or admin user management.
+
+### 3. Session Credential Storage
+Admin JWT tokens are stored strictly in volatile browser `sessionStorage` (and memory). Tokens are automatically destroyed upon tab close or sign-out, and are never saved to persistent `localStorage` or cookies.
+
+### 4. Third-Party Hosts & Analytics
+* **`https://images.pexels.com`**: Sourcing destination cover photos solely upon explicit user action ("Preview photo" button click).
+* **Zero Analytics**: No third-party analytics tools (e.g. Google Analytics, Mixpanel), tracker scripts, or external telemetry are present in the admin panel.
+
+### 5. Audit Log Retention
+Audit log records are retained **indefinitely, to be decided by the team**, ensuring a permanent, tamper-evident operational compliance trail.
+

@@ -21,12 +21,17 @@ import packingTemplatesRoute from './routes/packingTemplates.js';
 import assistantRoute from './routes/assistant.js';
 import duffelWebhookRoute from './routes/duffelWebhook.js';
 import disruptionsRoute from './routes/disruptions.js';
+import stylesRoute from './routes/styles.js';
+import adminRoute from './routes/admin.js';
+import { validateAdminConfig } from './middleware/adminAuth.js';
 import { connectDB } from './config/db.js'; 
 import getWeatherForecast from './services/weatherService.js';
-import CuratedHotel from './models/CuratedHotel.js';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+
+// Trust proxy: 1 hop for Render reverse proxy so req.ip derives from X-Forwarded-For accurately
+app.set('trust proxy', 1);
 
 connectDB(); // Now active
 
@@ -39,21 +44,51 @@ if (!allowedOrigins.includes('https://travalastic.vercel.app')) {
   allowedOrigins.push('https://travalastic.vercel.app');
 }
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, server-to-server)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-  })
-);
+const travelerCors = cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+});
+
+const adminAllowedOrigins = (process.env.ADMIN_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+const adminCors = cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests with no origin header (like curl, test runners, server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    // Strictly require origin to be explicitly enumerated in ADMIN_ORIGINS (no wildcard, no empty fallback, no web fallback)
+    if (adminAllowedOrigins.length > 0 && adminAllowedOrigins.includes(cleanOrigin) && cleanOrigin !== '*') {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+});
+
+// Route-level CORS dispatch: /admin routes use ADMIN_ORIGINS, all other routes use WEB_ORIGINS
+app.use((req, res, next) => {
+  if (req.path.startsWith('/admin')) {
+    return adminCors(req, res, next);
+  }
+  return travelerCors(req, res, next);
+});
+
 app.use(helmet());
 app.use(morgan('dev'));
 
@@ -83,6 +118,23 @@ app.get('/health/db', (req, res) => {
   });
 });
 
+// Validate admin configuration at startup; refuses to start admin routes if missing, <32 chars, or equal to traveler secret
+let adminConfigValid = false;
+try {
+  validateAdminConfig();
+  adminConfigValid = true;
+} catch (err) {
+  console.error(`Refusing to start admin routes: ${err.message}`);
+}
+
+if (adminConfigValid) {
+  app.use('/admin', adminRoute);
+} else {
+  app.use('/admin', (req, res) => {
+    res.status(503).json({ error: 'Admin routes unavailable due to configuration error' });
+  });
+}
+
 app.use('/health', healthRoute);
 app.use('/destinations', destinationsRoute);
 app.use('/auth', authRoute);
@@ -91,7 +143,11 @@ app.use('/flights', flightsRoute);
 app.use('/hotels', hotelsRoute);
 app.use('/cars', carsRoute);
 app.use('/routes', routesRoute);
-app.use('/test', testRoute);
+
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/test', testRoute);
+}
+
 app.use('/chat', chatRoute);
 app.use('/bookings', bookingsRoute);
 app.use('/expenses', expensesRoute);
@@ -99,6 +155,7 @@ app.use('/fx', fxRoute);
 app.use('/packing-templates', packingTemplatesRoute);
 app.use('/assistant', assistantRoute);
 app.use('/disruptions', disruptionsRoute);
+app.use('/styles', stylesRoute);
 
 app.get('/weather', async (req, res, next) => {
   try {
@@ -116,31 +173,19 @@ app.get('/weather', async (req, res, next) => {
   }
 });
 
-// Temporary dev-only route to confirm seeded hotel data
-app.get('/admin/hotels', async (req, res) => {
-  try {
-    const { destination } = req.query;
-    const filter = destination
-      ? { destination: new RegExp(`^${destination.trim()}$`, 'i') }
-      : {};
-
-    const hotels = await CuratedHotel.find(filter);
-    return res.status(200).json(hotels);
-  } catch (error) {
-    console.error('Error fetching admin hotels:', error.message);
-    return res.status(500).json({ error: 'Failed to fetch curated hotels' });
-  }
-});
-
 // Not Found handler
 app.use((req, res, next) => {
   res.status(404).json({ error: { message: `Not Found - ${req.originalUrl}` } });
 });
 
-// Global error handler
+// Global error handler - never leaks stack traces in responses
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(err.status || 500).json({ error: { message: err.message || 'Internal Server Error' } });
+  const status = err.status || 500;
+  const message = (process.env.NODE_ENV === 'production' && status >= 500)
+    ? 'Internal Server Error'
+    : (err.message || 'Internal Server Error');
+  res.status(status).json({ error: { message } });
 });
 
 app.listen(PORT, () => {

@@ -165,6 +165,10 @@ const getTrendingDestinations = async (req, res) => {
 export const destinationResponseCache = new Map();
 export const DEST_CACHE_TTL_MS = 5 * 60 * 1000;
 
+export const invalidateDestinationCache = () => {
+  destinationResponseCache.clear();
+};
+
 /**
  * Executes the full Explore cascade for places in a destination:
  * Tier 1: TouristPlace regex fuzzy match
@@ -173,8 +177,7 @@ export const DEST_CACHE_TTL_MS = 5 * 60 * 1000;
  * Caches and returns { results, destinations, availableCategories }
  *
  * @param {string} destinationQuery - Destination name (e.g. "Goa")
- * @returns {Promise<{ results: Array, destinations: Array, availableCategories: Array<string> }>}
- */
+ * @returns {Promise<{ results: Array, destinations: Array, availableCategories: Array<string> }>}\n */
 export const fetchExplorePlaces = async (destinationQuery) => {
   if (!destinationQuery || typeof destinationQuery !== 'string' || !destinationQuery.trim()) {
     return { results: [], destinations: [], availableCategories: [] };
@@ -183,13 +186,16 @@ export const fetchExplorePlaces = async (destinationQuery) => {
   const cleanQuery = destinationQuery.trim();
   const cacheKey = cleanQuery.toLowerCase();
   const cached = destinationResponseCache.get(cacheKey);
+
   if (cached && Date.now() < cached.expiresAt) {
     return cached.data;
   }
 
   // Tier 1: Search name, city, and state using a regex against the search query.
+  // Must use hidden: { $ne: true } so legacy records lacking the field are included, but hidden places are excluded.
   const textRegex = new RegExp(cleanQuery, 'i');
   const filter = {
+    hidden: { $ne: true },
     $or: [
       { name: textRegex },
       { city: textRegex },
@@ -222,9 +228,17 @@ export const fetchExplorePlaces = async (destinationQuery) => {
             index: vectorIndexName,
             path: 'embedding',
             queryVector: queryEmbedding,
-            numCandidates: 30,
-            limit: 20,
+            numCandidates: 60,
+            limit: 40,
           },
+        },
+        {
+          $match: {
+            hidden: { $ne: true },
+          },
+        },
+        {
+          $limit: 20,
         },
         {
           $project: {

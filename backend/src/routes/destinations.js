@@ -103,6 +103,75 @@ const ensureCuratedTrending = async () => {
   return results;
 };
 
+/**
+ * Resolves photography for a destination query.
+ * Reuses the 24-hour trending cache and per-query trending cache.
+ *
+ * @param {string} rawQuery - destination name or image query
+ * @param {object} options
+ * @param {boolean} [options.allowGenericFallback=true] - whether to return generic fallback if no real photo found
+ * @returns {Promise<{ photoUrl: string, photographerName: string, photographerUrl: string } | null>}
+ */
+export async function resolveDestinationPhoto(rawQuery, { allowGenericFallback = true } = {}) {
+  const cleanQuery = (rawQuery || '').trim();
+  if (!cleanQuery) return null;
+
+  const lowerQuery = cleanQuery.toLowerCase();
+  const curated = await ensureCuratedTrending();
+
+  // 1. Check curated trending list
+  const curatedMatch = curated.find((dest) => {
+    const lowerName = dest.name.toLowerCase();
+    return lowerName.includes(lowerQuery) || lowerQuery.includes(lowerName);
+  });
+
+  if (curatedMatch && curatedMatch.photoUrl) {
+    return {
+      photoUrl: curatedMatch.photoUrl,
+      photographerName: curatedMatch.photographerName,
+      photographerUrl: curatedMatch.photographerUrl,
+    };
+  }
+
+  // 2. Check per-query cache for off-list searches
+  const cachedQuery = trendingQueryCache.get(lowerQuery);
+  if (cachedQuery && Date.now() < cachedQuery.expiresAt) {
+    const item = cachedQuery.data?.[0];
+    if (item && item.photoUrl) {
+      return {
+        photoUrl: item.photoUrl,
+        photographerName: item.photographerName,
+        photographerUrl: item.photographerUrl,
+      };
+    }
+  }
+
+  // 3. Make live call to Pexels service
+  const photoInfo = await getPhotoForDestination(cleanQuery, { fallback: allowGenericFallback });
+  if (!photoInfo || !photoInfo.photoUrl) {
+    return null;
+  }
+
+  const result = {
+    photoUrl: photoInfo.photoUrl,
+    photographerName: photoInfo.photographerName,
+    photographerUrl: photoInfo.photographerUrl,
+  };
+
+  // Cache in the 24-hour per-query cache
+  trendingQueryCache.set(lowerQuery, {
+    data: [
+      {
+        name: cleanQuery,
+        ...result,
+      },
+    ],
+    expiresAt: Date.now() + TWENTY_FOUR_HOURS_MS,
+  });
+
+  return result;
+}
+
 const getTrendingDestinations = async (req, res) => {
   try {
     const rawQuery = (req.query.query || req.query.q || '').trim();
@@ -116,8 +185,7 @@ const getTrendingDestinations = async (req, res) => {
     const lowerQuery = rawQuery.toLowerCase();
     const curated = await ensureCuratedTrending();
 
-    // 2. If query is present: first check if it matches (fuzzy/substring, case-insensitive)
-    // any cached trending destination's name — if so, return that one directly, no new Pexels call
+    // 2. If query matches any curated trending destination, return curated matches
     const curatedMatches = curated.filter((dest) => {
       const lowerName = dest.name.toLowerCase();
       return lowerName.includes(lowerQuery) || lowerQuery.includes(lowerName);
@@ -127,29 +195,18 @@ const getTrendingDestinations = async (req, res) => {
       return res.status(200).json(curatedMatches);
     }
 
-    // 3. Check per-query cache for off-list queries
-    const cachedQuery = trendingQueryCache.get(lowerQuery);
-    if (cachedQuery && Date.now() < cachedQuery.expiresAt) {
-      return res.status(200).json(cachedQuery.data);
+    // 3. Resolve photo using the shared 24-hour cache and service
+    const resolved = await resolveDestinationPhoto(rawQuery, { allowGenericFallback: true });
+    if (!resolved) {
+      return res.status(200).json([]);
     }
 
-    // 4. If it matches nothing in the curated list: make a live call to getPhotoForDestination(query)
-    // and return a single result for whatever was typed
-    const photoInfo = await getPhotoForDestination(rawQuery);
     const singleResult = [
       {
         name: rawQuery,
-        photoUrl: photoInfo.photoUrl,
-        photographerName: photoInfo.photographerName,
-        photographerUrl: photoInfo.photographerUrl,
+        ...resolved,
       },
     ];
-
-    // Cache that per-query result too (same style as the curated list)
-    trendingQueryCache.set(lowerQuery, {
-      data: singleResult,
-      expiresAt: Date.now() + TWENTY_FOUR_HOURS_MS,
-    });
 
     return res.status(200).json(singleResult);
   } catch (error) {
@@ -165,6 +222,10 @@ const getTrendingDestinations = async (req, res) => {
 export const destinationResponseCache = new Map();
 export const DEST_CACHE_TTL_MS = 5 * 60 * 1000;
 
+export const invalidateDestinationCache = () => {
+  destinationResponseCache.clear();
+};
+
 /**
  * Executes the full Explore cascade for places in a destination:
  * Tier 1: TouristPlace regex fuzzy match
@@ -173,8 +234,7 @@ export const DEST_CACHE_TTL_MS = 5 * 60 * 1000;
  * Caches and returns { results, destinations, availableCategories }
  *
  * @param {string} destinationQuery - Destination name (e.g. "Goa")
- * @returns {Promise<{ results: Array, destinations: Array, availableCategories: Array<string> }>}
- */
+ * @returns {Promise<{ results: Array, destinations: Array, availableCategories: Array<string> }>}\n */
 export const fetchExplorePlaces = async (destinationQuery) => {
   if (!destinationQuery || typeof destinationQuery !== 'string' || !destinationQuery.trim()) {
     return { results: [], destinations: [], availableCategories: [] };
@@ -183,13 +243,16 @@ export const fetchExplorePlaces = async (destinationQuery) => {
   const cleanQuery = destinationQuery.trim();
   const cacheKey = cleanQuery.toLowerCase();
   const cached = destinationResponseCache.get(cacheKey);
+
   if (cached && Date.now() < cached.expiresAt) {
     return cached.data;
   }
 
   // Tier 1: Search name, city, and state using a regex against the search query.
+  // Must use hidden: { $ne: true } so legacy records lacking the field are included, but hidden places are excluded.
   const textRegex = new RegExp(cleanQuery, 'i');
   const filter = {
+    hidden: { $ne: true },
     $or: [
       { name: textRegex },
       { city: textRegex },
@@ -222,9 +285,17 @@ export const fetchExplorePlaces = async (destinationQuery) => {
             index: vectorIndexName,
             path: 'embedding',
             queryVector: queryEmbedding,
-            numCandidates: 30,
-            limit: 20,
+            numCandidates: 60,
+            limit: 40,
           },
+        },
+        {
+          $match: {
+            hidden: { $ne: true },
+          },
+        },
+        {
+          $limit: 20,
         },
         {
           $project: {

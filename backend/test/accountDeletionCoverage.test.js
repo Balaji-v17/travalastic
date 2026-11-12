@@ -17,6 +17,9 @@ const EXEMPT_GLOBAL_MODELS = new Set([
   'CuratedRoute',       // Static transportation route definitions
   'DestinationContent', // Scraped and curated destination embeddings/tags
   'TouristPlace',      // Global tourist places and attractions database
+  'AdminUser',         // Dedicated admin accounts; not owned by traveler users
+  'AuditLog',          // Tamper-evident administrative audit log
+  'StyleCollection',   // Curated style collections catalog; shared across all users
 ]);
 
 describe('Account Deletion Model Coverage', () => {

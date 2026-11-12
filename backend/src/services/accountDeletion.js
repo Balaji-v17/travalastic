@@ -36,22 +36,33 @@ export async function countUserData(userId) {
 }
 
 /**
- * Permanently deletes all user-linked documents across all collections.
+ * Permanently deletes all user-linked documents across all collections,
+ * or returns document counts when options.dryRun is true.
  * Deletion order: children first (itineraries, conversations, expenses, bookings, packingTemplates, disruptions),
  * User document last so a failure partway leaves the account intact for retries.
  * Every query is strictly scoped to the target userId.
  *
  * @param {string|import('mongoose').Types.ObjectId} userId
+ * @param {Object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @param {import('mongoose').ClientSession} [options.session]
  * @returns {Promise<{ itineraries: number, conversations: number, expenses: number, bookings: number, packingTemplates: number, disruptions: number, users: number }>}
  */
-export async function deleteUserAndData(userId) {
-  const itinerariesRes = await Itinerary.deleteMany({ userId });
-  const conversationsRes = await Conversation.deleteMany({ userId });
-  const expensesRes = await Expense.deleteMany({ userId });
-  const bookingsRes = await Booking.deleteMany({ userId });
-  const packingTemplatesRes = await PackingTemplate.deleteMany({ userId });
-  const disruptionsRes = await Disruption.deleteMany({ userId });
-  const usersRes = await User.deleteOne({ _id: userId });
+export async function deleteUserAndData(userId, options = {}) {
+  if (options && options.dryRun === true) {
+    return await countUserData(userId);
+  }
+
+  const session = options?.session;
+  const sessionOpt = session ? { session } : {};
+
+  const itinerariesRes = await Itinerary.deleteMany({ userId }, sessionOpt);
+  const conversationsRes = await Conversation.deleteMany({ userId }, sessionOpt);
+  const expensesRes = await Expense.deleteMany({ userId }, sessionOpt);
+  const bookingsRes = await Booking.deleteMany({ userId }, sessionOpt);
+  const packingTemplatesRes = await PackingTemplate.deleteMany({ userId }, sessionOpt);
+  const disruptionsRes = await Disruption.deleteMany({ userId }, sessionOpt);
+  const usersRes = await User.deleteOne({ _id: userId }, sessionOpt);
 
   return {
     itineraries: itinerariesRes.deletedCount || 0,

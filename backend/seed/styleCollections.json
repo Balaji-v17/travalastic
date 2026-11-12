@@ -1,0 +1,67 @@
+[
+  {
+    "key": "private-escapes",
+    "picks": [
+      { "name": "Coorg" },
+      { "name": "Chikmagalur" },
+      { "name": "Wayanad" },
+      { "name": "Kabini" }
+    ]
+  },
+  {
+    "key": "honeymoons",
+    "picks": [
+      { "name": "Munnar" },
+      { "name": "Udaipur" },
+      { "name": "Goa" },
+      { "name": "Havelock Island" },
+      { "name": "Coorg" },
+      { "name": "Gulmarg" },
+      { "name": "Alleppey" },
+      { "name": "Ooty" }
+    ]
+  },
+  {
+    "key": "wellness",
+    "picks": [
+      { "name": "Rishikesh" },
+      { "name": "Alleppey" },
+      { "name": "Coorg" },
+      { "name": "Wayanad" },
+      { "name": "Dharamshala" },
+      { "name": "Kovalam" }
+    ]
+  },
+  {
+    "key": "family",
+    "picks": [
+      { "name": "Mysore" },
+      { "name": "Jaipur" },
+      { "name": "Ooty" },
+      { "name": "Goa" },
+      { "name": "Pondicherry" },
+      { "name": "Kodaikanal" }
+    ]
+  },
+  {
+    "key": "adventure",
+    "picks": [
+      { "name": "Manali" },
+      { "name": "Leh" },
+      { "name": "Rishikesh" },
+      { "name": "Auli" },
+      { "name": "Dandeli" },
+      { "name": "Spiti" }
+    ]
+  },
+  {
+    "key": "celebrations",
+    "picks": [
+      { "name": "Goa" },
+      { "name": "Jaipur" },
+      { "name": "Udaipur" },
+      { "name": "Pondicherry" }
+    ]
+  }
+]
+

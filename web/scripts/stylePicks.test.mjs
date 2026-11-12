@@ -14,6 +14,7 @@ import {
   resolveDestinationPick,
   sessionPickCache,
   clearSessionPickCache,
+  fetchStylePicks,
 } from '../src/lib/stylePicks.ts';
 
 import {
@@ -298,21 +299,83 @@ test('STYLE_COLLECTIONS specification and constraints', async (t) => {
     assert.equal(Object.keys(STYLE_COLLECTIONS).length, 6);
   });
 
-  await t.test('every pick is a non-empty string and no duplicates within a collection', () => {
+  await t.test('every collection has non-empty label and tagline', () => {
     for (const key of STYLE_KEYS) {
       const col = STYLE_COLLECTIONS[key];
       assert.ok(col, `Collection for ${key} should exist`);
       assert.ok(col.label && col.label.trim().length > 0, `${key} label must be non-empty`);
       assert.ok(col.tagline && col.tagline.trim().length > 0, `${key} tagline must be non-empty`);
-      assert.ok(Array.isArray(col.picks) && col.picks.length > 0, `${key} picks must be non-empty`);
-
-      const seen = new Set();
-      for (const pick of col.picks) {
-        assert.equal(typeof pick, 'string', `${key} pick must be string`);
-        assert.ok(pick.trim().length > 0, `${key} pick cannot be whitespace`);
-        assert.ok(!seen.has(pick), `Duplicate pick "${pick}" found in collection "${key}"`);
-        seen.add(pick);
-      }
     }
+  });
+});
+
+test('fetchStylePicks web adapter', async (t) => {
+  await t.test('successfully fetches picks array from API', async () => {
+    const mockFetch = async (url) => {
+      assert.equal(url, '/styles/honeymoons');
+      return {
+        key: 'honeymoons',
+        picks: [
+          { name: 'Munnar' },
+          { name: 'Goa', imageQuery: 'North Goa Beach' },
+        ],
+        version: 1,
+      };
+    };
+
+    const picks = await fetchStylePicks('honeymoons', { fetchFn: mockFetch });
+    assert.equal(picks.length, 2);
+    assert.equal(picks[0].name, 'Munnar');
+    assert.equal(picks[1].name, 'Goa');
+    assert.equal(picks[1].imageQuery, 'North Goa Beach');
+  });
+
+  await t.test('handles empty picks array from API', async () => {
+    const mockFetch = async () => ({
+      key: 'wellness',
+      picks: [],
+      version: 1,
+    });
+
+    const picks = await fetchStylePicks('wellness', { fetchFn: mockFetch });
+    assert.deepEqual(picks, []);
+  });
+
+  await t.test('throws when API request fails', async () => {
+    const mockFetch = async () => {
+      throw new Error('Network error');
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchStylePicks('adventure', { fetchFn: mockFetch });
+      },
+      /Network error/
+    );
+  });
+});
+
+test('resolveDestinationPick with imageQuery', async (t) => {
+  clearSessionPickCache();
+
+  await t.test('uses imageQuery for API search when provided on pick item', async () => {
+    let requestedUrl = '';
+    const mockFetch = async (url) => {
+      requestedUrl = url;
+      return [
+        { name: 'Calangute Beach', category: 'Beach', photoUrl: 'https://img.test/goa.jpg' },
+      ];
+    };
+
+    const res = await resolveDestinationPick(
+      { name: 'Goa', imageQuery: 'North Goa Beach' },
+      { fetchFn: mockFetch }
+    );
+
+    assert.ok(requestedUrl.includes('North%20Goa%20Beach'));
+    assert.ok(res);
+    assert.equal(res.photoUrl, 'https://img.test/goa.jpg');
+    // Session cache must be keyed by pick's primary name 'goa'
+    assert.ok(sessionPickCache.has('goa'));
   });
 });

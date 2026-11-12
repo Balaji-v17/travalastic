@@ -10,7 +10,9 @@ import {
   resolveDestinationPick,
   limitConcurrency,
   normalizeName,
+  fetchStylePicks,
   type TrendingDestinationRecord,
+  type StylePickApiItem,
 } from '../../lib/stylePicks';
 
 interface ResolvedPick {
@@ -30,6 +32,8 @@ export default function StyleCollectionPage() {
   const collection = STYLE_COLLECTIONS[activeKey] ?? STYLE_COLLECTIONS.honeymoons;
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCounter, setRetryCounter] = useState(0);
   const [resolvedPicks, setResolvedPicks] = useState<ResolvedPick[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
@@ -39,11 +43,33 @@ export default function StyleCollectionPage() {
 
     async function loadPicks() {
       setLoading(true);
-      const currentPicks = collection.picks;
+      setError(null);
 
-      const tasks = currentPicks.map((pick) => async () => {
-        const record = await resolveDestinationPick(pick, { signal: controller.signal });
-        return { pick, record };
+      let fetchedPicks: StylePickApiItem[] = [];
+      try {
+        fetchedPicks = await fetchStylePicks(activeKey, { signal: controller.signal });
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || controller.signal.aborted || !active) {
+          return;
+        }
+        setError('Failed to load picks for this style. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      if (!active || controller.signal.aborted) {
+        return;
+      }
+
+      if (!Array.isArray(fetchedPicks) || fetchedPicks.length === 0) {
+        setResolvedPicks([]);
+        setLoading(false);
+        return;
+      }
+
+      const tasks = fetchedPicks.map((pickItem) => async () => {
+        const record = await resolveDestinationPick(pickItem, { signal: controller.signal });
+        return { pick: pickItem.name, record };
       });
 
       const settled = await limitConcurrency(tasks, 3);
@@ -61,12 +87,12 @@ export default function StyleCollectionPage() {
       }> = [];
 
       settled.forEach((result, idx) => {
-        const pickName = currentPicks[idx];
+        const pickItem = fetchedPicks[idx];
         const record = result.status === 'fulfilled' ? result.value.record : null;
 
         debugRows.push({
           collection: activeKey,
-          'curated name': pickName,
+          'curated name': pickItem.name,
           'resolved id or UNRESOLVED': record
             ? (record.id || `dest-${normalizeName(record.name).replace(/\s+/g, '-')}`)
             : 'UNRESOLVED',
@@ -89,7 +115,7 @@ export default function StyleCollectionPage() {
             category: record.category || 'Destination',
             isCurated: true,
           };
-          successful.push({ pick: pickName, record, place });
+          successful.push({ pick: pickItem.name, record, place });
         }
       });
 
@@ -105,6 +131,7 @@ export default function StyleCollectionPage() {
       if (err?.name === 'AbortError' || controller.signal.aborted || !active) {
         return;
       }
+      setError('An unexpected error occurred while loading picks.');
       setLoading(false);
     });
 
@@ -112,7 +139,7 @@ export default function StyleCollectionPage() {
       active = false;
       controller.abort();
     };
-  }, [activeKey, collection]);
+  }, [activeKey, retryCounter]);
 
   const handleImageError = (key: string) => {
     setImgErrors((prev) => ({ ...prev, [key]: true }));
@@ -181,6 +208,30 @@ export default function StyleCollectionPage() {
                 </div>
               </div>
             ))}
+          </div>
+        ) : error ? (
+          /* Error state with retry */
+          <div className="text-center py-20 px-4 bg-white border border-[#E8E4DC] rounded-sm max-w-lg mx-auto shadow-xs">
+            <h2 className="font-display text-2xl text-[#252525] mb-2">
+              Unable to load picks.
+            </h2>
+            <p className="text-sm text-[#77736C] mb-6">
+              {error}
+            </p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={() => setRetryCounter((c) => c + 1)}
+                className="px-6 py-2.5 bg-[#111111] hover:bg-black text-white text-xs font-semibold uppercase tracking-[0.1em] rounded-sm transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('home')}
+                className="px-6 py-2.5 border border-[#E8E4DC] hover:border-[#111111] text-[#252525] text-xs font-semibold uppercase tracking-[0.1em] rounded-sm transition-colors cursor-pointer"
+              >
+                Back to Home
+              </button>
+            </div>
           </div>
         ) : resolvedPicks.length === 0 ? (
           /* No picks matched */

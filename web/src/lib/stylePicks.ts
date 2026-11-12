@@ -121,35 +121,65 @@ export function clearSessionPickCache(): void {
   sessionPickCache.clear();
 }
 
-export interface ResolvePickOptions {
-  signal?: AbortSignal;
-  fetchFn?: (url: string, options?: { signal?: AbortSignal }) => Promise<TrendingDestinationRecord[]>;
+export interface StylePickApiItem {
+  name: string;
+  imageQuery?: string | null;
+}
+
+export interface StyleCollectionApiResponse {
+  key: string;
+  picks: StylePickApiItem[];
+  version: number;
 }
 
 /**
- * Resolves a curated destination name using GET /destinations/trending?query=<name>.
+ * Fetches style collection picks from public API: GET /styles/:key
+ */
+export async function fetchStylePicks(
+  key: string,
+  options?: { signal?: AbortSignal; fetchFn?: (url: string, opts?: any) => Promise<any> }
+): Promise<StylePickApiItem[]> {
+  const fetcher = options?.fetchFn || apiFetch;
+  const res = await fetcher<StyleCollectionApiResponse>(`/styles/${encodeURIComponent(key)}`, {
+    signal: options?.signal,
+  });
+  return Array.isArray(res?.picks) ? res.picks : [];
+}
+
+export interface ResolvePickOptions {
+  signal?: AbortSignal;
+  fetchFn?: (url: string, options?: { signal?: AbortSignal }) => Promise<TrendingDestinationRecord[]>;
+  imageQuery?: string | null;
+}
+
+/**
+ * Resolves a curated destination pick using GET /destinations/trending?query=<imageQuery ?? name>.
  * Uses session-level in-memory caching (including negative results) to protect Pexels quota.
  */
 export async function resolveDestinationPick(
-  pick: string,
+  pick: string | StylePickApiItem,
   options?: ResolvePickOptions
 ): Promise<TrendingDestinationRecord | null> {
-  const normPick = normalizeName(pick);
+  const pickName = typeof pick === 'string' ? pick : pick?.name || '';
+  const imageQuery = (typeof pick !== 'string' && pick?.imageQuery) ? pick.imageQuery : options?.imageQuery;
+  const normPick = normalizeName(pickName);
   if (!normPick) return null;
 
   if (sessionPickCache.has(normPick)) {
     return sessionPickCache.get(normPick) ?? null;
   }
 
+  const queryToUse = (imageQuery && imageQuery.trim()) ? imageQuery.trim() : pickName;
+
   try {
     let list: TrendingDestinationRecord[];
     if (options?.fetchFn) {
-      list = await options.fetchFn(`/destinations/trending?query=${encodeURIComponent(pick)}`, {
+      list = await options.fetchFn(`/destinations/trending?query=${encodeURIComponent(queryToUse)}`, {
         signal: options.signal,
       });
     } else {
       list = await apiFetch<TrendingDestinationRecord[]>(
-        `/destinations/trending?query=${encodeURIComponent(pick)}`,
+        `/destinations/trending?query=${encodeURIComponent(queryToUse)}`,
         { signal: options?.signal }
       );
     }
@@ -159,7 +189,11 @@ export async function resolveDestinationPick(
       return null;
     }
 
-    const matched = list.find((item) => pickMatches(pick, item));
+    const matched =
+      list.find((item) => pickMatches(queryToUse, item)) ||
+      list.find((item) => pickMatches(pickName, item)) ||
+      (imageQuery ? list.find((item) => !isAttractionType(item.type) && !isAttractionType(item.category)) : null);
+
     if (matched) {
       sessionPickCache.set(normPick, matched);
       return matched;
