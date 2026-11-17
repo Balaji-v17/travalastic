@@ -22,7 +22,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     headers: {
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://images.pexels.com data:; connect-src 'self' http://localhost:8000 https://api.travalastic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
+      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://images.pexels.com data:; connect-src 'self' https://travalastic.onrender.com http://localhost:8000; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
       'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
