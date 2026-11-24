@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, spacing } from '../theme/tokens';
 import ScreenHeader from '../components/ScreenHeader';
 import apiClient from '../config/apiClient';
+import { formatAirportDateTime } from '../utils/flightTime.js';
 
 const calculateDistanceKm = (loc1, loc2) => {
   if (!loc1 || !loc2) return null;
@@ -246,16 +247,7 @@ export default function TodayScreen({ route, navigation }) {
     });
   };
 
-  const formatFlightTime = (rawTime) => {
-    if (!rawTime) return 'Scheduled';
-    try {
-      const d = new Date(rawTime);
-      if (isNaN(d.getTime())) return String(rawTime);
-      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' (' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')';
-    } catch {
-      return String(rawTime);
-    }
-  };
+  const formatFlightTime = (rawTime) => formatAirportDateTime(rawTime);
 
   // Day calculations
   const now = new Date();

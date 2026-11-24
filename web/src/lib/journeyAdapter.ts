@@ -1,6 +1,7 @@
-import type { Journey } from '../data/mockData';
-import type { BackendDayPlan } from './itineraryApi';
-import { backendDaysToItineraryDays } from './itineraryAdapter';
+import type { Journey } from '../data/mockData.ts';
+import type { BackendDayPlan } from './itineraryApi.ts';
+import { backendDaysToItineraryDays } from './itineraryAdapter.ts';
+import { tripStatus, type TripStatus, normalizeDateString, getLocalDateString } from './tripStatus.ts';
 
 export const NEUTRAL_PLACEHOLDER_IMAGE =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23g)"/><circle cx="400" cy="250" r="160" fill="%23334155" opacity="0.2"/></svg>';
@@ -56,34 +57,29 @@ function toDateString(d: string | Date | undefined): string | null {
   return null;
 }
 
+
 /**
- * Pure function deriving journey status strictly from dates:
- * - today before startDate -> 'planning'
- * - between startDate and endDate inclusive -> 'in-travel'
- * - after endDate -> 'completed'
- * - missing or invalid startDate / endDate -> 'planning'
- * Never produces 'booked' or 'pre-travel'.
+ * Pure function deriving journey status using tripStatus:
+ * - planning: no confirmed booking AND end date >= today.
+ * - upcoming: at least one confirmed booking AND start date > today.
+ * - in-progress: at least one confirmed booking AND start <= today <= end.
+ * - completed: at least one confirmed booking AND end date < today.
+ * - past: no confirmed booking AND end date < today.
  */
 export function deriveStatus(
   startDate?: string | Date | null,
   endDate?: string | Date | null,
-  today: string | Date = new Date()
-): 'planning' | 'in-travel' | 'completed' {
-  const start = toDateString(startDate ?? undefined);
-  const end = toDateString(endDate ?? undefined);
-  const now = toDateString(today);
-
-  if (!start || !end || !now) {
-    return 'planning';
-  }
-
-  if (now < start) {
-    return 'planning';
-  }
-  if (now > end) {
-    return 'completed';
-  }
-  return 'in-travel';
+  today: string | Date = getLocalDateString(),
+  hasBooking: boolean = false
+): TripStatus {
+  return tripStatus(
+    {
+      startDate: normalizeDateString(startDate),
+      endDate: normalizeDateString(endDate),
+      hasBooking,
+    },
+    today
+  );
 }
 
 /**
@@ -112,14 +108,22 @@ export function toJourney(
     travelersCount = savedItinerary.travelers;
   }
 
-  const status = deriveStatus(startDate, endDate);
-
   const normalizedBookings: BackendBooking[] = matchingBookings.map((b) =>
     typeof b === 'string' ? { _id: b, id: b } : b
   );
   const bookingIds: string[] = normalizedBookings
     .map((b) => String(b._id || b.id || ''))
     .filter(Boolean);
+
+  const hasBooking =
+    bookingIds.length > 0 ||
+    (typeof savedItinerary.bookingsCount === 'number' && savedItinerary.bookingsCount > 0);
+
+  const status = tripStatus({
+    startDate,
+    endDate,
+    hasBooking,
+  });
 
   const rawDays = savedItinerary.days || savedItinerary.itinerary || [];
   const itinerary = backendDaysToItineraryDays(rawDays, startDate, destination, normalizedBookings);

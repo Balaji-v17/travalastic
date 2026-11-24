@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../theme/tokens';
 import apiClient from '../config/apiClient';
+import { formatAirportDate, formatAirportTime } from '../utils/flightTime.js';
 
 export default function BookingHistoryScreen({ navigation }) {
   const [bookings, setBookings] = useState([]);
@@ -49,35 +50,9 @@ export default function BookingHistoryScreen({ navigation }) {
     fetchBookings();
   }, [fetchBookings]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date TBD';
-    try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return dateString;
-      return d.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
+  const formatDate = (dateString) => formatAirportDate(dateString);
 
-  const formatTime = (dateString) => {
-    if (!dateString) return '';
-    try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return '';
-      return d.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  };
+  const formatTime = (dateString) => formatAirportTime(dateString, { hour12: true });
 
   const handleBookingPress = (item) => {
     navigation.navigate('BookingConfirmation', {

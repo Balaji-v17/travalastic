@@ -3,8 +3,8 @@ import type {
   BackendDayPlan,
   BackendActivity,
   JourneyDNA,
-} from './itineraryApi';
-import type { ItineraryDay, ItineraryActivity } from '../data/mockData';
+} from './itineraryApi.ts';
+import type { ItineraryDay, ItineraryActivity } from '../data/mockData.ts';
 
 export interface JourneyItem {
   id: string;
@@ -186,6 +186,7 @@ export function backendDaysToItineraryDays(
       location,
       title: dayTitle,
       activities,
+      accommodationSuggestion: dayPlan.accommodationSuggestion,
     };
   });
 }

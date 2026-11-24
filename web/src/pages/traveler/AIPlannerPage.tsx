@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
-import { hotels, activities } from '../../data/mockData';
-import { generateItinerary, type JourneyDNA } from '../../lib/itineraryApi';
+import {
+  generateItinerary,
+  checkDuplicateItinerary,
+  computeTripDates,
+  undoItineraryApi,
+  type JourneyDNA,
+  type DuplicateCheckResult,
+  type GenerateOptions,
+  type UndoState,
+} from '../../lib/itineraryApi';
 import {
   toGeneratedJourney,
   type GeneratedJourney,
@@ -78,6 +86,10 @@ export default function AIPlannerPage() {
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonScenario, setComparisonScenario] = useState<string>('reduceBudget');
   const [savedJourneyId, setSavedJourneyId] = useState<string | null>(null);
+  const [rebuildTripId, setRebuildTripId] = useState<string | null>(null);
+  const [duplicateMatch, setDuplicateMatch] = useState<DuplicateCheckResult | null>(null);
+  const [replaceUndoState, setReplaceUndoState] = useState<UndoState | null>(null);
+  const [isUndoingReplace, setIsUndoingReplace] = useState(false);
   const [removedItems, setRemovedItems] = useState<Set<string>>(new Set());
   const [addActivityDayId, setAddActivityDayId] = useState<number | null>(null);
 
@@ -111,7 +123,35 @@ export default function AIPlannerPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const handleBuildJourney = async () => {
+  const handleUndoReplace = async () => {
+    const targetId = savedJourneyId || journey?.itineraryId;
+    if (!targetId || !replaceUndoState?.lastEditId || isUndoingReplace) return;
+    setIsUndoingReplace(true);
+    try {
+      const res = await undoItineraryApi(targetId, replaceUndoState.lastEditId);
+      const restoredDays = res.itinerary || (res as any).days;
+      if (restoredDays && Array.isArray(restoredDays)) {
+        const restored = toGeneratedJourney(
+          {
+            itineraryId: targetId,
+            itinerary: restoredDays,
+            grounding: (res as any).grounding || journey?.grounding,
+          },
+          dna
+        );
+        setJourney(restored);
+        setReplaceUndoState(res.undo?.count ? res.undo : null);
+        refreshJourneys();
+      }
+    } catch (err: any) {
+      console.error('Error undoing replace:', err);
+      alert(err?.message || 'Failed to undo replace. Itinerary may have changed.');
+    } finally {
+      setIsUndoingReplace(false);
+    }
+  };
+
+  const executeGeneration = async (options?: GenerateOptions) => {
     // Abort any prior in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -129,12 +169,21 @@ export default function AIPlannerPage() {
     }, 1200);
 
     try {
-      const rawResponse = await generateItinerary(dna, controller.signal);
+      const rawResponse = await generateItinerary(dna, {
+        ...options,
+        signal: controller.signal,
+      });
       if (intervalRef.current) clearInterval(intervalRef.current);
 
       const generated = toGeneratedJourney(rawResponse, dna);
       setJourney(generated);
       setSavedJourneyId(rawResponse.itineraryId);
+      setRebuildTripId(null);
+      if (rawResponse.replaced && rawResponse.undo && rawResponse.undo.count > 0) {
+        setReplaceUndoState(rawResponse.undo);
+      } else {
+        setReplaceUndoState(null);
+      }
       refreshJourneys();
       setExpandedDay(1);
       setControlMsg(null);
@@ -145,9 +194,47 @@ export default function AIPlannerPage() {
       if (controller.signal.aborted) {
         return;
       }
+      if (err?.status === 409 || err?.duplicate) {
+        setPhase('dna');
+        setDuplicateMatch({
+          duplicate: true,
+          existingTripId: err.existingTripId,
+          destination: err.destination || dna.destination,
+          startDate: err.startDate,
+          endDate: err.endDate,
+        });
+        return;
+      }
       const message = err?.message || 'Failed to generate itinerary. Please try again.';
       setBuildError(message);
     }
+  };
+
+  const handleBuildJourney = async () => {
+    // 1. If rebuilding, replace the existing trip directly
+    if (rebuildTripId) {
+      await executeGeneration({ onDuplicate: 'replace', replaceTripId: rebuildTripId });
+      return;
+    }
+
+    // 2. Pre-generation duplicate check: BEFORE any model/generate call
+    try {
+      const { startDate, endDate } = computeTripDates(dna.startDate, dna.nights);
+      const dup = await checkDuplicateItinerary({
+        destination: dna.destination,
+        startDate,
+        endDate,
+      });
+
+      if (dup?.duplicate) {
+        setDuplicateMatch(dup);
+        return;
+      }
+    } catch {
+      // Continue to generation if network or pre-check fails
+    }
+
+    await executeGeneration();
   };
 
   const handleTryAgain = () => {
@@ -195,7 +282,87 @@ export default function AIPlannerPage() {
     refreshJourneys();
   };
 
-  if (phase === 'dna') return <DNAForm dna={dna} setDna={setDna} onBuild={handleBuildJourney} toggleInterest={toggleInterest} />;
+  if (phase === 'dna') {
+    return (
+      <>
+        <DNAForm
+          dna={dna}
+          setDna={setDna}
+          onBuild={handleBuildJourney}
+          toggleInterest={toggleInterest}
+        />
+        {duplicateMatch && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl mb-4">
+                ⚠️
+              </div>
+              <h3 className="font-display text-xl font-bold text-slate-900 mb-2">Existing trip found</h3>
+              <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                You already have a trip to{' '}
+                <span className="font-semibold text-slate-800">{duplicateMatch.destination || dna.destination}</span> for{' '}
+                <span className="font-semibold text-slate-800">
+                  {duplicateMatch.startDate} to {duplicateMatch.endDate}
+                </span>
+                .
+              </p>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 text-xs text-amber-900 leading-relaxed">
+                <span className="font-bold">⚠️ Warning:</span> Replacing will overwrite your existing schedule, done-marks, and chat edits with the new plan. (You will be able to undo this replace afterwards).
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetId = duplicateMatch.existingTripId;
+                    setDuplicateMatch(null);
+                    if (targetId) {
+                      navigate('journey', { selectedJourneyId: targetId });
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition-colors text-center"
+                >
+                  Open existing
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetId = duplicateMatch.existingTripId;
+                    setDuplicateMatch(null);
+                    executeGeneration({ onDuplicate: 'replace', replaceTripId: targetId });
+                  }}
+                  className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors text-center"
+                >
+                  Replace with a new plan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDuplicateMatch(null);
+                    executeGeneration({ onDuplicate: 'keep_both' });
+                  }}
+                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors text-center"
+                >
+                  Keep both
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDuplicateMatch(null)}
+                  className="w-full py-2 text-xs font-medium text-slate-400 hover:text-slate-600 transition-colors mt-1"
+                >
+                  Cancel and adjust details
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
   if (phase === 'building') {
     return (
       <BuildingScreen
@@ -232,7 +399,14 @@ export default function AIPlannerPage() {
           <p className="text-slate-500 text-sm">{journey.dna.nights} nights · {journey.dna.travelers} travelers · {journey.route.join(' → ')}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button onClick={() => { setPhase('dna'); setJourney(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors">
+          <button
+            onClick={() => {
+              setRebuildTripId(savedJourneyId || journey.itineraryId || null);
+              setPhase('dna');
+              setJourney(null);
+            }}
+            className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors"
+          >
             Rebuild
           </button>
           {savedJourneyId ? (
@@ -243,6 +417,31 @@ export default function AIPlannerPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Undo Replace Banner */}
+      {replaceUndoState && replaceUndoState.count > 0 && (
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-sm">
+              ↩
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Replaced previous itinerary</p>
+              <p className="text-xs text-amber-700">
+                Your earlier schedule, done-marks, and chat edits were archived. You can undo this replace at any time.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleUndoReplace}
+            disabled={isUndoingReplace}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+          >
+            {isUndoingReplace ? 'Restoring...' : '↩ Undo Replace'}
+          </button>
+        </div>
+      )}
 
       {/* AI control message */}
       {controlMsg && (

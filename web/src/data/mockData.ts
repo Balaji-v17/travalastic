@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Role = 'traveler' | 'partner' | 'corporate' | 'operations' | 'admin';
-export type JourneyStatus = 'discovering' | 'planning' | 'booked' | 'pre-travel' | 'in-travel' | 'completed' | 'post-travel';
+export type JourneyStatus = 'discovering' | 'planning' | 'booked' | 'pre-travel' | 'in-travel' | 'completed' | 'post-travel' | 'upcoming' | 'in-progress' | 'past';
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'refunded';
 export type PaymentStatus = 'pending' | 'processing' | 'successful' | 'failed' | 'refunded';
 export type IncidentStatus = 'detected' | 'triaged' | 'investigating' | 'contained' | 'resolved' | 'closed';
@@ -215,6 +215,7 @@ export interface ItineraryDay {
   location: string;
   title: string;
   activities: ItineraryActivity[];
+  accommodationSuggestion?: string;
 }
 
 export interface Notification {

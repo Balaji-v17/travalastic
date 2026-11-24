@@ -51,8 +51,12 @@ function formatDate(iso: string | undefined): string {
 
 function formatDateShort(iso: string | undefined): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const match = iso.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return iso;
+  const monthIdx = parseInt(match[2], 10) - 1;
+  const day = parseInt(match[3], 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${day} ${months[monthIdx] || ''}`;
 }
 
 function formatAmount(amount: number): string {

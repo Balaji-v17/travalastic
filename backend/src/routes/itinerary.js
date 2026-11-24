@@ -5,9 +5,12 @@ import authenticate from '../middleware/authenticate.js';
 import Itinerary, { findUserItinerary } from '../models/Itinerary.js';
 import Booking from '../models/Booking.js';
 import Expense from '../models/Expense.js';
+import Conversation from '../models/Conversation.js';
+import Disruption from '../models/Disruption.js';
 import { generatePackingList } from '../services/packingListService.js';
 import { calculateExpenseSplits } from '../services/expenseSplitting.js';
 import { searchPlaces } from '../services/placesService.js';
+import { normalizeDateString } from '../services/tripStatus.js';
 import { rateLimit } from 'express-rate-limit';
 import {
   fetch3HourForecast,
@@ -63,22 +66,185 @@ const adjustLimiter = rateLimit({
 const router = express.Router();
 
 /**
+ * Normalizes destination string for deduplication (lowercased, trimmed, whitespace collapsed).
+ */
+function normalizeTripDestination(dest) {
+  return (dest || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Finds an existing trip for the user matching normalized destination and start/end dates.
+ */
+async function findDuplicateTrip(userId, { destination, startDate, endDate }) {
+  if (!destination || !startDate || !endDate) return null;
+  const normDest = normalizeTripDestination(destination);
+  const normStart = normalizeDateString(startDate);
+  const normEnd = normalizeDateString(endDate);
+  if (!normDest || !normStart || !normEnd) return null;
+
+  const existingTrips = await Itinerary.find({ userId }).sort({ createdAt: -1 }).lean();
+  return (
+    existingTrips.find((it) => {
+      const itDest = normalizeTripDestination(it.destination);
+      const itStart = normalizeDateString(it.startDate);
+      const itEnd = normalizeDateString(it.endDate);
+      return itDest === normDest && itStart === normStart && itEnd === normEnd;
+    }) || null
+  );
+}
+
+/**
+ * Helper to parse destination and start/end dates from rawRequest when not explicitly provided.
+ */
+function parseRequestTripDetails(rawRequest) {
+  if (typeof rawRequest !== 'string') return {};
+  const match = rawRequest.match(/Plan a \d+-day trip to (.+?) from (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/i);
+  if (match) {
+    return {
+      destination: match[1]?.trim(),
+      startDate: match[2]?.trim(),
+      endDate: match[3]?.trim(),
+    };
+  }
+  return {};
+}
+
+/**
+ * POST /itinerary/check-duplicate (and /itineraries/check-duplicate)
+ * Pre-generation check running BEFORE any AI/LLM call.
+ * Keyed on normalized destination + start date + end date.
+ * Returns { duplicate: true, existingTripId, destination, startDate, endDate } or { duplicate: false }.
+ */
+router.post(
+  ['/check-duplicate', '/itineraries/check-duplicate'],
+  authenticate,
+  async (req, res, next) => {
+    try {
+      let { destination, startDate, endDate, rawRequest } = req.body || {};
+      if (!destination || !startDate || !endDate) {
+        const parsed = parseRequestTripDetails(rawRequest);
+        destination = destination || parsed.destination;
+        startDate = startDate || parsed.startDate;
+        endDate = endDate || parsed.endDate;
+      }
+
+      if (!destination || !startDate || !endDate) {
+        return res.status(200).json({ duplicate: false });
+      }
+
+      const duplicate = await findDuplicateTrip(req.userId, { destination, startDate, endDate });
+      if (duplicate) {
+        return res.status(200).json({
+          duplicate: true,
+          existingTripId: duplicate._id.toString(),
+          destination: duplicate.destination,
+          startDate: duplicate.startDate,
+          endDate: duplicate.endDate,
+        });
+      }
+      return res.status(200).json({ duplicate: false });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * POST /itinerary/generate
  * Protected by JWT authenticate middleware.
- * Accepts { rawRequest: string }, invokes the LangGraph planner graph,
- * persists the itinerary in MongoDB associated with req.userId,
- * and returns { itineraryId, itinerary }.
+ * Accepts { rawRequest: string, onDuplicate?: 'replace'|'keep_both', replaceTripId?: string }.
+ * If an existing trip matches and onDuplicate is omitted, returns an early 409 BEFORE calling AI.
+ * If onDuplicate is 'replace', snapshots the existing trip for undo and replaces its itinerary in-place.
  */
 router.post('/generate', authenticate, async (req, res, next) => {
   try {
-    const { rawRequest } = req.body || {};
+    const { rawRequest, onDuplicate, replaceTripId } = req.body || {};
+    let { destination, startDate, endDate } = req.body || {};
 
     if (!rawRequest || typeof rawRequest !== 'string' || !rawRequest.trim()) {
       return res.status(400).json({ error: 'rawRequest string is required in request body' });
     }
 
+    if (!destination || !startDate || !endDate) {
+      const parsed = parseRequestTripDetails(rawRequest);
+      destination = destination || parsed.destination;
+      startDate = startDate || parsed.startDate;
+      endDate = endDate || parsed.endDate;
+    }
+
+    // 1. Early duplicate check: if onDuplicate not specified, reject with 409 BEFORE calling the AI
+    let duplicate = null;
+    if (destination && startDate && endDate) {
+      duplicate = await findDuplicateTrip(req.userId, { destination, startDate, endDate });
+      if (duplicate && onDuplicate !== 'replace' && onDuplicate !== 'keep_both') {
+        return res.status(409).json({
+          error: 'You already have a trip to this destination for these dates.',
+          duplicate: true,
+          existingTripId: duplicate._id.toString(),
+          destination: duplicate.destination,
+          startDate: duplicate.startDate,
+          endDate: duplicate.endDate,
+        });
+      }
+    }
+
+    // 2. If replace requested, verify target trip ownership
+    let existingTrip = null;
+    if (onDuplicate === 'replace') {
+      const targetReplaceId = replaceTripId || (duplicate ? duplicate._id : null);
+      if (targetReplaceId) {
+        existingTrip = await findUserItinerary(targetReplaceId, req.userId);
+        if (!existingTrip) {
+          return res.status(404).json({ error: 'Existing trip to replace not found' });
+        }
+      }
+    }
+
+    // 3. Generate plan via LangGraph planner
     const finalState = await graph.invoke({ rawRequest: rawRequest.trim() });
 
+    // 4. If replacing an existing trip, snapshot for undo and update in place
+    if (existingTrip) {
+      const modifiedDayNumbers = (finalState.itinerary || []).map((d) => d.dayNumber);
+      const { updatedItinerary } = await saveItineraryEditSnapshot({
+        itineraryId: existingTrip._id,
+        userId: req.userId,
+        newDays: finalState.itinerary || [],
+        modifiedDayNumbers,
+        previousDays: existingTrip.days,
+        tag: 'replace',
+        label: 'Replaced itinerary with new plan',
+        previousPace: existingTrip.pace || 'balanced',
+      });
+
+      await Itinerary.updateOne(
+        { _id: existingTrip._id },
+        {
+          $set: {
+            rawRequest: rawRequest.trim(),
+            destination: finalState.destination,
+            startDate: finalState.startDate,
+            endDate: finalState.endDate,
+            budgetTier: finalState.budgetTier,
+            interests: finalState.interests,
+            days: finalState.itinerary || [],
+            grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+          },
+        }
+      );
+
+      const reloaded = await Itinerary.findById(existingTrip._id);
+
+      return res.status(200).json({
+        itineraryId: existingTrip._id,
+        itinerary: finalState.itinerary,
+        grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+        replaced: true,
+        undo: formatUndo(reloaded?.editHistory || updatedItinerary?.editHistory),
+      });
+    }
+
+    // 5. Normal creation (new trip or keep_both)
     const newItinerary = await Itinerary.create({
       userId: req.userId,
       rawRequest: rawRequest.trim(),
@@ -102,12 +268,12 @@ router.post('/generate', authenticate, async (req, res, next) => {
 });
 
 /**
- * GET /itinerary/mine
+ * GET /itinerary/mine and GET /itineraries
  * Protected by JWT authenticate middleware.
  * Returns the requesting user's itineraries, sorted by createdAt descending,
- * limited to the 5 most recent (or ?limit=N), with bookingsCount on each itinerary.
+ * with bookingsCount and budgetEstimate on each itinerary.
  */
-router.get('/mine', authenticate, async (req, res, next) => {
+router.get(['/mine', '/'], authenticate, async (req, res, next) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
     let query = Itinerary.find({ userId: req.userId }).sort({ createdAt: -1 });
@@ -1749,5 +1915,41 @@ router.post(
     }
   }
 );
+
+/**
+ * DELETE /itinerary/:id (and /itineraries/:id)
+ * Ownership-checked deletion of a single trip.
+ * Removes child resources referencing the trip (conversations, expenses, disruptions),
+ * detaches bookings (sets itineraryId to null), and deletes the itinerary document.
+ */
+router.delete(['/:id', '/:itineraryId'], authenticate, async (req, res, next) => {
+  try {
+    const targetId = req.params.id || req.params.itineraryId;
+    if (!targetId || !mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ error: 'Invalid itinerary ID' });
+    }
+
+    const itinerary = await findUserItinerary(targetId, req.userId);
+    if (!itinerary) {
+      return res.status(404).json({ error: 'Itinerary not found' });
+    }
+
+    // Remove child resources belonging to this itinerary
+    await Conversation.deleteMany({ itineraryId: itinerary._id });
+    await Expense.deleteMany({ itineraryId: itinerary._id });
+    await Disruption.deleteMany({ itineraryId: itinerary._id });
+    // Detach bookings rather than cancelling real airline orders
+    await Booking.updateMany({ itineraryId: itinerary._id }, { $set: { itineraryId: null } });
+    // Delete itinerary document (contains days, packing list, travelers)
+    await Itinerary.deleteOne({ _id: itinerary._id });
+
+    return res.status(200).json({
+      message: 'Itinerary deleted successfully',
+      deletedId: itinerary._id.toString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

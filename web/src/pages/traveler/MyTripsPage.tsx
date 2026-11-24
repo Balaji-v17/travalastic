@@ -1,25 +1,32 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useApp } from '../../store/AppContext';
 import type { Journey } from '../../data/mockData';
 import TripChatPanel from '../../components/chat/TripChatPanel';
+import { apiFetch } from '../../lib/api';
+import { getBookablePlanItems } from '../../lib/tripStatus';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const statusConfig: Record<string, { label: string; color: string; dot: string }> = {
-  discovering: { label: 'Discovering', color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+  discovering: { label: 'Planning', color: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
   planning: { label: 'Planning', color: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
+  upcoming: { label: 'Upcoming', color: 'bg-violet-50 text-violet-700', dot: 'bg-violet-500' },
   booked: { label: 'Booked', color: 'bg-violet-50 text-violet-700', dot: 'bg-violet-500' },
   'pre-travel': { label: 'Pre-Travel', color: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
-  'in-travel': { label: 'In Travel', color: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  'in-travel': { label: 'In Progress', color: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  'in-progress': { label: 'In Progress', color: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
   completed: { label: 'Completed', color: 'bg-slate-50 text-slate-500', dot: 'bg-slate-300' },
-  'post-travel': { label: 'Post-Travel', color: 'bg-slate-50 text-slate-500', dot: 'bg-slate-300' },
+  'post-travel': { label: 'Completed', color: 'bg-slate-50 text-slate-500', dot: 'bg-slate-300' },
+  past: { label: 'Past', color: 'bg-amber-50 text-amber-700', dot: 'bg-amber-400' },
 };
 
-const upcomingStatuses = new Set(['booked', 'pre-travel', 'in-travel']);
+const upcomingStatuses = new Set(['upcoming', 'booked', 'pre-travel']);
 const planningStatuses = new Set(['planning', 'discovering']);
 const completedStatuses = new Set(['completed', 'post-travel']);
+const inProgressStatuses = new Set(['in-progress', 'in-travel']);
+const pastStatuses = new Set(['past']);
 
-type FilterTab = 'all' | 'upcoming' | 'planning' | 'in-progress' | 'completed';
+type FilterTab = 'all' | 'planning' | 'upcoming' | 'in-progress' | 'completed' | 'past';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,15 +42,19 @@ function getBudget(journey: Journey) {
 }
 
 function fmtDate(date: string, opts?: Intl.DateTimeFormatOptions) {
-  return new Date(date).toLocaleDateString('en-IN', opts ?? { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!date) return '—';
+  const m = String(date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return d.toLocaleDateString('en-IN', opts ?? { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  return date;
 }
 
 function fmtAmount(n: number) {
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
   return `₹${n.toLocaleString()}`;
 }
-
-
 
 // ─── Featured Journey card ────────────────────────────────────────────────────
 
@@ -54,7 +65,7 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
   const hasBudget = typeof budget === 'number' && budget > 0;
   const pct = total > 0 ? Math.round((booked / total) * 100) : 0;
   const budgetPct = hasBudget && budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
-  const isActive = journey.status === 'in-travel';
+  const isActive = journey.status === 'in-progress' || journey.status === 'in-travel';
 
   return (
     <div className="relative rounded-xl overflow-hidden mb-8 min-h-[340px] sm:min-h-[400px] flex flex-col justify-end group">
@@ -180,11 +191,10 @@ function UpcomingTimeline({ journey }: { journey: Journey }) {
 
 // ─── Continue Planning section ────────────────────────────────────────────────
 
-function ContinuePlanning({ journey, onNavigate }: { journey: Journey; onNavigate: () => void }) {
-  const unbooked = journey.itinerary.flatMap((d) => d.activities).filter((a) => a.status !== 'booked').slice(0, 3);
-  if (unbooked.length === 0) return null;
 
-  const typeIcon: Record<string, string> = { flight: '✈', hotel: '🏨', activity: '⚡', transport: '🚌', free: '☀', food: '🍜', experience: '🎭' };
+function ContinuePlanning({ journey, onNavigate }: { journey: Journey; onNavigate: () => void }) {
+  const bookableItems = getBookablePlanItems(journey).slice(0, 3);
+  if (bookableItems.length === 0) return null;
 
   return (
     <div className="bg-gradient-to-r from-blue-50 to-violet-50 border border-blue-100 rounded-xl p-5 mb-8">
@@ -198,11 +208,11 @@ function ContinuePlanning({ journey, onNavigate }: { journey: Journey; onNavigat
         </button>
       </div>
       <div className="space-y-2">
-        {unbooked.map((act, i) => (
-          <div key={i} className="flex items-center gap-3 py-2 px-3 bg-white rounded-xl border border-slate-100">
-            <span className="text-base w-6 text-center">{typeIcon[act.type] ?? '📌'}</span>
-            <span className="text-sm text-slate-700 flex-1">{act.title}</span>
-            <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full">Unbooked</span>
+        {bookableItems.map((item) => (
+          <div key={item.id} className="flex items-center gap-3 py-2 px-3 bg-white rounded-xl border border-slate-100">
+            <span className="text-base w-6 text-center">{item.icon}</span>
+            <span className="text-sm text-slate-700 flex-1">{item.title}</span>
+            <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full">Not booked</span>
           </div>
         ))}
       </div>
@@ -214,11 +224,12 @@ function ContinuePlanning({ journey, onNavigate }: { journey: Journey; onNavigat
 
 function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => void }) {
   const { navigate } = useApp();
-  const cfg = statusConfig[journey.status] ?? statusConfig['discovering'];
+  const cfg = statusConfig[journey.status] ?? statusConfig['planning'];
   const { booked, total } = getBookingProgress(journey);
   const { spent, total: budget } = getBudget(journey);
   const hasBudget = typeof budget === 'number' && budget > 0;
   const pct = total > 0 ? Math.round((booked / total) * 100) : 0;
+  const isTravelling = journey.status === 'in-progress' || journey.status === 'in-travel';
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300 hover:-translate-y-0.5 group flex flex-col">
@@ -228,7 +239,7 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
         <div className="absolute top-3 left-3">
           <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${cfg.color}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${journey.status === 'in-travel' ? 'animate-pulse' : ''}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${isTravelling ? 'animate-pulse' : ''}`} />
             {cfg.label}
           </span>
         </div>
@@ -299,8 +310,9 @@ function EmptyState({ filter, onPlan, onExplore }: { filter: FilterTab; onPlan: 
     planning: ["Nothing in planning.", "Start planning your next escape."],
     'in-progress': ["No active journeys.", "When you start travelling, your journey appears here."],
     completed: ["No completed trips yet.", "Complete a journey to build your travel history."],
+    past: ["No past trips.", "Trips whose dates passed without bookings will appear here."],
   };
-  const [title, sub] = messages[filter];
+  const [title, sub] = messages[filter] || messages.all;
   return (
     <div className="text-center py-20">
       <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-5">
@@ -331,41 +343,123 @@ export default function MyTripsPage() {
   const [filter, setFilter] = useState<FilterTab>('all');
   const [aiJourney, setAiJourney] = useState<Journey | null>(null);
 
-  // Stats
+  // Duplicates detection state
+  const [dismissDuplicatesNotice, setDismissDuplicatesNotice] = useState(false);
+  const [deleteDuplicatesTargetGroup, setDeleteDuplicatesTargetGroup] = useState<{
+    destination: string;
+    startDate: string;
+    endDate: string;
+    keepTrip: Journey;
+    deleteTrips: Journey[];
+  } | null>(null);
+  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+
+  // Past trips clearing state
+  const [clearPastConfirmOpen, setClearPastConfirmOpen] = useState(false);
+  const [isClearingPast, setIsClearingPast] = useState(false);
+
+  // Compute status counts using pure tripStatus
   const upcomingCount = journeys.filter((j) => upcomingStatuses.has(j.status)).length;
   const planningCount = journeys.filter((j) => planningStatuses.has(j.status)).length;
   const completedCount = journeys.filter((j) => completedStatuses.has(j.status)).length;
-  const inProgressCount = journeys.filter((j) => j.status === 'in-travel').length;
+  const inProgressCount = journeys.filter((j) => inProgressStatuses.has(j.status)).length;
+  const pastJourneys = journeys.filter((j) => pastStatuses.has(j.status));
+  const pastCount = pastJourneys.length;
 
-  // Featured journey: first in-travel, then pre-travel, then booked
+  // Detect duplicate groups (same normalized destination + same start and end dates)
+  const duplicateGroups: Array<{
+    key: string;
+    destination: string;
+    startDate: string;
+    endDate: string;
+    trips: Journey[];
+  }> = [];
+
+  const groupMap = new Map<string, Journey[]>();
+  for (const j of journeys) {
+    const norm = (j.destination || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const start = (j.startDate || '').slice(0, 10);
+    const end = (j.endDate || '').slice(0, 10);
+    if (norm && start && end) {
+      const key = `${norm}|${start}|${end}`;
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key)!.push(j);
+    }
+  }
+
+  for (const [key, list] of groupMap.entries()) {
+    if (list.length > 1) {
+      duplicateGroups.push({
+        key,
+        destination: list[0].destination,
+        startDate: list[0].startDate,
+        endDate: list[0].endDate,
+        trips: list,
+      });
+    }
+  }
+
+  // Featured journey: first active (in-progress), then upcoming
   const featuredJourney =
-    journeys.find((j) => j.status === 'in-travel') ??
-    journeys.find((j) => j.status === 'pre-travel') ??
-    journeys.find((j) => j.status === 'booked') ??
+    journeys.find((j) => inProgressStatuses.has(j.status)) ??
+    journeys.find((j) => upcomingStatuses.has(j.status)) ??
     null;
 
   // Planning journey
   const planningJourney =
-    journeys.find((j) => j.status === 'planning') ??
-    journeys.find((j) => j.status === 'discovering') ??
+    journeys.find((j) => planningStatuses.has(j.status)) ??
     null;
 
-  // Filter tabs
+  // Filter tabs: Show "Past" tab ONLY when pastCount > 0
   const filterTabs: { key: FilterTab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: journeys.length },
     { key: 'planning', label: 'Planning', count: planningCount },
     { key: 'upcoming', label: 'Upcoming', count: upcomingCount },
     { key: 'in-progress', label: 'In Progress', count: inProgressCount },
     { key: 'completed', label: 'Completed', count: completedCount },
+    ...(pastCount > 0 ? [{ key: 'past' as FilterTab, label: 'Past', count: pastCount }] : []),
   ];
 
   const filtered = journeys.filter((j) => {
     if (filter === 'upcoming') return upcomingStatuses.has(j.status);
     if (filter === 'planning') return planningStatuses.has(j.status);
-    if (filter === 'in-progress') return j.status === 'in-travel';
+    if (filter === 'in-progress') return inProgressStatuses.has(j.status);
     if (filter === 'completed') return completedStatuses.has(j.status);
+    if (filter === 'past') return pastStatuses.has(j.status);
     return true;
   });
+
+  const handleClearPastTrips = async () => {
+    setIsClearingPast(true);
+    try {
+      for (const j of pastJourneys) {
+        await apiFetch(`/itineraries/${j.id}`, { method: 'DELETE' });
+      }
+      setClearPastConfirmOpen(false);
+      setFilter('all');
+      await refreshJourneys();
+    } catch (err) {
+      console.error('Failed to clear past trips:', err);
+    } finally {
+      setIsClearingPast(false);
+    }
+  };
+
+  const handleConfirmDeleteDuplicates = async () => {
+    if (!deleteDuplicatesTargetGroup) return;
+    setIsDeletingDuplicates(true);
+    try {
+      for (const t of deleteDuplicatesTargetGroup.deleteTrips) {
+        await apiFetch(`/itineraries/${t.id}`, { method: 'DELETE' });
+      }
+      setDeleteDuplicatesTargetGroup(null);
+      await refreshJourneys();
+    } catch (err) {
+      console.error('Failed to delete duplicates:', err);
+    } finally {
+      setIsDeletingDuplicates(false);
+    }
+  };
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-8">
@@ -410,8 +504,8 @@ export default function MyTripsPage() {
           {/* Stats strip */}
           <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 mb-8">
             {[
-              { label: 'Upcoming', value: upcomingCount, sub: 'booked · pre-travel · active', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-100' },
-              { label: 'Planning', value: planningCount, sub: 'planning · discovering', color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
+              { label: 'Upcoming', value: upcomingCount, sub: 'confirmed bookings', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-100' },
+              { label: 'Planning', value: planningCount, sub: 'future trips without bookings', color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100' },
               { label: 'Completed', value: completedCount, sub: 'finished journeys', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
             ].map((stat) => (
               <div key={stat.label} className={`${stat.bg} border ${stat.border} rounded-xl p-4`}>
@@ -421,6 +515,61 @@ export default function MyTripsPage() {
               </div>
             ))}
           </div>
+
+          {/* Dismissible Possible duplicates notice */}
+          {duplicateGroups.length > 0 && !dismissDuplicatesNotice && (
+            <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-4 mb-8 shadow-sm">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                  <h3 className="text-sm font-bold text-blue-900">Possible duplicates detected</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDismissDuplicatesNotice(true)}
+                  className="text-slate-400 hover:text-slate-600 text-xs px-2 py-1 rounded"
+                  aria-label="Dismiss notice"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-xs text-blue-800 mb-3">
+                You have multiple trips saved for the same destination and dates. You can keep the newest version and delete older duplicates.
+              </p>
+              <div className="space-y-2.5">
+                {duplicateGroups.map((group) => {
+                  const newest = group.trips[0];
+                  const older = group.trips.slice(1);
+                  return (
+                    <div key={group.key} className="flex items-center justify-between bg-white rounded-lg p-3 border border-blue-100 flex-wrap gap-2">
+                      <div>
+                        <span className="font-semibold text-sm text-slate-800">{group.destination}</span>
+                        <span className="text-xs text-slate-500 ml-2">({group.startDate} – {group.endDate})</span>
+                        <span className="text-xs bg-blue-100 text-blue-700 font-medium px-2 py-0.5 rounded ml-2">
+                          {group.trips.length} duplicate trips
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteDuplicatesTargetGroup({
+                            destination: group.destination,
+                            startDate: group.startDate,
+                            endDate: group.endDate,
+                            keepTrip: newest,
+                            deleteTrips: older,
+                          })
+                        }
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        Keep the newest, delete the rest
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Featured / active journey */}
           {featuredJourney && (
@@ -452,6 +601,23 @@ export default function MyTripsPage() {
             ))}
           </div>
 
+          {/* Past tab note & clear button */}
+          {filter === 'past' && (
+            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-amber-900">Trips whose dates passed without a booking.</p>
+                <p className="text-xs text-amber-700 mt-0.5">These trips were planned but dates have now elapsed with no confirmed bookings.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setClearPastConfirmOpen(true)}
+                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shadow-sm"
+              >
+                Clear past trips without bookings
+              </button>
+            </div>
+          )}
+
           {/* Journey grid or empty state */}
           {filtered.length === 0 ? (
             <EmptyState filter={filter} onPlan={() => navigate('ai-planner')} onExplore={() => navigate('explore')} />
@@ -479,6 +645,108 @@ export default function MyTripsPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Confirmation Dialog: Delete Duplicate Trips */}
+      {deleteDuplicatesTargetGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+            <h3 className="font-display text-lg font-bold text-slate-900 mb-2">Delete duplicate trips</h3>
+            <p className="text-slate-600 text-sm mb-4">
+              You are keeping the newest trip and deleting {deleteDuplicatesTargetGroup.deleteTrips.length} older duplicate{deleteDuplicatesTargetGroup.deleteTrips.length > 1 ? 's' : ''}:
+            </p>
+
+            <div className="mb-4">
+              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-1">Keeping (Newest):</p>
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900">
+                <span className="font-semibold">{deleteDuplicatesTargetGroup.keepTrip.title || deleteDuplicatesTargetGroup.keepTrip.destination}</span>
+                <span className="text-emerald-700 block text-[11px] mt-0.5">ID: {deleteDuplicatesTargetGroup.keepTrip.id}</span>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-1">Deleting:</p>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {deleteDuplicatesTargetGroup.deleteTrips.map((t) => (
+                  <div key={t.id} className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900">
+                    <span className="font-semibold">{t.title || t.destination}</span>
+                    <span className="text-red-700 block text-[11px] mt-0.5">ID: {t.id}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4 text-xs text-red-800 leading-relaxed">
+              <p className="font-semibold text-red-900 mb-1">Permanent Deletion Notice:</p>
+              Deleting a trip permanently removes its chat history, expenses, packing data, and disruption alerts. Flight bookings made through Travalastic are kept in your Bookings history, but unlinked from the deleted trip.
+            </div>
+
+            <p className="text-xs text-red-600 mb-5 font-medium">This action cannot be undone.</p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteDuplicatesTargetGroup(null)}
+                disabled={isDeletingDuplicates}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDuplicates}
+                disabled={isDeletingDuplicates}
+                className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors"
+              >
+                {isDeletingDuplicates ? 'Deleting...' : 'Delete duplicates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog: Clear Past Trips */}
+      {clearPastConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+            <h3 className="font-display text-lg font-bold text-slate-900 mb-2">Clear past trips without bookings</h3>
+            <p className="text-slate-600 text-sm mb-4">
+              Are you sure you want to delete {pastJourneys.length} past trip{pastJourneys.length > 1 ? 's' : ''}?
+            </p>
+            <div className="max-h-48 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3 mb-5 space-y-1.5 text-xs text-slate-700">
+              {pastJourneys.map((j) => (
+                <div key={j.id} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
+                  <span className="font-medium text-slate-800">{j.title || j.destination}</span>
+                  <span className="text-slate-500">{j.startDate} – {j.endDate}</span>
+                </div>
+              ))}
+            </div>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4 text-xs text-red-800 leading-relaxed">
+              <p className="font-semibold text-red-900 mb-1">Permanent Deletion Notice:</p>
+              Deleting past trips permanently removes their chat history, expenses, packing data, and disruption alerts. Flight bookings made through Travalastic are kept in your Bookings history, but unlinked from any deleted trip.
+            </div>
+
+            <p className="text-xs text-red-600 mb-5 font-medium">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setClearPastConfirmOpen(false)}
+                disabled={isClearingPast}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearPastTrips}
+                disabled={isClearingPast}
+                className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors flex items-center gap-2"
+              >
+                {isClearingPast ? 'Clearing...' : `Clear ${pastJourneys.length} trips`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Trip Chat Panel */}

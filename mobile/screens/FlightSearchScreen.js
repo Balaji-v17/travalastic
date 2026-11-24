@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../config/api';
+import { formatAirportTime, formatAirportDateSnippet } from '../utils/flightTime.js';
 
 /**
  * Formats an airport suggestion to "Airport Name (IATA) — City, Country"
@@ -56,29 +57,11 @@ const formatDuration = (isoDuration) => {
 };
 
 /**
- * Formats ISO datetime string to readable time / date
+ * Formats ISO datetime string to airport-local readable time / date without timezone conversion
  */
-const formatTime = (isoString) => {
-  if (!isoString) return '--:--';
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return isoString;
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-  } catch {
-    return isoString;
-  }
-};
+const formatTime = (isoString) => formatAirportTime(isoString, { hour12: true });
 
-const formatDateSnippet = (isoString) => {
-  if (!isoString) return '';
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  } catch {
-    return '';
-  }
-};
+const formatDateSnippet = (isoString) => formatAirportDateSnippet(isoString);
 
 export default function FlightSearchScreen({ route, navigation }) {
   const { destination: prefillDest, departureDate: prefillDate, itineraryId } = route?.params || {};

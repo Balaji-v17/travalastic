@@ -7,7 +7,9 @@ function formatINR(amount: number): string {
 }
 
 function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (!isoString) return '';
+  const match = isoString.match(/(?:[T\s]|^)(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : isoString;
 }
 
 const airlineColors: Record<string, string> = {
@@ -306,7 +308,7 @@ export default function SampleFlightDetailPage() {
               <h2 className="text-lg font-bold text-slate-900 mb-4">Why this flight?</h2>
               <div className="space-y-3">
                 {(() => {
-                  const depHour = new Date(flight.departureTime).getHours();
+                  const depHour = parseInt(flight.departureTime.match(/(?:[T\s]|^)(\d{2})/)?.[1] || '12', 10);
                   const facts: { icon: string; text: string }[] = [];
 
                   if (depHour < 9) {

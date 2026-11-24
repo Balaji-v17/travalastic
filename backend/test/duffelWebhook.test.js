@@ -351,32 +351,104 @@ describe('Duffel Webhook & Disruption Pipeline', () => {
       assert.strictEqual(createdDisruptions.length, 0);
     });
 
-    it('valid event whose booking has no itineraryId returns 200 skipped (no_itinerary)', async () => {
-      mockBooking = {
-        _id: new mongoose.Types.ObjectId(),
-        userId: new mongoose.Types.ObjectId(),
-        orderId: 'ord_no_itin',
-        itineraryId: null, // No linked itinerary
-      };
+    it('valid event whose booking has no itineraryId (detached booking) returns 200, creates no Disruption, and logs nothing sensitive', async () => {
+      const logs = [];
+      const origLog = console.log;
+      const origWarn = console.warn;
+      const origError = console.error;
+      console.log = (...args) => { logs.push(args.join(' ')); origLog(...args); };
+      console.warn = (...args) => { logs.push(args.join(' ')); origWarn(...args); };
+      console.error = (...args) => { logs.push(args.join(' ')); origError(...args); };
 
-      const payload = JSON.stringify({
-        type: 'order.airline_initiated_change_detected',
-        id: 'wev_002',
-        idempotency_key: 'aic_002',
-        data: { object: 'ord_no_itin' },
-      });
-      const { header } = createTestSignature(testSecret, payload);
+      try {
+        mockBooking = {
+          _id: new mongoose.Types.ObjectId(),
+          userId: new mongoose.Types.ObjectId(),
+          orderId: 'ord_no_itin',
+          itineraryId: null, // No linked itinerary (detached booking)
+        };
 
-      const res = await dispatch(app, {
-        method: 'POST',
-        url: '/webhooks/duffel',
-        headers: { 'X-Duffel-Signature': header },
-        body: payload,
-      });
+        const payload = JSON.stringify({
+          type: 'order.airline_initiated_change_detected',
+          id: 'wev_002',
+          idempotency_key: 'aic_002',
+          data: { object: 'ord_no_itin' },
+        });
+        const { header } = createTestSignature(testSecret, payload);
 
-      assert.strictEqual(res.status, 200);
-      assert.strictEqual(res.body.skipped, 'no_itinerary');
-      assert.strictEqual(createdDisruptions.length, 0);
+        const res = await dispatch(app, {
+          method: 'POST',
+          url: '/webhooks/duffel',
+          headers: { 'X-Duffel-Signature': header },
+          body: payload,
+        });
+
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(res.body.skipped, 'no_itinerary');
+        assert.strictEqual(createdDisruptions.length, 0);
+
+        const logOutput = logs.join('\n');
+        assert.doesNotMatch(logOutput, /bearer|jwt|secret|password|card|cvv|email/i);
+      } finally {
+        console.log = origLog;
+        console.warn = origWarn;
+        console.error = origError;
+      }
+    });
+
+    it('booking whose trip was deleted returns 200, creates no Disruption, and logs nothing sensitive', async () => {
+      const logs = [];
+      const origLog = console.log;
+      const origWarn = console.warn;
+      const origError = console.error;
+      console.log = (...args) => { logs.push(args.join(' ')); origLog(...args); };
+      console.warn = (...args) => { logs.push(args.join(' ')); origWarn(...args); };
+      console.error = (...args) => { logs.push(args.join(' ')); origError(...args); };
+
+      try {
+        const deletedTripId = new mongoose.Types.ObjectId();
+        mockBooking = {
+          _id: new mongoose.Types.ObjectId(),
+          userId: new mongoose.Types.ObjectId(),
+          orderId: 'ord_deleted_trip',
+          itineraryId: deletedTripId, // Points to deleted trip
+        };
+        mockItinerary = null; // Itinerary does not exist in DB
+
+        mockChanges = [
+          {
+            id: 'aic_deleted_trip',
+            removed: [{ segments: [{ departing_at: '2026-11-01T10:00:00', arriving_at: '2026-11-01T14:00:00' }] }],
+            added: [{ segments: [{ departing_at: '2026-11-01T10:00:00', arriving_at: '2026-11-01T16:00:00' }] }],
+          },
+        ];
+
+        const payload = JSON.stringify({
+          type: 'order.airline_initiated_change_detected',
+          id: 'wev_deleted_trip',
+          idempotency_key: 'aic_deleted_trip',
+          data: { object: 'ord_deleted_trip' },
+        });
+        const { header } = createTestSignature(testSecret, payload);
+
+        const res = await dispatch(app, {
+          method: 'POST',
+          url: '/webhooks/duffel',
+          headers: { 'X-Duffel-Signature': header },
+          body: payload,
+        });
+
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(res.body.skipped, 'itinerary_not_found');
+        assert.strictEqual(createdDisruptions.length, 0);
+
+        const logOutput = logs.join('\n');
+        assert.doesNotMatch(logOutput, /bearer|jwt|secret|password|card|cvv|email/i);
+      } finally {
+        console.log = origLog;
+        console.warn = origWarn;
+        console.error = origError;
+      }
     });
 
     it('sub-15-minute delay returns 200 skipped (not_actionable) and writes nothing', async () => {

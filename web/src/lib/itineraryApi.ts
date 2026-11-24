@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { apiFetch } from './api.ts';
 
 export interface BackendActivity {
   title: string;
@@ -26,6 +26,12 @@ export interface BackendDayPlan {
   accommodationSuggestion?: string;
 }
 
+export interface UndoState {
+  count: number;
+  lastEditId: string | null;
+  lastEditDays: number[];
+}
+
 export interface BackendGenerateResponse {
   itineraryId: string;
   itinerary: BackendDayPlan[];
@@ -34,6 +40,8 @@ export interface BackendGenerateResponse {
     sources: string[];
     limited: boolean;
   };
+  replaced?: boolean;
+  undo?: UndoState;
 }
 
 export interface JourneyDNA {
@@ -53,6 +61,27 @@ export interface JourneyDNA {
 }
 
 /**
+ * Computes calendar date-only start and end dates without timezone offsets.
+ */
+export function computeTripDates(startDateStr?: string, nights: number = 3): { startDate: string; endDate: string } {
+  let start = startDateStr ? startDateStr.trim().slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    start = `${y}-${m}-${d}`;
+  }
+  const [y, m, d] = start.split('-').map(Number);
+  const targetDate = new Date(y, m - 1, d + (nights > 0 ? nights : 1));
+  const endY = targetDate.getFullYear();
+  const endM = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const endD = String(targetDate.getDate()).padStart(2, '0');
+  const end = `${endY}-${endM}-${endD}`;
+  return { startDate: start, endDate: end };
+}
+
+/**
  * Builds the natural language rawRequest string from DNA form fields.
  * The backend POST /itinerary/generate endpoint accepts exclusively `{ rawRequest: string }`.
  * Any invalid state (such as nights <= 0 or missing destination) produces an empty string,
@@ -65,11 +94,7 @@ export function buildRawRequest(dna: JourneyDNA): string {
 
   const parts: string[] = [];
   const nights = dna.nights;
-  const start = new Date(dna.startDate || Date.now());
-  const end = new Date(start);
-  end.setDate(end.getDate() + nights);
-  const startDateStr = dna.startDate || start.toISOString().split('T')[0];
-  const endDateStr = !isNaN(end.getTime()) ? end.toISOString().split('T')[0] : '';
+  const { startDate: startDateStr, endDate: endDateStr } = computeTripDates(dna.startDate, nights);
 
   // Map comfort level to backend budgetTier: 'budget' | 'mid' | 'luxury'
   let tier: 'budget' | 'mid' | 'luxury' = 'mid';
@@ -111,17 +136,83 @@ export function buildRawRequest(dna: JourneyDNA): string {
   return parts.join(' ');
 }
 
+export interface DuplicateCheckResult {
+  duplicate: boolean;
+  existingTripId?: string;
+  destination?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Checks for existing trip matching destination and dates BEFORE calling the AI.
+ */
+export async function checkDuplicateItinerary(params: {
+  destination?: string;
+  startDate?: string;
+  endDate?: string;
+  rawRequest?: string;
+}): Promise<DuplicateCheckResult> {
+  return apiFetch<DuplicateCheckResult>('/itinerary/check-duplicate', {
+    method: 'POST',
+    body: params,
+  });
+}
+
+export interface GenerateOptions {
+  onDuplicate?: 'replace' | 'keep_both';
+  replaceTripId?: string;
+  signal?: AbortSignal;
+}
+
 /**
  * Calls the backend POST /itinerary/generate endpoint with typed response.
  */
 export async function generateItinerary(
   dna: JourneyDNA,
-  signal?: AbortSignal
+  optionsOrSignal?: GenerateOptions | AbortSignal
 ): Promise<BackendGenerateResponse> {
+  let options: GenerateOptions = {};
+  if (optionsOrSignal instanceof AbortSignal) {
+    options = { signal: optionsOrSignal };
+  } else if (optionsOrSignal) {
+    options = optionsOrSignal;
+  }
   const rawRequest = buildRawRequest(dna);
+  const { startDate, endDate } = computeTripDates(dna.startDate, dna.nights);
   return apiFetch<BackendGenerateResponse>('/itinerary/generate', {
     method: 'POST',
-    body: { rawRequest },
-    signal,
+    body: {
+      rawRequest,
+      destination: dna.destination,
+      startDate,
+      endDate,
+      onDuplicate: options.onDuplicate,
+      replaceTripId: options.replaceTripId,
+    },
+    signal: options.signal,
+  });
+}
+
+/**
+ * Calls POST /itinerary/:id/undo to restore the previous itinerary plan.
+ */
+export async function undoItineraryApi(
+  itineraryId: string,
+  expectedEditId?: string | null
+): Promise<{
+  itineraryId: string;
+  itinerary: BackendDayPlan[];
+  undo?: UndoState;
+  restoredDays?: number[];
+}> {
+  return apiFetch<{
+    itineraryId: string;
+    itinerary: BackendDayPlan[];
+    undo?: UndoState;
+    restoredDays?: number[];
+  }>(`/itinerary/${itineraryId}/undo`, {
+    method: 'POST',
+    body: expectedEditId ? { expectedEditId } : {},
   });
 }

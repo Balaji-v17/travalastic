@@ -9,9 +9,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import apiClient from '../config/apiClient';
 import { colors, fonts } from '../theme/tokens';
+import {
+  buildDuplicateAlertConfig,
+  buildGeneratePayload,
+} from '../utils/tripDuplicateAlert';
 
 const INTERESTS_LIST = [
   'beach',
@@ -89,7 +94,7 @@ export default function TripRequestScreen({ navigation }) {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (overrideOptions = {}) => {
     const trimmedDest = destination.trim();
     if (!trimmedDest) {
       setErrorMessage('Please enter a destination.');
@@ -109,12 +114,47 @@ export default function TripRequestScreen({ navigation }) {
     setLoading(true);
 
     try {
+      const payload = buildGeneratePayload({
+        rawRequest: sentence,
+        onDuplicate: overrideOptions.onDuplicate,
+        replaceTripId: overrideOptions.replaceTripId,
+      });
+
       const response = await apiClient('/itinerary/generate', {
         method: 'POST',
-        body: JSON.stringify({ rawRequest: sentence }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json().catch(() => null);
+
+      if (response.status === 409 && data?.duplicate) {
+        setLoading(false);
+        const alertConfig = buildDuplicateAlertConfig({
+          data,
+          destination: trimmedDest,
+          startDate: startDate.trim(),
+          endDate: endDate.trim(),
+          onOpenExisting: (existingTripId) => {
+            navigation.navigate('Itinerary', {
+              itineraryId: existingTripId,
+              destination: trimmedDest,
+              startDate: startDate.trim(),
+              endDate: endDate.trim(),
+            });
+          },
+          onReplace: (existingTripId) => {
+            handleSubmit({ onDuplicate: 'replace', replaceTripId: existingTripId });
+          },
+          onKeepBoth: () => {
+            handleSubmit({ onDuplicate: 'keep_both' });
+          },
+          onCancel: () => {
+            // Stay on form, user can adjust dates or destination
+          },
+        });
+        Alert.alert(alertConfig.title, alertConfig.message, alertConfig.buttons);
+        return;
+      }
 
       if (!response.ok) {
         const msg = data?.error?.message || data?.error || 'Failed to generate itinerary. Please try again.';
@@ -127,7 +167,7 @@ export default function TripRequestScreen({ navigation }) {
 
       const itineraryData = Array.isArray(data) ? data : data?.itinerary || data?.days || [];
 
-      // Navigate to ItineraryScreen with generated itinerary, itineraryId, and context
+      // Navigate to ItineraryScreen with generated itinerary, itineraryId, context, and undo state
       navigation.navigate('Itinerary', {
         itineraryId: data?.itineraryId,
         itinerary: itineraryData,
@@ -137,6 +177,8 @@ export default function TripRequestScreen({ navigation }) {
         budgetTier,
         interests: selectedInterests,
         rawRequest: sentence,
+        undo: data?.undo,
+        replaced: data?.replaced,
       });
     } catch (error) {
       console.error('Itinerary generation error:', error);
