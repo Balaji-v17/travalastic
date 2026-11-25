@@ -1,11 +1,11 @@
-import { isPageAvailable, type Page, type PageStatus } from './pageStatus.ts';
+import { isPageAvailable, type BookTab, type Page, type PageStatus } from './pageStatus.ts';
 
 export interface FooterLink {
   label: string;
   page: Page;
   status: PageStatus;
+  bookTab?: BookTab;
   searchType?: 'flights' | 'hotels' | 'experiences' | 'packages';
-  transportTab?: 'cab' | 'rental';
 }
 
 export interface FooterColumn {
@@ -25,10 +25,12 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
   {
     heading: 'Book',
     links: [
-      { label: 'Flights', page: 'search', status: 'live', searchType: 'flights' },
-      { label: 'Hotels', page: 'hotels', status: 'live' },
-      { label: 'Transfers', page: 'ground-transport', status: 'live', transportTab: 'cab' },
-      { label: 'Car rental', page: 'ground-transport', status: 'live', transportTab: 'rental' },
+      { label: 'Flights', page: 'book', bookTab: 'flights', status: 'live' },
+      { label: 'Hotels', page: 'book', bookTab: 'hotels', status: 'live' },
+      { label: 'Transfers', page: 'book', bookTab: 'cab', status: 'live' },
+      { label: 'Car rental', page: 'book', bookTab: 'rental', status: 'live' },
+      { label: 'Trains', page: 'book', bookTab: 'trains', status: 'live' },
+      { label: 'Buses', page: 'book', bookTab: 'buses', status: 'live' },
       { label: 'Experiences', page: 'search', status: 'sample', searchType: 'experiences' },
     ],
   },
@@ -65,4 +67,3 @@ export function filterFooterColumns(
     }))
     .filter((col) => col.links.length > 0);
 }
-

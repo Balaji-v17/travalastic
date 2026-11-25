@@ -12,6 +12,7 @@ import { apiFetch } from '../../lib/api';
 import SampleDataBanner from '../../components/common/SampleDataBanner';
 import SampleDestinationPage from './SampleDestinationPage';
 import CuratedHotelCard, { type CuratedHotelItem } from '../../components/hotels/CuratedHotelCard';
+import { rememberExternalHandoff } from '../../lib/handoff';
 
 interface WeatherResponse {
   condition?: string;
@@ -314,6 +315,7 @@ export function LiveDestinationPage({ place }: { place: PlaceResult }) {
                   href={bookingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => rememberExternalHandoff('hotel', 'Booking.com')}
                   className="text-xs font-semibold text-[#111111] hover:text-[#C9A96E] transition-colors flex items-center gap-1"
                 >
                   <span>Live rates on Booking.com</span>

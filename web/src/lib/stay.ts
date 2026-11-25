@@ -2,6 +2,7 @@
  * Pure, erasable stay helper functions for Travalastic hotel search & itinerary stay calculation.
  * Zero external dependencies; zero browser timezone shifting; zero logging of user parameters.
  */
+import { HOTEL_LIMITS } from './countLimits.ts';
 
 export interface StayDates {
   checkIn: string; // YYYY-MM-DD
@@ -172,14 +173,30 @@ export function validateStay(
 
   // 4. Guests (1-9)
   const guests = query.guests != null ? Number(query.guests) : 2;
-  if (isNaN(guests) || !Number.isInteger(guests) || guests < 1 || guests > 9) {
-    addError('guests', 'Number of guests must be between 1 and 9.');
+  if (
+    isNaN(guests) ||
+    !Number.isInteger(guests) ||
+    guests < HOTEL_LIMITS.minGuests ||
+    guests > HOTEL_LIMITS.maxGuests
+  ) {
+    addError(
+      'guests',
+      `Number of guests must be between ${HOTEL_LIMITS.minGuests} and ${HOTEL_LIMITS.maxGuests}.`
+    );
   }
 
   // 5. Rooms (1-5, and rooms <= guests)
   const rooms = query.rooms != null ? Number(query.rooms) : 1;
-  if (isNaN(rooms) || !Number.isInteger(rooms) || rooms < 1 || rooms > 5) {
-    addError('rooms', 'Number of rooms must be between 1 and 5.');
+  if (
+    isNaN(rooms) ||
+    !Number.isInteger(rooms) ||
+    rooms < HOTEL_LIMITS.minRooms ||
+    rooms > HOTEL_LIMITS.maxRooms
+  ) {
+    addError(
+      'rooms',
+      `Number of rooms must be between ${HOTEL_LIMITS.minRooms} and ${HOTEL_LIMITS.maxRooms}.`
+    );
   } else if (!isNaN(guests) && rooms > guests) {
     addError('rooms', 'Number of rooms cannot exceed the number of guests.');
   }

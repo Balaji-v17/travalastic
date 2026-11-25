@@ -235,13 +235,14 @@ export const invalidateDestinationCache = () => {
  *
  * @param {string} destinationQuery - Destination name (e.g. "Goa")
  * @returns {Promise<{ results: Array, destinations: Array, availableCategories: Array<string> }>}\n */
-export const fetchExplorePlaces = async (destinationQuery) => {
+export const fetchExplorePlaces = async (destinationQuery, options = {}) => {
   if (!destinationQuery || typeof destinationQuery !== 'string' || !destinationQuery.trim()) {
-    return { results: [], destinations: [], availableCategories: [] };
+    return { results: [], destinations: [], availableCategories: [], externalFallbackUsed: false };
   }
 
+  const allowFallback = options.allowFallback !== false;
   const cleanQuery = destinationQuery.trim();
-  const cacheKey = cleanQuery.toLowerCase();
+  const cacheKey = `${cleanQuery.toLowerCase()}::fb=${allowFallback ? '1' : '0'}`;
   const cached = destinationResponseCache.get(cacheKey);
 
   if (cached && Date.now() < cached.expiresAt) {
@@ -363,8 +364,9 @@ export const fetchExplorePlaces = async (destinationQuery) => {
     });
   }
 
-  // Tier 3: If processedResults has < 30 places, run Nominatim geocode + Overpass tagged-places query
-  if (processedResults.length < 30) {
+  // Tier 3: If allowed and processedResults has < 30 places, run Nominatim geocode + Overpass tagged-places query
+  let externalFallbackUsed = false;
+  if (allowFallback && processedResults.length < 30) {
     const fallbackNotice = "No curated activities found for this destination — here's what we found nearby";
     let rawPlaces = [];
     try {
@@ -379,6 +381,7 @@ export const fetchExplorePlaces = async (destinationQuery) => {
       try {
         const overpassPlaces = await findTaggedPlaces(latitude, longitude, 'all', cleanQuery);
         if (Array.isArray(overpassPlaces) && overpassPlaces.length > 0) {
+          externalFallbackUsed = true;
           const existingNames = new Set(processedResults.map((p) => p.name.toLowerCase()));
           for (const op of overpassPlaces) {
             if (!existingNames.has(op.name.toLowerCase())) {
@@ -409,6 +412,7 @@ export const fetchExplorePlaces = async (destinationQuery) => {
 
     // Raw Nominatim fallback if still 0 places
     if (processedResults.length === 0 && rawPlaces.length > 0) {
+      externalFallbackUsed = true;
       processedResults = rawPlaces.map((place) => ({
         placeId: place.latitude && place.longitude ? `geo/${place.latitude},${place.longitude}` : `place/${encodeURIComponent(place.name)}`,
         name: place.name,
@@ -438,6 +442,7 @@ export const fetchExplorePlaces = async (destinationQuery) => {
     results: processedResults,
     destinations: processedResults, // alias for backwards compatibility
     availableCategories: Array.from(foundCategories),
+    externalFallbackUsed,
   };
 
   destinationResponseCache.set(cacheKey, {
@@ -455,10 +460,13 @@ const searchDestinations = async (req, res, next) => {
     return res.status(400).json({ error: 'Query parameter "q" or "query" is required' });
   }
 
+  const fallbackParam = String(req.query.fallback ?? '1').trim().toLowerCase();
+  const allowFallback = fallbackParam !== '0' && fallbackParam !== 'false';
+
   res.set('Cache-Control', 'no-store');
 
   try {
-    const payload = await fetchExplorePlaces(queryParam.trim());
+    const payload = await fetchExplorePlaces(queryParam.trim(), { allowFallback });
     return res.status(200).json(payload);
   } catch (error) {
     console.error('Error in searchDestinations:', error.message);

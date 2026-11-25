@@ -15,6 +15,7 @@ import Itinerary from '../src/models/Itinerary.js';
 import Conversation from '../src/models/Conversation.js';
 import Expense from '../src/models/Expense.js';
 import Booking from '../src/models/Booking.js';
+import TripBooking from '../src/models/TripBooking.js';
 import PackingTemplate from '../src/models/PackingTemplate.js';
 import Disruption from '../src/models/Disruption.js';
 import authenticate from '../src/middleware/authenticate.js';
@@ -95,6 +96,7 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
   let inMemoryConversations;
   let inMemoryExpenses;
   let inMemoryBookings;
+  let inMemoryTripBookings;
   let inMemoryPackingTemplates;
   let inMemoryDisruptions;
   let inMemoryAuditLogs;
@@ -119,6 +121,7 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
     inMemoryConversations = new Map();
     inMemoryExpenses = new Map();
     inMemoryBookings = new Map();
+    inMemoryTripBookings = new Map();
     inMemoryPackingTemplates = new Map();
     inMemoryDisruptions = new Map();
     inMemoryAuditLogs = [];
@@ -188,6 +191,8 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
       expCountDocuments: Expense.countDocuments,
       bookDeleteMany: Booking.deleteMany,
       bookCountDocuments: Booking.countDocuments,
+      tripBookDeleteMany: TripBooking.deleteMany,
+      tripBookCountDocuments: TripBooking.countDocuments,
       packDeleteMany: PackingTemplate.deleteMany,
       packCountDocuments: PackingTemplate.countDocuments,
       disrDeleteMany: Disruption.deleteMany,
@@ -290,6 +295,7 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
     setupCollectionStubs(inMemoryConversations, Conversation);
     setupCollectionStubs(inMemoryExpenses, Expense);
     setupCollectionStubs(inMemoryBookings, Booking);
+    setupCollectionStubs(inMemoryTripBookings, TripBooking);
     setupCollectionStubs(inMemoryPackingTemplates, PackingTemplate);
     setupCollectionStubs(inMemoryDisruptions, Disruption);
 
@@ -319,13 +325,15 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
     Expense.countDocuments = originalMongooseMethods.expCountDocuments;
     Booking.deleteMany = originalMongooseMethods.bookDeleteMany;
     Booking.countDocuments = originalMongooseMethods.bookCountDocuments;
+    TripBooking.deleteMany = originalMongooseMethods.tripBookDeleteMany;
+    TripBooking.countDocuments = originalMongooseMethods.tripBookCountDocuments;
     PackingTemplate.deleteMany = originalMongooseMethods.packDeleteMany;
     PackingTemplate.countDocuments = originalMongooseMethods.packCountDocuments;
     Disruption.deleteMany = originalMongooseMethods.disrDeleteMany;
     Disruption.countDocuments = originalMongooseMethods.disrCountDocuments;
   }
 
-  // Helper to create a complete fixture traveler with data across all 6 linked collections
+  // Helper to create a complete fixture traveler with data across all linked collections
   function createFixtureTraveler(email = 'traveler@example.com') {
     const userId = new mongoose.Types.ObjectId();
     const idStr = userId.toString();
@@ -343,6 +351,7 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
     inMemoryConversations.set(`conv-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
     inMemoryExpenses.set(`exp-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
     inMemoryBookings.set(`book-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
+    inMemoryTripBookings.set(`tbook-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
     inMemoryPackingTemplates.set(`pack-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
     inMemoryDisruptions.set(`disr-${idStr}-1`, { _id: new mongoose.Types.ObjectId(), userId });
 
@@ -581,6 +590,7 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
       assert.equal(removeMap['Conversations'], 1);
       assert.equal(removeMap['Expenses'], 1);
       assert.equal(removeMap['Bookings'], 1);
+      assert.equal(removeMap['Recorded Bookings'], 1);
       assert.equal(removeMap['Packing Templates'], 1);
       assert.equal(removeMap['Disruptions'], 1);
       assert.equal(removeMap['User Account'], 1);
@@ -840,6 +850,9 @@ describe('Admin Panel Piece A9a: Support Account Deletion Preview & Audited Flow
         assert.notEqual(item.userId?.toString(), fixture.id);
       }
       for (const item of inMemoryBookings.values()) {
+        assert.notEqual(item.userId?.toString(), fixture.id);
+      }
+      for (const item of inMemoryTripBookings.values()) {
         assert.notEqual(item.userId?.toString(), fixture.id);
       }
       for (const item of inMemoryPackingTemplates.values()) {

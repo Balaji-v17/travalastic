@@ -1,4 +1,5 @@
 import { apiFetch } from './api.ts';
+import type { TripCoverImage } from '../data/mockData.ts';
 
 export interface BackendActivity {
   title: string;
@@ -35,6 +36,7 @@ export interface UndoState {
 export interface BackendGenerateResponse {
   itineraryId: string;
   itinerary: BackendDayPlan[];
+  coverImage?: TripCoverImage | null;
   grounding?: {
     candidateCount: number;
     sources: string[];
@@ -215,4 +217,17 @@ export async function undoItineraryApi(
     method: 'POST',
     body: expectedEditId ? { expectedEditId } : {},
   });
+}
+
+/**
+ * Calls POST /itineraries/:id/cover to lazily resolve and persist a missing destination cover photo.
+ */
+export async function fetchTripCover(
+  itineraryId: string
+): Promise<TripCoverImage | null> {
+  const res = await apiFetch<{ coverImage?: TripCoverImage | null }>(
+    `/itineraries/${encodeURIComponent(itineraryId)}/cover`,
+    { method: 'POST', body: {} }
+  );
+  return res?.coverImage ?? null;
 }

@@ -179,6 +179,7 @@ router.post('/users/:id/deletion-preview', previewLimiter, async (req, res) => {
         { item: 'Conversations', count: counts.conversations || 0 },
         { item: 'Expenses', count: counts.expenses || 0 },
         { item: 'Bookings', count: counts.bookings || 0 },
+        { item: 'Recorded Bookings', count: counts.tripBookings || 0 },
         { item: 'Packing Templates', count: counts.packingTemplates || 0 },
         { item: 'Disruptions', count: counts.disruptions || 0 },
         { item: 'User Account', count: counts.users || 1 },

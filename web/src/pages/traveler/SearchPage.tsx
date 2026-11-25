@@ -1,3 +1,7 @@
+/**
+ * Flight search & results page (also mounted inside Book > Flights via `embeddedFlightOnly`).
+ * Filename SearchPage.tsx is kept intact to avoid breaking existing route imports; global nav Search opens GlobalSearchOverlay instead.
+ */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
 import { hotels, activities } from '../../data/mockData';
@@ -19,6 +23,8 @@ import {
 } from '../../lib/flightAdapter';
 import AirportInput from '../../components/flights/AirportInput';
 import SampleDataBanner from '../../components/common/SampleDataBanner';
+import CountStepper from '../../components/common/CountStepper';
+import { PASSENGER_LIMITS } from '../../lib/countLimits';
 
 type SearchTab = 'flights' | 'hotels' | 'experiences';
 type HotelSortKey = 'recommended' | 'price_asc' | 'price_desc' | 'rating' | 'reviews';
@@ -256,62 +262,87 @@ function FilterLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Main Search Page ─────────────────────────────────────────────────────────
-export default function SearchPage() {
+export default function SearchPage({ embeddedFlightOnly = false }: { embeddedFlightOnly?: boolean } = {}) {
   const {
     searchQuery,
-    setSearchQuery,
+    flightSearchSession,
+    setFlightSearchSession,
     openOffer,
     navigateToHotel,
     navigateToExperience,
   } = useApp();
 
   const [tab, setTab] = useState<SearchTab>(() => {
-    if (!SHOW_SAMPLE_PAGES) return 'flights';
+    if (embeddedFlightOnly || !SHOW_SAMPLE_PAGES) return 'flights';
     return (searchQuery.type === 'experiences' ? 'experiences' : searchQuery.type === 'hotels' ? 'hotels' : 'flights') as SearchTab;
   });
 
-  // Flight form state
-  const [originIata, setOriginIata] = useState<string | null>(() => searchQuery.from || null);
-  const [destIata, setDestIata] = useState<string | null>(() => {
-    if (searchQuery.destinationId && /^[A-Za-z]{3}$/.test(searchQuery.destinationId)) {
-      return searchQuery.destinationId.toUpperCase();
+  useEffect(() => {
+    if (embeddedFlightOnly && tab !== 'flights') {
+      setTab('flights');
     }
-    if (searchQuery.destination && /^[A-Za-z]{3}$/.test(searchQuery.destination)) {
-      return searchQuery.destination.toUpperCase();
-    }
-    return null;
-  });
+  }, [embeddedFlightOnly, tab]);
 
-  const [departureDate, setDepartureDate] = useState<string>(() => {
-    if (searchQuery.dates && /^\d{4}-\d{2}-\d{2}$/.test(searchQuery.dates)) {
-      return searchQuery.dates;
-    }
-    return '';
-  });
-  const [adults, setAdults] = useState<number>(() => Math.max(1, Math.min(9, searchQuery.travelers || 1)));
+  // Seed session from searchQuery if session is still empty
+  useEffect(() => {
+    if (!flightSearchSession.originIata && !flightSearchSession.destIata && !flightSearchSession.departureDate) {
+      const nextFrom = searchQuery.from || null;
+      const nextDest =
+        searchQuery.destinationId && /^[A-Za-z]{3}$/.test(searchQuery.destinationId)
+          ? searchQuery.destinationId.toUpperCase()
+          : searchQuery.destination && /^[A-Za-z]{3}$/.test(searchQuery.destination)
+          ? searchQuery.destination.toUpperCase()
+          : null;
+      const nextDate =
+        searchQuery.dates && /^\d{4}-\d{2}-\d{2}$/.test(searchQuery.dates) ? searchQuery.dates : '';
+      const nextAdults = Math.max(1, Math.min(9, searchQuery.travelers || 1));
 
-  // Flight results state
-  const [searchStatus, setSearchStatus] = useState<'idle' | 'loading' | 'results' | 'empty' | 'error'>('idle');
-  const [rawOffers, setRawOffers] = useState<FlightOffer[]>([]);
-  const [searchErrorMessage, setSearchErrorMessage] = useState<string>('');
+      if (nextFrom || nextDest || nextDate) {
+        setFlightSearchSession({
+          originIata: nextFrom,
+          destIata: nextDest,
+          departureDate: nextDate,
+          adults: nextAdults,
+        });
+      }
+    }
+  }, [searchQuery, flightSearchSession.originIata, flightSearchSession.destIata, flightSearchSession.departureDate, setFlightSearchSession]);
+
+  // Session-persisted flight form, results & filters
+  const originIata = flightSearchSession.originIata;
+  const destIata = flightSearchSession.destIata;
+  const departureDate = flightSearchSession.departureDate;
+  const adults = flightSearchSession.adults;
+  const searchStatus = flightSearchSession.searchStatus;
+  const rawOffers = flightSearchSession.rawOffers;
+  const searchErrorMessage = flightSearchSession.searchErrorMessage;
+  const flightSort = flightSearchSession.flightSort;
+  const stopsFilter = flightSearchSession.stopsFilter;
+  const airlineFilters = flightSearchSession.airlineFilters;
+  const timeBandFilters = flightSearchSession.timeBandFilters;
+  const minPriceInput = flightSearchSession.minPriceInput;
+  const maxPriceInput = flightSearchSession.maxPriceInput;
+
+  const setOriginIata = (v: string | null) => setFlightSearchSession({ originIata: v });
+  const setDestIata = (v: string | null) => setFlightSearchSession({ destIata: v });
+  const setDepartureDate = (v: string) => setFlightSearchSession({ departureDate: v });
+  const setAdults = (v: number) => setFlightSearchSession({ adults: v });
+  const setFlightSort = (v: FlightSortKey) => setFlightSearchSession({ flightSort: v });
+  const setStopsFilter = (v: StopsFilter) => setFlightSearchSession({ stopsFilter: v });
+  const setMinPriceInput = (v: string) => setFlightSearchSession({ minPriceInput: v });
+  const setMaxPriceInput = (v: string) => setFlightSearchSession({ maxPriceInput: v });
+
   const [formValidationError, setFormValidationError] = useState<string>('');
-
-  // Flight filter & sort state
-  const [flightSort, setFlightSort] = useState<FlightSortKey>('cheapest');
-  const [stopsFilter, setStopsFilter] = useState<StopsFilter>('any');
-  const [airlineFilters, setAirlineFilters] = useState<string[]>([]);
-  const [timeBandFilters, setTimeBandFilters] = useState<DepartureTimeBand[]>([]);
-  const [minPriceInput, setMinPriceInput] = useState<string>('');
-  const [maxPriceInput, setMaxPriceInput] = useState<string>('');
 
   // Mobile filters sheet
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  // Auto-search once when navigated from Home with complete parameters
+  // Auto-search once when navigated from Home with complete parameters and no existing results
   const autoSearchRef = useRef(false);
   useEffect(() => {
     if (
       !autoSearchRef.current &&
+      searchStatus === 'idle' &&
       originIata &&
       destIata &&
       departureDate &&
@@ -320,14 +351,13 @@ export default function SearchPage() {
       autoSearchRef.current = true;
       executeFlightSearch();
     }
-  }, [originIata, destIata, departureDate]);
+  }, [originIata, destIata, departureDate, searchStatus]);
 
   const todayLocalDate = useMemo(() => getTodayLocalDate(), []);
 
   // Execute Flight Search
   const executeFlightSearch = async () => {
     setFormValidationError('');
-    setSearchErrorMessage('');
 
     if (!originIata) {
       setFormValidationError('Please choose a departure airport from the suggestions.');
@@ -350,8 +380,11 @@ export default function SearchPage() {
       return;
     }
 
-    setSearchStatus('loading');
-    setRawOffers([]);
+    setFlightSearchSession({
+      searchErrorMessage: '',
+      searchStatus: 'loading',
+      rawOffers: [],
+    });
 
     try {
       const data = await searchFlights({
@@ -366,15 +399,13 @@ export default function SearchPage() {
       );
 
       if (normalized.length === 0) {
-        setSearchStatus('empty');
+        setFlightSearchSession({ searchStatus: 'empty', rawOffers: [] });
       } else {
-        setRawOffers(normalized);
-        setSearchStatus('results');
+        setFlightSearchSession({ searchStatus: 'results', rawOffers: normalized });
       }
     } catch (err: any) {
       const msg = err?.message || 'Failed to search flights. Please try again.';
-      setSearchErrorMessage(msg);
-      setSearchStatus('error');
+      setFlightSearchSession({ searchErrorMessage: msg, searchStatus: 'error' });
     }
   };
 
@@ -409,7 +440,7 @@ export default function SearchPage() {
 
   // Tab definitions
   const availableTabs: { key: SearchTab; label: string; icon: string }[] = useMemo(() => {
-    if (!SHOW_SAMPLE_PAGES) {
+    if (embeddedFlightOnly || !SHOW_SAMPLE_PAGES) {
       return [{ key: 'flights', label: 'Flights', icon: '✈' }];
     }
     return [
@@ -417,26 +448,34 @@ export default function SearchPage() {
       { key: 'hotels', label: 'Hotels', icon: '🏨' },
       { key: 'experiences', label: 'Experiences', icon: '🎯' },
     ];
-  }, []);
+  }, [embeddedFlightOnly]);
 
   const clearFlightFilters = () => {
-    setStopsFilter('any');
-    setAirlineFilters([]);
-    setTimeBandFilters([]);
-    setMinPriceInput('');
-    setMaxPriceInput('');
+    setFlightSearchSession({
+      stopsFilter: 'any',
+      airlineFilters: [],
+      timeBandFilters: [],
+      minPriceInput: '',
+      maxPriceInput: '',
+    });
   };
 
   const toggleAirline = (name: string) => {
-    setAirlineFilters((prev) =>
-      prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]
-    );
+    setFlightSearchSession((prev) => ({
+      ...prev,
+      airlineFilters: prev.airlineFilters.includes(name)
+        ? prev.airlineFilters.filter((a) => a !== name)
+        : [...prev.airlineFilters, name],
+    }));
   };
 
   const toggleTimeBand = (band: DepartureTimeBand) => {
-    setTimeBandFilters((prev) =>
-      prev.includes(band) ? prev.filter((b) => b !== band) : [...prev, band]
-    );
+    setFlightSearchSession((prev) => ({
+      ...prev,
+      timeBandFilters: prev.timeBandFilters.includes(band)
+        ? prev.timeBandFilters.filter((b) => b !== band)
+        : [...prev.timeBandFilters, band],
+    }));
   };
 
   // ── Filters panel component ─────────────────────────────────────────────────
@@ -565,8 +604,8 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0] py-8 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className={embeddedFlightOnly ? '' : 'min-h-screen bg-[#F7F5F0] py-8 px-4 sm:px-6'}>
+      <div className={embeddedFlightOnly ? 'space-y-6' : 'max-w-7xl mx-auto space-y-6'}>
         {/* ── Tab Switcher ── */}
         {availableTabs.length > 1 && (
           <div className="flex gap-1 bg-white border border-[#E8E4DC] p-1 w-fit" style={{ borderRadius: '2px' }}>
@@ -618,21 +657,23 @@ export default function SearchPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold tracking-wider uppercase text-[#77736C] mb-1.5">
+                <label htmlFor="flight_search_adults" className="block text-xs font-semibold tracking-wider uppercase text-[#77736C] mb-1.5">
                   Travelers
                 </label>
-                <select
+                <CountStepper
+                  id="flight_search_adults"
+                  label="Travelers"
+                  unitLabel={adults === 1 ? 'adult' : 'adults'}
                   value={adults}
-                  onChange={(e) => setAdults(parseInt(e.target.value, 10))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#E8E4DC] text-sm text-[#111111] focus:border-[#C9A96E] outline-none cursor-pointer"
-                  style={{ borderRadius: '2px' }}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                    <option key={n} value={n}>
-                      {n} adult{n > 1 ? 's' : ''}
-                    </option>
-                  ))}
-                </select>
+                  min={PASSENGER_LIMITS.minAdults}
+                  max={PASSENGER_LIMITS.maxTotal}
+                  onChange={setAdults}
+                  helperText={
+                    adults >= PASSENGER_LIMITS.maxTotal
+                      ? PASSENGER_LIMITS.capHelperText
+                      : undefined
+                  }
+                />
               </div>
             </div>
 

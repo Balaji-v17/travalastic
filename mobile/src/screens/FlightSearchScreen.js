@@ -14,6 +14,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../config/api';
 import { formatAirportTime, formatAirportDateSnippet } from '../utils/flightTime.js';
+import CountStepper from '../components/CountStepper';
+import { PASSENGER_LIMITS } from '../constants/countLimits';
 
 /**
  * Formats an airport suggestion to "Airport Name (IATA) — City, Country"
@@ -651,29 +653,20 @@ export default function FlightSearchScreen({ route, navigation }) {
           </View>
 
           {/* Passenger Count Stepper */}
-          <View style={styles.stepperRow}>
-            <View>
-              <Text style={styles.inputLabel}>Passengers</Text>
-              <Text style={styles.stepperSubtext}>Adults (12+ yrs)</Text>
-            </View>
-            <View style={styles.stepperControls}>
-              <TouchableOpacity
-                style={[styles.stepperBtn, (passengers <= 1 || loading) && styles.stepperBtnDisabled]}
-                onPress={() => setPassengers((prev) => Math.max(1, prev - 1))}
-                disabled={passengers <= 1 || loading}
-              >
-                <Text style={styles.stepperBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.stepperValue}>{passengers}</Text>
-              <TouchableOpacity
-                style={[styles.stepperBtn, (passengers >= 9 || loading) && styles.stepperBtnDisabled]}
-                onPress={() => setPassengers((prev) => Math.min(9, prev + 1))}
-                disabled={passengers >= 9 || loading}
-              >
-                <Text style={styles.stepperBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <CountStepper
+            label="Passengers"
+            sublabel="Adults (12+ yrs)"
+            value={passengers}
+            min={PASSENGER_LIMITS.minAdults}
+            max={PASSENGER_LIMITS.maxTotal}
+            onChange={setPassengers}
+            disabled={loading}
+            helperText={
+              passengers >= PASSENGER_LIMITS.maxTotal
+                ? PASSENGER_LIMITS.capHelperText
+                : undefined
+            }
+          />
 
           {/* Explicit Search Button */}
           <TouchableOpacity

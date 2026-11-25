@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   PAGE_STATUS,
+  PRIMARY_NAV,
   isPageAvailable,
   resolvePage,
+  resolveBookAlias,
   visibleNav,
   getAvatarInitial,
 } from '../src/lib/pageStatus.ts';
@@ -40,6 +42,7 @@ test('PAGE_STATUS completeness and correctness', async (t) => {
       'privacy',
       'delete-account',
       'my-bookings',
+      'book',
       'hotels',
       'style-collection',
       'ground-transport',
@@ -114,31 +117,29 @@ test('isPageAvailable and resolvePage behaviour', async (t) => {
 });
 
 test('visibleNav filtering', async (t) => {
-  const primaryNav = [
-    { label: 'Explore', page: 'explore' },
-    { label: 'Journey AI', page: 'ai-planner' },
-    { label: 'Flights', page: 'search', searchType: 'flights' },
-    { label: 'Hotels', page: 'hotels' },
-    { label: 'Experiences', page: 'search', searchType: 'experiences' },
-    { label: 'Journeys', page: 'journeys' },
-    { label: 'Trips', page: 'my-trips' },
-    { label: 'Bookings', page: 'my-bookings' },
-  ];
-
-  await t.test('flag OFF returns [Explore, Journey AI, Flights, Hotels, Trips, Bookings]', () => {
-    const visible = visibleNav(primaryNav, false);
+  await t.test('flag OFF returns exact 5 PRIMARY_NAV items [Explore, Journey AI, Book, Trips, Bookings]', () => {
+    const visible = visibleNav(PRIMARY_NAV, false);
     assert.deepEqual(
       visible.map((i) => i.label),
-      ['Explore', 'Journey AI', 'Flights', 'Hotels', 'Trips', 'Bookings']
+      ['Explore', 'Journey AI', 'Book', 'Trips', 'Bookings']
     );
   });
 
-  await t.test('flag ON returns all primary nav items', () => {
-    const visible = visibleNav(primaryNav, true);
+  await t.test('flag ON returns all PRIMARY_NAV items', () => {
+    const visible = visibleNav(PRIMARY_NAV, true);
     assert.deepEqual(
       visible.map((i) => i.label),
-      ['Explore', 'Journey AI', 'Flights', 'Hotels', 'Experiences', 'Journeys', 'Trips', 'Bookings']
+      PRIMARY_NAV.map((i) => i.label)
     );
+  });
+
+  await t.test('resolveBookAlias maps legacy booking pages to book + tab', () => {
+    assert.deepEqual(resolveBookAlias('hotels'), { page: 'book', tab: 'hotels' });
+    assert.deepEqual(resolveBookAlias('ground-transport'), { page: 'book', tab: 'cab' });
+    assert.deepEqual(resolveBookAlias('car-rental'), { page: 'book', tab: 'rental' });
+    assert.deepEqual(resolveBookAlias('trains'), { page: 'book', tab: 'trains' });
+    assert.deepEqual(resolveBookAlias('buses'), { page: 'book', tab: 'buses' });
+    assert.deepEqual(resolveBookAlias('flights'), { page: 'book', tab: 'flights' });
   });
 });
 

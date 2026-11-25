@@ -143,6 +143,19 @@ const EditHistorySchema = new mongoose.Schema({
   },
 });
 
+const CoverImageSchema = new mongoose.Schema(
+  {
+    url: { type: String, default: null },
+    thumbUrl: { type: String, default: null },
+    photographer: { type: String, default: null },
+    photographerUrl: { type: String, default: null },
+    sourceUrl: { type: String, default: null },
+    source: { type: String, enum: ['pexels'], default: 'pexels' },
+    fetchedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const ItinerarySchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -161,6 +174,10 @@ const ItinerarySchema = new mongoose.Schema({
   destinationCoordinates: {
     lat: { type: Number, default: null },
     lon: { type: Number, default: null },
+  },
+  coverImage: {
+    type: CoverImageSchema,
+    default: null,
   },
   pace: {
     type: String,

@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../store/AppContext';
 import type { Journey } from '../../data/mockData';
 import TripChatPanel from '../../components/chat/TripChatPanel';
+import TripCoverVisual from '../../components/trips/TripCoverVisual';
 import { apiFetch } from '../../lib/api';
+import { fetchTripCover } from '../../lib/itineraryApi';
+import { backfillMissingTripCovers } from '../../lib/tripCoverBackfill';
 import { getBookablePlanItems } from '../../lib/tripStatus';
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -68,14 +71,17 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
   const isActive = journey.status === 'in-progress' || journey.status === 'in-travel';
 
   return (
-    <div className="relative rounded-xl overflow-hidden mb-8 min-h-[340px] sm:min-h-[400px] flex flex-col justify-end group">
-      {/* Background image */}
-      <img src={journey.imageUrl} alt={journey.destination} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10" />
+    <div className="relative rounded-xl overflow-hidden mb-8 min-h-[340px] sm:min-h-[400px] flex flex-col justify-end group bg-slate-900">
+      <TripCoverVisual
+        journey={journey}
+        width={1200}
+        height={675}
+        imgClassName="transition-transform duration-700 group-hover:scale-105"
+        creditPosition="top-right"
+      />
 
       {/* Status pill */}
-      <div className="absolute top-5 left-5 flex items-center gap-1.5">
+      <div className="absolute top-5 left-5 flex items-center gap-1.5 z-10">
         {isActive && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
         <span className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${statusConfig[journey.status]?.color ?? 'bg-white/20 text-white'}`}>
           {statusConfig[journey.status]?.label}
@@ -83,12 +89,12 @@ function FeaturedJourney({ journey, onAskAI }: { journey: Journey; onAskAI: () =
       </div>
 
       {/* Content */}
-      <div className="relative p-6 sm:p-8">
-        <p className="text-white/60 text-xs uppercase tracking-widest mb-2 font-medium">
+      <div className="relative z-10 p-6 sm:p-8">
+        <p className="text-white/80 text-xs uppercase tracking-widest mb-2 font-medium">
           {isActive ? 'Currently Travelling' : 'Featured Journey'}
         </p>
         <h2 className="font-display text-3xl sm:text-4xl text-white leading-tight mb-1">{journey.title || journey.destination || '—'}</h2>
-        <p className="text-white/70 text-sm mb-5">
+        <p className="text-white/95 text-sm mb-5">
           {journey.destination} &middot; {fmtDate(journey.startDate, { day: 'numeric', month: 'short' })} – {fmtDate(journey.endDate)} &middot; {journey.travelers} traveler{journey.travelers > 1 ? 's' : ''}
         </p>
 
@@ -234,17 +240,22 @@ function JourneyCard({ journey, onAskAI }: { journey: Journey; onAskAI: () => vo
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300 hover:-translate-y-0.5 group flex flex-col">
       {/* Image */}
-      <div className="relative h-44 bg-slate-200 overflow-hidden shrink-0">
-        <img src={journey.imageUrl} alt={journey.destination} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-        <div className="absolute top-3 left-3">
+      <div className="relative h-44 bg-slate-900 overflow-hidden shrink-0">
+        <TripCoverVisual
+          journey={journey}
+          width={800}
+          height={448}
+          imgClassName="transition-transform duration-700 group-hover:scale-110"
+          creditPosition="top-right"
+        />
+        <div className="absolute top-3 left-3 z-10">
           <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${cfg.color}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${isTravelling ? 'animate-pulse' : ''}`} />
             {cfg.label}
           </span>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-3">
-          <p className="text-white/70 text-xs">{fmtDate(journey.startDate, { day: 'numeric', month: 'short' })} – {fmtDate(journey.endDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+        <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+          <p className="text-white/95 text-xs font-medium">{fmtDate(journey.startDate, { day: 'numeric', month: 'short' })} – {fmtDate(journey.endDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
         </div>
       </div>
 
@@ -339,9 +350,10 @@ function EmptyState({ filter, onPlan, onExplore }: { filter: FilterTab; onPlan: 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function MyTripsPage() {
-  const { journeys, journeysStatus, refreshJourneys, navigate } = useApp();
+  const { journeys, journeysStatus, refreshJourneys, updateJourneyCover, navigate } = useApp();
   const [filter, setFilter] = useState<FilterTab>('all');
   const [aiJourney, setAiJourney] = useState<Journey | null>(null);
+  const attemptedCoverIdsRef = useRef<Set<string>>(new Set());
 
   // Duplicates detection state
   const [dismissDuplicatesNotice, setDismissDuplicatesNotice] = useState(false);
@@ -428,6 +440,27 @@ export default function MyTripsPage() {
     if (filter === 'past') return pastStatuses.has(j.status);
     return true;
   });
+
+  useEffect(() => {
+    if (journeysStatus !== 'ready') return;
+    const visibleMap = new Map<string, Journey>();
+    if (featuredJourney) visibleMap.set(featuredJourney.id, featuredJourney);
+    if (planningJourney) visibleMap.set(planningJourney.id, planningJourney);
+    for (const j of filtered) visibleMap.set(j.id, j);
+
+    let cancelled = false;
+    backfillMissingTripCovers({
+      journeys: Array.from(visibleMap.values()),
+      attemptedIds: attemptedCoverIdsRef.current,
+      fetchCover: fetchTripCover,
+      onCoverResolved: (tripId, coverImage) => updateJourneyCover(tripId, coverImage),
+      concurrency: 3,
+      isCancelled: () => cancelled,
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [journeysStatus, filtered, featuredJourney, planningJourney, updateJourneyCover]);
 
   const handleClearPastTrips = async () => {
     setIsClearingPast(true);

@@ -3,10 +3,19 @@
  * Uses local calendar days and date-only string comparisons (never parses Date objects with new Date(string)).
  */
 
+function isActiveBookingEntry(b) {
+  if (!b) return false;
+  if (typeof b === 'string') return b.trim().length > 0;
+  if (typeof b === 'object') {
+    const status = typeof b.status === 'string' ? b.status.trim().toLowerCase() : '';
+    return status !== 'cancelled';
+  }
+  return false;
+}
+
 /**
- * Checks if a trip has any confirmed booking.
- * Currently checks real flight bookings (Duffel orders).
- * Single place to extend later for hotel/cab/rental/train bookings.
+ * Checks if a trip has any active (non-cancelled) flight or user-recorded booking.
+ * Cancelled bookings (flight or recorded) do NOT count.
  *
  * @param {Object} trip
  * @returns {boolean}
@@ -14,8 +23,10 @@
 export function tripHasBooking(trip) {
   if (!trip) return false;
   if (trip.hasBooking === true) return true;
-  if (Array.isArray(trip.bookings) && trip.bookings.length > 0) return true;
+  if (Array.isArray(trip.bookings) && trip.bookings.some(isActiveBookingEntry)) return true;
+  if (Array.isArray(trip.recordedBookings) && trip.recordedBookings.some(isActiveBookingEntry)) return true;
   if (typeof trip.bookingsCount === 'number' && trip.bookingsCount > 0) return true;
+  if (typeof trip.recordedBookingsCount === 'number' && trip.recordedBookingsCount > 0) return true;
   return false;
 }
 

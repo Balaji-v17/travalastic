@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../theme/tokens';
@@ -138,6 +140,34 @@ export default function SavedItinerariesScreen({ navigation }) {
                   onPress={() => handleTripPress(trip)}
                   activeOpacity={0.8}
                 >
+                  {trip.coverImage && trip.coverImage.url ? (
+                    <View style={styles.coverContainer}>
+                      <Image
+                        source={{ uri: trip.coverImage.url }}
+                        style={styles.coverImage}
+                        resizeMode="cover"
+                        accessibilityLabel={`${trip.destination || 'Destination'} photo`}
+                      />
+                      {trip.coverImage.photographer ? (
+                        <TouchableOpacity
+                          style={styles.creditPill}
+                          onPress={() => {
+                            const url =
+                              trip.coverImage.sourceUrl ||
+                              trip.coverImage.photographerUrl ||
+                              'https://www.pexels.com';
+                            Linking.openURL(url).catch(() => {});
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.creditText}>
+                            Photo: {trip.coverImage.photographer} / Pexels
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  <View style={styles.cardBody}>
                   <View style={styles.cardHeaderRow}>
                     <View style={styles.destinationBox}>
                       <Text style={styles.destinationTitle}>
@@ -184,6 +214,7 @@ export default function SavedItinerariesScreen({ navigation }) {
                       ) : null}
                     </View>
                   ) : null}
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -300,7 +331,7 @@ const styles = StyleSheet.create({
   tripCard: {
     backgroundColor: '#1A1A1A',
     borderRadius: 16,
-    padding: 18,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(247, 243, 234, 0.12)',
     shadowColor: '#000',
@@ -309,6 +340,33 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
     marginBottom: 12,
+  },
+  coverContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 140,
+    backgroundColor: '#111827',
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  creditPill: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  creditText: {
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  cardBody: {
+    padding: 18,
   },
   cardHeaderRow: {
     flexDirection: 'row',

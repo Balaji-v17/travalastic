@@ -45,8 +45,13 @@ const DETAIL_TABS: { id: DetailTab; label: string }[] = [
 // ─── Helpers ──────────────────────────────────────────────────
 function formatDate(iso: string | undefined): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const match = iso.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return iso;
+  const year = match[1];
+  const monthIdx = parseInt(match[2], 10) - 1;
+  const day = parseInt(match[3], 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${day} ${months[monthIdx] || ''} ${year}`;
 }
 
 function formatDateShort(iso: string | undefined): string {

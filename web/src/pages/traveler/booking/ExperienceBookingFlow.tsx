@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useApp } from '../../../store/AppContext';
 import { activities, currentTraveler, type ExperienceTimeSlot } from '../../../data/mockData';
+import CountStepper from '../../../components/common/CountStepper';
+import { EXPERIENCE_LIMITS } from '../../../lib/countLimits';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -468,35 +470,6 @@ export default function ExperienceBookingFlow() {
 
   // ── Step 2: Participants ──────────────────────────────────────────────────────
 
-  function Stepper({ label, sublabel, value, min, max, onChange }: {
-    label: string; sublabel: string; value: number; min: number; max: number;
-    onChange: (v: number) => void;
-  }) {
-    return (
-      <div className="flex items-center justify-between py-4 border-b border-slate-100 last:border-0">
-        <div>
-          <p className="font-medium text-slate-900 text-sm">{label}</p>
-          <p className="text-slate-500 text-xs mt-0.5">{sublabel}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onChange(Math.max(min, value - 1))}
-            className="w-9 h-9 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors text-lg font-light"
-          >
-            −
-          </button>
-          <span className="text-slate-900 font-semibold w-6 text-center">{value}</span>
-          <button
-            onClick={() => onChange(Math.min(max, value + 1))}
-            className="w-9 h-9 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
-          >
-            +
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   function renderParticipants() {
     const atMax = adults + children >= activity.maxParticipants;
     return (
@@ -504,25 +477,27 @@ export default function ExperienceBookingFlow() {
         <h2 className="font-display text-2xl text-slate-900 mb-1">{"Who's joining?"}</h2>
         <p className="text-slate-500 text-sm mb-6">Up to {activity.maxParticipants} participants per booking.</p>
 
-        <div className="bg-white border border-slate-200 rounded-2xl px-5 mb-6">
-          <Stepper
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 space-y-4">
+          <CountStepper
             label="Adults"
             sublabel={formatINR(activity.price) + ' per adult'}
             value={adults}
-            min={1}
-            max={activity.maxParticipants - children}
+            min={EXPERIENCE_LIMITS.minAdults}
+            max={Math.max(EXPERIENCE_LIMITS.minAdults, activity.maxParticipants - children)}
             onChange={setAdults}
+            variant="rounded"
           />
-          <Stepper
+          <CountStepper
             label="Children"
             sublabel={formatINR(childPrice) + ' per child'}
             value={children}
-            min={0}
-            max={activity.maxParticipants - adults}
+            min={EXPERIENCE_LIMITS.minChildren}
+            max={Math.max(EXPERIENCE_LIMITS.minChildren, activity.maxParticipants - adults)}
             onChange={setChildren}
+            variant="rounded"
           />
           {activity.minAge > 0 && (
-            <div className="py-3 text-xs text-slate-500 flex items-start gap-2">
+            <div className="pt-2 text-xs text-slate-500 flex items-start gap-2 border-t border-slate-100">
               <span>ℹ️</span>
               <span>Minimum age {activity.minAge} years. Infants must be held by an adult.</span>
             </div>

@@ -16,7 +16,7 @@ import SampleDataBanner from '../../components/common/SampleDataBanner';
 import SampleFlightDetailPage from './SampleFlightDetailPage';
 
 export function LiveFlightDetailPage({ offer }: { offer: FlightOffer }) {
-  const { navigate } = useApp();
+  const { navigate, openBook } = useApp();
   const [checkedAt] = useState(() => {
     const d = new Date();
     const h = String(d.getHours()).padStart(2, '0');
@@ -45,7 +45,7 @@ export function LiveFlightDetailPage({ offer }: { offer: FlightOffer }) {
         {/* Navigation back */}
         <div className="flex items-center justify-between">
           <button
-            onClick={() => navigate('search')}
+            onClick={() => openBook('flights')}
             className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#77736C] hover:text-[#111111] transition-colors"
           >
             <span>←</span> Back to Search
@@ -250,7 +250,7 @@ export function LiveFlightDetailPage({ offer }: { offer: FlightOffer }) {
           <div className="mt-6 pt-6 border-t border-[#E8E4DC] flex flex-col items-center gap-2">
             {expired ? (
               <button
-                onClick={() => navigate('search')}
+                onClick={() => openBook('flights')}
                 className="w-full sm:w-auto px-8 py-3 bg-[#111111] text-white text-sm font-semibold hover:bg-[#252525] transition-colors"
                 style={{ borderRadius: '2px' }}
               >
@@ -273,7 +273,7 @@ export function LiveFlightDetailPage({ offer }: { offer: FlightOffer }) {
 }
 
 export default function FlightDetailRouter() {
-  const { selectedOffer, selectedFlightId, navigate } = useApp();
+  const { selectedOffer, selectedFlightId, openBook } = useApp();
   const mockIds = flights.map((f) => f.id);
 
   const decision = flightDetailView({
@@ -311,7 +311,7 @@ export default function FlightDetailRouter() {
           We couldn't find that flight offer. Search again to see live fares.
         </p>
         <button
-          onClick={() => navigate('search')}
+          onClick={() => openBook('flights')}
           className="w-full py-3 bg-[#111111] text-white text-sm font-semibold hover:bg-[#252525] transition-colors"
           style={{ borderRadius: '2px' }}
         >

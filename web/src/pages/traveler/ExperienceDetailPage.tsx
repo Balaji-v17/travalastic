@@ -72,10 +72,10 @@ export default function ExperienceDetailPage() {
   const handleBack = () => {
     if (bookingFlow?.source === 'journey' && bookingFlow?.journeyId) {
       navigate('journey', { selectedJourneyId: bookingFlow.journeyId });
-    } else if (previousPage === 'search') {
-      navigate('search');
     } else if (activity.destination) {
       navigate('destination', { selectedDestinationId: activity.destination });
+    } else if (previousPage === 'search') {
+      navigate('explore');
     } else {
       navigateBack();
     }

@@ -9,11 +9,14 @@ import DisruptionReviewModal from '../../components/disruptions/DisruptionReview
 import SimulateDelayControl from '../../components/disruptions/SimulateDelayControl';
 import { tripStayDates } from '../../lib/stay';
 import ItineraryMap from '../../components/itinerary/ItineraryMap';
+import TripCoverVisual from '../../components/trips/TripCoverVisual';
 
-const statusConfig = {
+const statusConfig: Record<string, { label: string; color: string }> = {
   discovering: { label: 'Discovering', color: 'bg-slate-100 text-slate-600' },
   planning: { label: 'Planning', color: 'bg-blue-50 text-blue-700' },
   booked: { label: 'Booked', color: 'bg-violet-50 text-violet-700' },
+  upcoming: { label: 'Upcoming', color: 'bg-blue-50 text-blue-700' },
+  past: { label: 'Past', color: 'bg-slate-50 text-slate-500' },
   'pre-travel': { label: 'Pre-Travel', color: 'bg-amber-50 text-amber-700' },
   'in-travel': { label: 'Active Journey', color: 'bg-emerald-50 text-emerald-700' },
   completed: { label: 'Completed', color: 'bg-slate-50 text-slate-500' },
@@ -30,7 +33,7 @@ const typeIcons: Record<string, string> = {
 };
 
 export default function JourneyPage() {
-  const { journeys, journeysStatus, refreshJourneys, bookings, selectedJourneyId, navigate, navigateToHotel, navigateToExperience, navigateToFlight, openHotels, visaApplications } = useApp();
+  const { journeys, journeysStatus, refreshJourneys, bookings, selectedJourneyId, navigate, navigateToHotel, navigateToExperience, navigateToFlight, openHotels, openBook, visaApplications } = useApp();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'itinerary' | 'bookings' | 'documents' | 'expenses' | 'journey-ai'>('overview');
   const [showAI, setShowAI] = useState(false);
@@ -150,10 +153,9 @@ export default function JourneyPage() {
 
       {/* Header */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-6">
-        <div className="relative h-48 sm:h-56">
-          <img src={journey.imageUrl} alt={journey.destination} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-          <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
+        <div className="relative h-48 sm:h-56 bg-slate-900">
+          <TripCoverVisual journey={journey} width={1200} height={448} creditPosition="top-right" />
+          <div className="absolute bottom-0 left-0 right-0 p-5 text-white z-10">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusConf.color}`}>
                 {statusConf.label}
@@ -580,7 +582,7 @@ export default function JourneyPage() {
           {journeyBookings.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-slate-400 mb-4">No bookings yet</p>
-              <button onClick={() => navigate('search')} className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">Search & Book</button>
+              <button onClick={() => openBook('flights')} className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">Search & Book</button>
             </div>
           ) : (
             journeyBookings.map((b) => (

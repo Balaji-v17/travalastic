@@ -98,51 +98,148 @@ const FALLBACK_PEXELS_PHOTOS = {
   },
 };
 
+function derivePexelsSourceUrl(photoUrl) {
+  const match = String(photoUrl || '').match(/\/photos\/(\d+)\//);
+  return match ? `https://www.pexels.com/photo/${match[1]}/` : 'https://www.pexels.com';
+}
+
+export function getCuratedPhotoForDestination(name) {
+  const lowerKey = String(name || '').trim().toLowerCase();
+  const entry = FALLBACK_PEXELS_PHOTOS[lowerKey];
+  if (!entry) return null;
+  return {
+    photoUrl: entry.photoUrl,
+    thumbUrl: entry.photoUrl,
+    photographerName: entry.photographerName,
+    photographerUrl: entry.photographerUrl,
+    sourceUrl: derivePexelsSourceUrl(entry.photoUrl),
+    curated: true,
+  };
+}
+
+// Concurrency semaphore limiting in-flight Pexels HTTP requests to <= 3
+const MAX_CONCURRENT_PEXELS = 3;
+let activePexelsRequests = 0;
+const pexelsWaitQueue = [];
+
+function runWithPexelsConcurrency(fn) {
+  return new Promise((resolve, reject) => {
+    const start = () => {
+      activePexelsRequests++;
+      Promise.resolve()
+        .then(fn)
+        .then(resolve, reject)
+        .finally(() => {
+          activePexelsRequests--;
+          const next = pexelsWaitQueue.shift();
+          if (next) next();
+        });
+    };
+
+    if (activePexelsRequests < MAX_CONCURRENT_PEXELS) {
+      start();
+    } else {
+      pexelsWaitQueue.push(start);
+    }
+  });
+}
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Fetch a photo for a given destination name from Pexels API.
- * Calls GET https://api.pexels.com/v1/search?query=<name>&per_page=1
- * with header Authorization: <PEXELS_API_KEY>
+ * Enforces concurrency <= 3 and bounded exponential backoff on HTTP 429.
  *
  * @param {string} name - Destination query name (e.g. "Goa", "Jaipur")
- * @returns {Promise<{ photoUrl: string, photographerName: string, photographerUrl: string }>}
+ * @param {object} [options]
+ * @param {boolean} [options.fallback=true]
+ * @param {boolean} [options.preferCurated=false]
+ * @param {number} [options.maxRetries=2]
+ * @param {number} [options.baseBackoffMs=400]
+ * @param {Function} [options.sleepFn]
+ * @returns {Promise<{ photoUrl: string, thumbUrl?: string, photographerName: string, photographerUrl: string, sourceUrl?: string, curated?: boolean } | null>}
  */
-export async function getPhotoForDestination(name, { fallback = true } = {}) {
+export async function getPhotoForDestination(
+  name,
+  {
+    fallback = true,
+    preferCurated = false,
+    maxRetries = 2,
+    baseBackoffMs = 400,
+    sleepFn = defaultSleep,
+  } = {}
+) {
   const cleanName = (name || '').trim();
-  const lowerKey = cleanName.toLowerCase();
+  const curated = getCuratedPhotoForDestination(cleanName);
+  if (preferCurated && curated) {
+    return curated;
+  }
+
   const apiKey = process.env.PEXELS_API_KEY;
 
-  if (apiKey && apiKey !== 'your_pexels_api_key_here') {
-    try {
-      const endpoint = `https://api.pexels.com/v1/search?query=${encodeURIComponent(cleanName)}&per_page=1`;
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          Authorization: apiKey,
-          Accept: 'application/json',
-        },
-      });
+  if (cleanName && apiKey && apiKey !== 'your_pexels_api_key_here') {
+    const endpoint = `https://api.pexels.com/v1/search?query=${encodeURIComponent(cleanName)}&per_page=1`;
 
-      if (response.ok) {
-        const data = await response.json();
-        const firstPhoto = data?.photos?.[0];
-        if (firstPhoto) {
-          return {
-            photoUrl: firstPhoto.src?.medium || firstPhoto.src?.large || firstPhoto.src?.original,
-            photographerName: firstPhoto.photographer || 'Pexels Contributor',
-            photographerUrl: firstPhoto.photographer_url || 'https://www.pexels.com',
-          };
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await runWithPexelsConcurrency(() =>
+          fetch(endpoint, {
+            method: 'GET',
+            headers: {
+              Authorization: apiKey,
+              Accept: 'application/json',
+            },
+          })
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const firstPhoto = data?.photos?.[0];
+          const bestUrl =
+            firstPhoto?.src?.large2x ||
+            firstPhoto?.src?.large ||
+            firstPhoto?.src?.medium ||
+            firstPhoto?.src?.original;
+          const thumbUrl =
+            firstPhoto?.src?.medium ||
+            firstPhoto?.src?.large ||
+            firstPhoto?.src?.original;
+          if (firstPhoto && bestUrl) {
+            return {
+              photoUrl: bestUrl,
+              thumbUrl: thumbUrl || bestUrl,
+              photographerName: firstPhoto.photographer || 'Pexels Contributor',
+              photographerUrl: firstPhoto.photographer_url || 'https://www.pexels.com',
+              sourceUrl: firstPhoto.url || derivePexelsSourceUrl(bestUrl),
+              curated: false,
+            };
+          }
+          break; // 200 OK with empty photos -> do not retry
         }
-      } else {
+
+        if (response.status === 429 && attempt < maxRetries) {
+          const retryAfterHeader = response.headers?.get?.('retry-after');
+          const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+          const delayMs =
+            Number.isFinite(retryAfterSec) && retryAfterSec > 0
+              ? Math.min(2000, retryAfterSec * 1000)
+              : baseBackoffMs * Math.pow(2, attempt);
+          await sleepFn(delayMs);
+          continue;
+        }
+
         console.warn(`Pexels API response for "${cleanName}": ${response.status} ${response.statusText}`);
+        break;
+      } catch (err) {
+        console.error(`Error querying Pexels API for "${cleanName}":`, err.message);
+        break;
       }
-    } catch (err) {
-      console.error(`Error querying Pexels API for "${cleanName}":`, err.message);
     }
   }
 
   // Fallback to curated Pexels photo for this destination
-  if (FALLBACK_PEXELS_PHOTOS[lowerKey]) {
-    return FALLBACK_PEXELS_PHOTOS[lowerKey];
+  if (curated) {
+    return curated;
   }
 
   if (!fallback) {
@@ -152,12 +249,16 @@ export async function getPhotoForDestination(name, { fallback = true } = {}) {
   // Generic fallback if not in the curated dictionary
   return {
     photoUrl: 'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&h=350',
+    thumbUrl: 'https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&h=350',
     photographerName: 'Pexels Contributor',
     photographerUrl: 'https://www.pexels.com',
+    sourceUrl: 'https://www.pexels.com/photo/1007427/',
+    curated: false,
   };
 }
 
 export default {
   getPhotoForDestination,
+  getCuratedPhotoForDestination,
 };
 

@@ -197,6 +197,8 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
   let origDisruptionDeleteMany;
   let origBookingUpdateMany;
   let origBookingCountDocuments;
+  let origTripBookingUpdateMany;
+  let origTripBookingCountDocuments;
   let origGraphInvoke;
 
   beforeEach(() => {
@@ -220,6 +222,8 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
     origDisruptionDeleteMany = Disruption.deleteMany;
     origBookingUpdateMany = Booking.updateMany;
     origBookingCountDocuments = Booking.countDocuments;
+    origTripBookingUpdateMany = mongoose.model('TripBooking').updateMany;
+    origTripBookingCountDocuments = mongoose.model('TripBooking').countDocuments;
     origGraphInvoke = graph.invoke;
 
     User.findById = (id) => ({
@@ -245,6 +249,8 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
     Disruption.deleteMany = origDisruptionDeleteMany;
     Booking.updateMany = origBookingUpdateMany;
     Booking.countDocuments = origBookingCountDocuments;
+    mongoose.model('TripBooking').updateMany = origTripBookingUpdateMany;
+    mongoose.model('TripBooking').countDocuments = origTripBookingCountDocuments;
     graph.invoke = origGraphInvoke;
   });
 
@@ -387,6 +393,7 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
       });
 
       Booking.countDocuments = async () => 0;
+      mongoose.model('TripBooking').countDocuments = async () => 0;
 
       Itinerary.findOne = (query) => {
         if (query._id?.toString() === existingTripId.toString() && query.userId?.toString() === userAId.toString()) {
@@ -511,6 +518,7 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
       let expensesCleaned = false;
       let disruptionsCleaned = false;
       let bookingsDetached = false;
+      let tripBookingsDetached = false;
       let itineraryDeleted = false;
 
       Conversation.deleteMany = async (filter) => {
@@ -541,6 +549,13 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
         return { modifiedCount: 1 };
       };
 
+      mongoose.model('TripBooking').updateMany = async (filter, update) => {
+        if (filter.tripId?.toString() === tripId.toString() && update.$set?.tripId === null) {
+          tripBookingsDetached = true;
+        }
+        return { modifiedCount: 1 };
+      };
+
       Itinerary.deleteOne = async (filter) => {
         if (filter._id?.toString() === tripId.toString()) {
           itineraryDeleted = true;
@@ -562,6 +577,7 @@ describe('Itinerary Duplicate Checking & Deletion Routes', () => {
       assert.equal(expensesCleaned, true, 'Expenses must be deleted');
       assert.equal(disruptionsCleaned, true, 'Disruptions must be deleted');
       assert.equal(bookingsDetached, true, 'Bookings must be detached with itineraryId: null');
+      assert.equal(tripBookingsDetached, true, 'Recorded TripBookings must be detached with tripId: null');
       assert.equal(itineraryDeleted, true, 'Itinerary document must be deleted');
     });
   });

@@ -4,6 +4,7 @@ import graph from '../services/agents/graph.js';
 import authenticate from '../middleware/authenticate.js';
 import Itinerary, { findUserItinerary } from '../models/Itinerary.js';
 import Booking from '../models/Booking.js';
+import TripBooking from '../models/TripBooking.js';
 import Expense from '../models/Expense.js';
 import Conversation from '../models/Conversation.js';
 import Disruption from '../models/Disruption.js';
@@ -11,7 +12,23 @@ import { generatePackingList } from '../services/packingListService.js';
 import { calculateExpenseSplits } from '../services/expenseSplitting.js';
 import { searchPlaces } from '../services/placesService.js';
 import { normalizeDateString } from '../services/tripStatus.js';
+import { getCoverForDestination } from '../services/coverImageService.js';
 import { rateLimit } from 'express-rate-limit';
+
+export const coverService = {
+  getCoverForDestination,
+};
+
+export async function resolveCoverSafe(destination) {
+  if (!destination || typeof destination !== 'string' || !destination.trim()) {
+    return null;
+  }
+  try {
+    return (await coverService.getCoverForDestination(destination)) || null;
+  } catch {
+    return null;
+  }
+}
 import {
   fetch3HourForecast,
   computeRainBuckets,
@@ -202,6 +219,18 @@ router.post('/generate', authenticate, async (req, res, next) => {
 
     // 3. Generate plan via LangGraph planner
     const finalState = await graph.invoke({ rawRequest: rawRequest.trim() });
+    const resolvedDestination = finalState.destination || destination || '';
+
+    // Best-effort destination cover lookup (never blocks or fails trip creation)
+    const shouldFetchCover =
+      !existingTrip ||
+      !existingTrip.coverImage?.url ||
+      (resolvedDestination &&
+        existingTrip.destination &&
+        resolvedDestination.trim().toLowerCase() !== existingTrip.destination.trim().toLowerCase());
+    const resolvedCover = shouldFetchCover
+      ? await resolveCoverSafe(resolvedDestination)
+      : existingTrip.coverImage;
 
     // 4. If replacing an existing trip, snapshot for undo and update in place
     if (existingTrip) {
@@ -217,20 +246,23 @@ router.post('/generate', authenticate, async (req, res, next) => {
         previousPace: existingTrip.pace || 'balanced',
       });
 
+      const updateFields = {
+        rawRequest: rawRequest.trim(),
+        destination: finalState.destination,
+        startDate: finalState.startDate,
+        endDate: finalState.endDate,
+        budgetTier: finalState.budgetTier,
+        interests: finalState.interests,
+        days: finalState.itinerary || [],
+        grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+      };
+      if (resolvedCover) {
+        updateFields.coverImage = resolvedCover;
+      }
+
       await Itinerary.updateOne(
         { _id: existingTrip._id },
-        {
-          $set: {
-            rawRequest: rawRequest.trim(),
-            destination: finalState.destination,
-            startDate: finalState.startDate,
-            endDate: finalState.endDate,
-            budgetTier: finalState.budgetTier,
-            interests: finalState.interests,
-            days: finalState.itinerary || [],
-            grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
-          },
-        }
+        { $set: updateFields }
       );
 
       const reloaded = await Itinerary.findById(existingTrip._id);
@@ -239,6 +271,7 @@ router.post('/generate', authenticate, async (req, res, next) => {
         itineraryId: existingTrip._id,
         itinerary: finalState.itinerary,
         grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+        coverImage: reloaded?.coverImage || resolvedCover || null,
         replaced: true,
         undo: formatUndo(reloaded?.editHistory || updatedItinerary?.editHistory),
       });
@@ -255,12 +288,14 @@ router.post('/generate', authenticate, async (req, res, next) => {
       interests: finalState.interests,
       days: finalState.itinerary || [],
       grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+      coverImage: resolvedCover || null,
     });
 
     return res.status(200).json({
       itineraryId: newItinerary._id,
       itinerary: finalState.itinerary,
       grounding: finalState.grounding || { candidateCount: 0, sources: [], limited: false },
+      coverImage: newItinerary.coverImage || resolvedCover || null,
     });
   } catch (error) {
     next(error);
@@ -288,24 +323,48 @@ router.get(['/mine', '/'], authenticate, async (req, res, next) => {
 
     const itineraryIds = itineraries.map((it) => it._id);
 
-    const counts = await Booking.aggregate([
-      {
-        $match: {
-          itineraryId: { $in: itineraryIds },
+    const [counts, recordedCounts] = await Promise.all([
+      Booking.aggregate([
+        {
+          $match: {
+            itineraryId: { $in: itineraryIds },
+            status: { $ne: 'cancelled' },
+          },
         },
-      },
-      {
-        $group: {
-          _id: '$itineraryId',
-          count: { $sum: 1 },
+        {
+          $group: {
+            _id: '$itineraryId',
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
+      TripBooking.aggregate([
+        {
+          $match: {
+            tripId: { $in: itineraryIds },
+            status: { $ne: 'cancelled' },
+          },
+        },
+        {
+          $group: {
+            _id: '$tripId',
+            count: { $sum: 1 },
+          },
+        },
+      ]),
     ]);
 
     const countMap = new Map();
-    counts.forEach((c) => {
+    (counts || []).forEach((c) => {
       if (c._id) {
         countMap.set(c._id.toString(), c.count);
+      }
+    });
+
+    const recordedCountMap = new Map();
+    (recordedCounts || []).forEach((c) => {
+      if (c._id) {
+        recordedCountMap.set(c._id.toString(), c.count);
       }
     });
 
@@ -326,10 +385,12 @@ router.get(['/mine', '/'], authenticate, async (req, res, next) => {
         const numDays = Array.isArray(doc.days) && doc.days.length > 0 ? doc.days.length : 1;
         computedBudgetEstimate = numDays * rate;
       }
+      const idKey = doc._id.toString();
       return {
         ...doc,
         budgetEstimate: computedBudgetEstimate,
-        bookingsCount: countMap.get(doc._id.toString()) || 0,
+        bookingsCount: countMap.get(idKey) || 0,
+        recordedBookingsCount: recordedCountMap.get(idKey) || 0,
         undo: formatUndo(it.editHistory),
       };
     });
@@ -1706,9 +1767,16 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
       return res.status(409).json({ error: 'Concurrent edit or snapshot already undone' });
     }
 
-    const bookingsCount = await Booking.countDocuments({
-      itineraryId: updatedItinerary._id,
-    });
+    const [bookingsCount, recordedBookingsCount] = await Promise.all([
+      Booking.countDocuments({
+        itineraryId: updatedItinerary._id,
+        status: { $ne: 'cancelled' },
+      }),
+      TripBooking.countDocuments({
+        tripId: updatedItinerary._id,
+        status: { $ne: 'cancelled' },
+      }),
+    ]);
 
     const doc = updatedItinerary.toObject();
     delete doc.editHistory;
@@ -1733,6 +1801,7 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
       itineraryId: doc._id,
       itinerary: doc.days,
       bookingsCount,
+      recordedBookingsCount,
       budgetEstimate: computedBudgetEstimate,
       restoredDays: newestSnapshot.dayNumbers || [],
       undo: formatUndo(updatedItinerary.editHistory),
@@ -1747,7 +1816,7 @@ router.post(['/:id/undo', '/:itineraryId/undo'], authenticate, async (req, res, 
  * Protected by JWT authenticate middleware.
  * If the itinerary doesn't exist OR doesn't belong to req.userId,
  * returns a generic 404 to avoid leaking existence across users.
- * Returns itinerary details including bookingsCount, budgetEstimate, and undo summary.
+ * Returns itinerary details including bookingsCount, recordedBookingsCount, budgetEstimate, and undo summary.
  */
 router.get('/:itineraryId', authenticate, async (req, res, next) => {
   try {
@@ -1759,9 +1828,16 @@ router.get('/:itineraryId', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Itinerary not found' });
     }
 
-    const bookingsCount = await Booking.countDocuments({
-      itineraryId: itinerary._id,
-    });
+    const [bookingsCount, recordedBookingsCount] = await Promise.all([
+      Booking.countDocuments({
+        itineraryId: itinerary._id,
+        status: { $ne: 'cancelled' },
+      }),
+      TripBooking.countDocuments({
+        tripId: itinerary._id,
+        status: { $ne: 'cancelled' },
+      }),
+    ]);
 
     const doc = itinerary.toObject();
     delete doc.editHistory;
@@ -1786,6 +1862,7 @@ router.get('/:itineraryId', authenticate, async (req, res, next) => {
       itineraryId: doc._id,
       itinerary: doc.days,
       bookingsCount,
+      recordedBookingsCount,
       budgetEstimate: computedBudgetEstimate,
       undo: formatUndo(itinerary.editHistory),
     });
@@ -1938,8 +2015,9 @@ router.delete(['/:id', '/:itineraryId'], authenticate, async (req, res, next) =>
     await Conversation.deleteMany({ itineraryId: itinerary._id });
     await Expense.deleteMany({ itineraryId: itinerary._id });
     await Disruption.deleteMany({ itineraryId: itinerary._id });
-    // Detach bookings rather than cancelling real airline orders
+    // Detach flight bookings & user-recorded bookings rather than deleting records
     await Booking.updateMany({ itineraryId: itinerary._id }, { $set: { itineraryId: null } });
+    await TripBooking.updateMany({ tripId: itinerary._id }, { $set: { tripId: null } });
     // Delete itinerary document (contains days, packing list, travelers)
     await Itinerary.deleteOne({ _id: itinerary._id });
 
@@ -1947,6 +2025,34 @@ router.delete(['/:id', '/:itineraryId'], authenticate, async (req, res, next) =>
       message: 'Itinerary deleted successfully',
       deletedId: itinerary._id.toString(),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /itineraries/:id/cover (and /itinerary/:id/cover)
+ * Ownership-checked lazy backfill for missing destination cover photos.
+ * Reuses existing cover if already saved; otherwise calls non-blocking cover lookup.
+ */
+router.post('/:id/cover', authenticate, async (req, res, next) => {
+  try {
+    const itinerary = await findUserItinerary(req.params.id, req.userId);
+    if (!itinerary) {
+      return res.status(404).json({ error: 'Itinerary not found' });
+    }
+
+    if (itinerary.coverImage && itinerary.coverImage.url) {
+      return res.status(200).json({ coverImage: itinerary.coverImage, cached: true });
+    }
+
+    const cover = await resolveCoverSafe(itinerary.destination);
+    if (cover) {
+      itinerary.coverImage = cover;
+      await itinerary.save();
+    }
+
+    return res.status(200).json({ coverImage: cover || null });
   } catch (error) {
     next(error);
   }

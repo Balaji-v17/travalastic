@@ -78,6 +78,17 @@
           <li><strong>Retention & Deletion:</strong> Stored while your account exists. Deleted when you delete your account.</li>
         </ul>
 
+        <h3>2.6 User-Recorded Bookings (Hotels, Buses, Trains, Cabs & Car Rentals)</h3>
+        <ul>
+          <li>
+            <strong>Data fields:</strong> Booking category (hotel, bus, train, cab, or car rental), title, provider name, local dates/times, optional booking reference, optional amount and currency, status (booked or cancelled), optional plain-text notes, and optional linked trip ID stored in the <code>tripbookings</code> collection.
+          </li>
+          <li>
+            <strong>Purpose:</strong> Allowing you to keep a personal checklist of external reservations made on third-party sites alongside your Travalastic trips. Travalastic does not create or verify these external reservations.
+          </li>
+          <li><strong>Retention & Deletion:</strong> Stored until you delete the individual entry or delete your account (all recorded bookings are permanently deleted when your account is deleted).</li>
+        </ul>
+
         <p>
           <em>Public Destination Catalogs:</em> We also maintain curated reference databases of hotels (<code>curatedhotels</code>), transit routes (<code>curatedroutes</code>), tourist attractions (<code>touristplaces</code>), and destination search embeddings (<code>destinationcontents</code>). These contain publicly available travel information and no personal data.
         </p>

@@ -494,10 +494,11 @@ describe('Disruption Model & Pure Analysis Engine', () => {
       const Conversation = (await import('../src/models/Conversation.js')).default;
       const Expense = (await import('../src/models/Expense.js')).default;
       const Booking = (await import('../src/models/Booking.js')).default;
+      const TripBooking = (await import('../src/models/TripBooking.js')).default;
       const PackingTemplate = (await import('../src/models/PackingTemplate.js')).default;
       const User = (await import('../src/models/User.js')).default;
 
-      const models = [Itinerary, Conversation, Expense, Booking, PackingTemplate, Disruption, User];
+      const models = [Itinerary, Conversation, Expense, Booking, TripBooking, PackingTemplate, Disruption, User];
       const origMethods = models.map((m) => ({
         model: m,
         count: m.countDocuments,

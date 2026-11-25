@@ -11,11 +11,12 @@ import {
   isAffiliateUrl,
   type RentalInput,
 } from '../../lib/transportLinks';
+import { rememberExternalHandoff } from '../../lib/handoff';
 import type { PlaceResult } from '../../lib/destinationView';
 
 type CabDropoffMode = 'trip' | 'search' | 'manual';
 
-export default function GroundTransportPage() {
+export default function GroundTransportPage({ embeddedTab }: { embeddedTab?: 'cab' | 'rental' } = {}) {
   const {
     transportTab,
     setTransportTab,
@@ -25,7 +26,7 @@ export default function GroundTransportPage() {
   } = useApp();
   const { status } = useAuth();
 
-  const activeTab = transportTab || 'cab';
+  const activeTab = embeddedTab || transportTab || 'cab';
 
   // -------------------------------------------------------------
   // CAB STATE
@@ -268,55 +269,59 @@ export default function GroundTransportPage() {
     }
 
     setLastGeneratedRentalUrl(destinationUrl);
+    const providerLabel = destinationUrl.toLowerCase().includes('kayak') ? 'Kayak' : 'Rentalcars';
+    rememberExternalHandoff('car_rental', providerLabel);
     window.open(destinationUrl, '_blank', 'noopener,noreferrer');
   }
 
   const isAffiliate = isAffiliateUrl(lastGeneratedRentalUrl);
 
   return (
-    <div className="min-h-screen bg-[#FDFCF9] text-slate-900 pb-24">
+    <div className={embeddedTab ? 'text-slate-900' : 'min-h-screen bg-[#FDFCF9] text-slate-900 pb-24'}>
       {/* Page Header */}
-      <div className="bg-slate-950 text-white border-b border-white/10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-          <p className="text-xs uppercase tracking-widest font-semibold text-[#C9A96E] mb-2">
-            Seamless Connections
-          </p>
-          <h1 className="text-3xl sm:text-4xl font-serif font-bold tracking-tight text-white mb-3">
-            Ground Transport
-          </h1>
-          <p className="text-slate-300 text-sm sm:text-base max-w-2xl leading-relaxed">
-            Direct options for getting around. Rides and car rentals open directly with our trusted partner networks.
-          </p>
+      {!embeddedTab && (
+        <div className="bg-slate-950 text-white border-b border-white/10">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+            <p className="text-xs uppercase tracking-widest font-semibold text-[#C9A96E] mb-2">
+              Seamless Connections
+            </p>
+            <h1 className="text-3xl sm:text-4xl font-serif font-bold tracking-tight text-white mb-3">
+              Ground Transport
+            </h1>
+            <p className="text-slate-300 text-sm sm:text-base max-w-2xl leading-relaxed">
+              Direct options for getting around. Rides and car rentals open directly with our trusted partner networks.
+            </p>
 
-          {/* Tab Switcher */}
-          <div className="flex gap-2 mt-8 p-1 bg-white/10 rounded-xl max-w-xs">
-            <button
-              type="button"
-              onClick={() => setTransportTab('cab')}
-              className={`flex-1 py-2 px-4 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                activeTab === 'cab'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              Cab (Uber)
-            </button>
-            <button
-              type="button"
-              onClick={() => setTransportTab('rental')}
-              className={`flex-1 py-2 px-4 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                activeTab === 'rental'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              Car Rental
-            </button>
+            {/* Tab Switcher */}
+            <div className="flex gap-2 mt-8 p-1 bg-white/10 rounded-xl max-w-xs">
+              <button
+                type="button"
+                onClick={() => setTransportTab('cab')}
+                className={`flex-1 py-2 px-4 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  activeTab === 'cab'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Cab (Uber)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTransportTab('rental')}
+                className={`flex-1 py-2 px-4 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  activeTab === 'rental'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Car Rental
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-10">
+      <div className={embeddedTab ? '' : 'max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-10'}>
         {/* ========================================================= */}
         {/* CAB TAB */}
         {/* ========================================================= */}
@@ -544,6 +549,7 @@ export default function GroundTransportPage() {
                 href={uberUrl}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => rememberExternalHandoff('cab', 'Uber')}
                 className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-slate-950 text-white text-sm font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <span>Open Uber</span>

@@ -78,6 +78,7 @@ describe('JourneyAdjust End-to-End & Route Verification', () => {
     app.use(['/itinerary', '/itineraries'], itineraryRouter);
 
     Booking.countDocuments = () => Promise.resolve(0);
+    mongoose.model('TripBooking').countDocuments = () => Promise.resolve(0);
 
     User.findById = (id) => ({
       select: () => ({

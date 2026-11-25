@@ -104,6 +104,183 @@ export async function listBookings(
   }
 }
 
+export interface MergedBookingItem {
+  id: string;
+  kind: 'flight' | 'hotel' | 'bus' | 'train' | 'cab' | 'car_rental';
+  source: 'duffel' | 'recorded';
+  title: string;
+  subtitle: string;
+  provider: string;
+  startAt: string;
+  endAt: string;
+  status: 'booked' | 'cancelled';
+  rawStatus?: string;
+  reference: string;
+  amount: string;
+  currency: string;
+  notes: string;
+  tripId: string | null;
+  createdAt: string;
+  flight?: RawBooking;
+}
+
+export interface MergedBookingsResponse {
+  items: MergedBookingItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  counts: {
+    total: number;
+    byKind: {
+      flight: number;
+      hotel: number;
+      bus: number;
+      train: number;
+      cab: number;
+      car_rental: number;
+    };
+    byWhen: {
+      upcoming: number;
+      past: number;
+      cancelled: number;
+    };
+  };
+}
+
+export interface RecordedBookingPayload {
+  kind: 'hotel' | 'bus' | 'train' | 'cab' | 'car_rental';
+  title: string;
+  provider: string;
+  startAt: string;
+  endAt?: string;
+  reference?: string;
+  amount?: string;
+  currency?: string;
+  status?: 'booked' | 'cancelled';
+  notes?: string;
+  tripId?: string | null;
+}
+
+export async function listAllBookings(params: {
+  kind?: string;
+  when?: string;
+  page?: number;
+  limit?: number;
+  signal?: AbortSignal;
+} = {}): Promise<MergedBookingsResponse> {
+  try {
+    const qs = new URLSearchParams();
+    if (params.kind && params.kind !== 'all') qs.set('kind', params.kind);
+    if (params.when && params.when !== 'all') qs.set('when', params.when);
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    const queryStr = qs.toString();
+    const res = await apiFetch<MergedBookingsResponse>(
+      `/bookings/all${queryStr ? `?${queryStr}` : ''}`,
+      {
+        method: 'GET',
+        signal: params.signal,
+        timeoutMs: 15000,
+      }
+    );
+    return res;
+  } catch (err) {
+    throw normalizeBookingsError(err);
+  }
+}
+
+export async function listRecordedBookings(
+  options: { tripId?: string; signal?: AbortSignal } = {}
+): Promise<MergedBookingItem[]> {
+  try {
+    const qs = options.tripId ? `?tripId=${encodeURIComponent(options.tripId)}` : '';
+    const list = await apiFetch<MergedBookingItem[]>(`/bookings/recorded${qs}`, {
+      method: 'GET',
+      signal: options.signal,
+      timeoutMs: 15000,
+    });
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    throw normalizeBookingsError(err);
+  }
+}
+
+export async function createRecordedBooking(
+  payload: RecordedBookingPayload
+): Promise<MergedBookingItem> {
+  try {
+    return await apiFetch<MergedBookingItem>('/bookings/recorded', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeoutMs: 15000,
+    });
+  } catch (err) {
+    throw normalizeBookingsError(err);
+  }
+}
+
+export async function updateRecordedBooking(
+  id: string,
+  payload: Partial<RecordedBookingPayload>
+): Promise<MergedBookingItem> {
+  try {
+    return await apiFetch<MergedBookingItem>(`/bookings/recorded/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+      timeoutMs: 15000,
+    });
+  } catch (err) {
+    throw normalizeBookingsError(err);
+  }
+}
+
+export async function deleteRecordedBooking(id: string): Promise<{ deleted: boolean; id: string }> {
+  try {
+    return await apiFetch<{ deleted: boolean; id: string }>(
+      `/bookings/recorded/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+        timeoutMs: 15000,
+      }
+    );
+  } catch (err) {
+    throw normalizeBookingsError(err);
+  }
+}
+
+export interface CuratedRouteItem {
+  _id?: string;
+  mode: 'train' | 'bus';
+  origin: string;
+  destination: string;
+  approxDurationHours?: number;
+  frequency?: string;
+  note?: string;
+  name?: string;
+}
+
+export async function searchCuratedRoutes(params: {
+  mode: 'train' | 'bus';
+  origin: string;
+  destination: string;
+  signal?: AbortSignal;
+}): Promise<{ routes: CuratedRouteItem[]; bookingLinkUrl: string | null }> {
+  const qs = new URLSearchParams({
+    mode: params.mode,
+    origin: params.origin.trim(),
+    destination: params.destination.trim(),
+  });
+  return await apiFetch<{ routes: CuratedRouteItem[]; bookingLinkUrl: string | null }>(
+    `/routes/search?${qs.toString()}`,
+    {
+      method: 'GET',
+      signal: params.signal,
+      timeoutMs: 15000,
+    }
+  );
+}
+
 /**
  * Re-checks fresh status of a single booking from Duffel via GET /flights/bookings/:bookingId/status.
  * Confirms user ownership on the backend; returns 404 if booking is not owned by the caller.

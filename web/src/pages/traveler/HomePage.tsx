@@ -6,6 +6,13 @@ import { SHOW_SAMPLE_PAGES } from '../../config/features';
 import AirportInput from '../../components/flights/AirportInput';
 import { validateStay } from '../../lib/stay';
 import { STYLE_KEYS, STYLE_COLLECTIONS } from '../../data/styleCollections';
+import CountStepper from '../../components/common/CountStepper';
+import {
+  PASSENGER_LIMITS,
+  HOTEL_LIMITS,
+  PLANNER_LIMITS,
+  stepHotelGuestsAndRooms,
+} from '../../lib/countLimits';
 
 type SearchTab = 'flights' | 'hotels' | 'experiences' | 'journey';
 
@@ -36,7 +43,7 @@ function StyleItem({ label, onNavigate }: { label: string; onNavigate: () => voi
 }
 
 export default function HomePage() {
-  const { navigate, setSearchQuery, setPlannerDestination, journeys, navigateToPackage, openHotels, openStyle, openTransport } = useApp();
+  const { navigate, setSearchQuery, setPlannerDestination, journeys, navigateToPackage, openHotels, openBook, openStyle, openTransport, openGlobalSearch } = useApp();
 
   // Search state
   const [searchTab, setSearchTab] = useState<SearchTab>('journey');
@@ -50,6 +57,7 @@ export default function HomePage() {
   const [hotelCheckOut, setHotelCheckOut] = useState('');
   const [hotelGuests, setHotelGuests] = useState(2);
   const [hotelRooms, setHotelRooms] = useState(1);
+  const [hotelRoomsAdjusted, setHotelRoomsAdjusted] = useState(false);
   const [hotelError, setHotelError] = useState('');
   const [expDest, setExpDest] = useState('');
   const [expDate, setExpDate] = useState('');
@@ -99,7 +107,7 @@ export default function HomePage() {
   function handleFlightSearch() {
     setFlightError('');
     if (!flightFromIata && !flightToIata && !flightDep) {
-      navigate('search');
+      openBook('flights');
       return;
     }
     if (!flightFromIata) {
@@ -119,14 +127,12 @@ export default function HomePage() {
       return;
     }
 
-    setSearchQuery({
+    openBook('flights', {
       from: flightFromIata || undefined,
       destination: flightToIata || undefined,
       dates: flightDep || '',
-      type: 'flights',
       travelers: flightAdults,
     });
-    navigate('search');
   }
   function handleHotelSearch() {
     const val = validateStay(
@@ -155,8 +161,7 @@ export default function HomePage() {
     });
   }
   function handleExpSearch() {
-    setSearchQuery({ destination: expDest, dates: expDate, type: 'experiences', travelers: 2 });
-    navigate('search');
+    openGlobalSearch(expDest || '');
   }
   function handleJourneyBuild() {
     setPlannerDestination(journeyDest, '');
@@ -266,18 +271,21 @@ export default function HomePage() {
                     />
                   </div>
                   <div>
-                    <label className={labelCls}>Travelers</label>
-                    <select
-                      className={inputCls}
+                    <label htmlFor="home_flight_adults" className={labelCls}>Travelers</label>
+                    <CountStepper
+                      id="home_flight_adults"
+                      label="Travelers"
+                      unitLabel={flightAdults === 1 ? 'adult' : 'adults'}
                       value={flightAdults}
-                      onChange={(e) => setFlightAdults(parseInt(e.target.value, 10))}
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                        <option key={n} value={n}>
-                          {n} adult{n > 1 ? 's' : ''}
-                        </option>
-                      ))}
-                    </select>
+                      min={PASSENGER_LIMITS.minAdults}
+                      max={PASSENGER_LIMITS.maxTotal}
+                      onChange={setFlightAdults}
+                      helperText={
+                        flightAdults >= PASSENGER_LIMITS.maxTotal
+                          ? PASSENGER_LIMITS.capHelperText
+                          : undefined
+                      }
+                    />
                   </div>
                 </div>
 
@@ -344,38 +352,57 @@ export default function HomePage() {
                     />
                   </div>
                   <div>
-                    <label className={labelCls}>Guests & Rooms</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        className={inputCls}
+                    <span className={labelCls}>Guests &amp; Rooms</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <CountStepper
+                        id="home_hotel_guests"
+                        label="Guests"
+                        unitLabel={hotelGuests === 1 ? 'guest' : 'guests'}
                         value={hotelGuests}
-                        onChange={(e) => {
-                          const g = parseInt(e.target.value, 10);
-                          setHotelGuests(g);
-                          if (hotelRooms > g) setHotelRooms(g);
+                        min={HOTEL_LIMITS.minGuests}
+                        max={HOTEL_LIMITS.maxGuests}
+                        onChange={(nextGuests) => {
+                          const res = stepHotelGuestsAndRooms(
+                            { guests: hotelGuests, rooms: hotelRooms },
+                            'guests',
+                            nextGuests - hotelGuests
+                          );
+                          setHotelGuests(res.guests);
+                          setHotelRooms(res.rooms);
+                          setHotelRoomsAdjusted(res.roomsAdjusted);
                           if (hotelError) setHotelError('');
                         }}
-                      >
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                          <option key={n} value={n}>
-                            {n} {n === 1 ? 'Guest' : 'Guests'}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        className={inputCls}
+                        helperText={
+                          hotelGuests >= HOTEL_LIMITS.maxGuests
+                            ? HOTEL_LIMITS.guestsCapHelperText
+                            : undefined
+                        }
+                      />
+                      <CountStepper
+                        id="home_hotel_rooms"
+                        label="Rooms"
+                        unitLabel={hotelRooms === 1 ? 'room' : 'rooms'}
                         value={hotelRooms}
-                        onChange={(e) => {
-                          setHotelRooms(parseInt(e.target.value, 10));
+                        min={HOTEL_LIMITS.minRooms}
+                        max={Math.min(HOTEL_LIMITS.maxRooms, hotelGuests)}
+                        onChange={(nextRooms) => {
+                          const res = stepHotelGuestsAndRooms(
+                            { guests: hotelGuests, rooms: hotelRooms },
+                            'rooms',
+                            nextRooms - hotelRooms
+                          );
+                          setHotelRooms(res.rooms);
+                          setHotelRoomsAdjusted(false);
                           if (hotelError) setHotelError('');
                         }}
-                      >
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <option key={n} value={n} disabled={n > hotelGuests}>
-                            {n} {n === 1 ? 'Room' : 'Rooms'}
-                          </option>
-                        ))}
-                      </select>
+                        helperText={
+                          hotelRooms >= HOTEL_LIMITS.maxRooms
+                            ? HOTEL_LIMITS.roomsCapHelperText
+                            : hotelRoomsAdjusted
+                              ? HOTEL_LIMITS.roomsAdjustedNote
+                              : undefined
+                        }
+                      />
                     </div>
                   </div>
                 </div>
@@ -445,12 +472,21 @@ export default function HomePage() {
                     <input className={inputCls} value={journeyWhen} onChange={(e) => setJourneyWhen(e.target.value)} placeholder="Month & year" />
                   </div>
                   <div>
-                    <label className={labelCls}>Travelers</label>
-                    <div className="flex items-center gap-3 border-b border-[#E8E4DC] py-2.5">
-                      <button onClick={() => setJourneyTravelers(Math.max(1, journeyTravelers - 1))} className="text-[#77736C] hover:text-[#252525] text-base leading-none">−</button>
-                      <span className="text-sm text-[#252525]">{journeyTravelers}</span>
-                      <button onClick={() => setJourneyTravelers(journeyTravelers + 1)} className="text-[#77736C] hover:text-[#252525] text-base leading-none">+</button>
-                    </div>
+                    <label htmlFor="home_journey_travelers" className={labelCls}>Travelers</label>
+                    <CountStepper
+                      id="home_journey_travelers"
+                      label="Travelers"
+                      unitLabel={journeyTravelers === 1 ? 'traveler' : 'travelers'}
+                      value={journeyTravelers}
+                      min={PLANNER_LIMITS.minTravelers}
+                      max={PLANNER_LIMITS.maxTravelers}
+                      onChange={setJourneyTravelers}
+                      helperText={
+                        journeyTravelers >= PLANNER_LIMITS.maxTravelers
+                          ? PLANNER_LIMITS.capHelperText
+                          : undefined
+                      }
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>Budget</label>
@@ -937,17 +973,17 @@ export default function HomePage() {
             <div className="lg:col-span-8">
               <div className="grid sm:grid-cols-2 gap-0">
                 {[
-                  { num: '01', title: 'Flights', desc: 'Global inventory. Economy through First Class. Multi-city and open-jaw routing.', action: () => { setSearchQuery({ type: 'flights', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
-                  { num: '02', title: 'Hotels', desc: 'Independent properties, boutique stays and global chains. Curated by destination.', action: () => openHotels() },
+                  { num: '01', title: 'Flights', desc: 'Global inventory. Economy through First Class. Multi-city and open-jaw routing.', action: () => openBook('flights') },
+                  { num: '02', title: 'Hotels', desc: 'Independent properties, boutique stays and global chains. Curated by destination.', action: () => openBook('hotels') },
                   ...(SHOW_SAMPLE_PAGES
                     ? [
-                        { num: '03', title: 'Experiences', desc: 'Private tours, cultural immersions, culinary journeys and adventure activities.', action: () => { setSearchQuery({ type: 'experiences', travelers: 2, dates: '', destination: '' }); navigate('search'); } },
-                        { num: '04', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openTransport('cab') },
+                        { num: '03', title: 'Experiences', desc: 'Private tours, cultural immersions, culinary journeys and adventure activities.', action: () => openGlobalSearch('') },
+                        { num: '04', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openBook('cab') },
                         { num: '05', title: 'Visa', desc: 'Eligibility checks, document guidance and application support for 190+ countries.', action: () => navigate('visa-center') },
                         { num: '06', title: 'Journey AI', desc: 'Intelligent trip planning. One conversation. A complete itinerary built for you.', action: () => navigate('ai-planner') },
                       ]
                     : [
-                        { num: '03', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openTransport('cab') },
+                        { num: '03', title: 'Transfers', desc: 'Airport pickups and local ground transport via Uber.', action: () => openBook('cab') },
                         { num: '04', title: 'Journey AI', desc: 'Intelligent trip planning. One conversation. A complete itinerary built for you.', action: () => navigate('ai-planner') },
                       ]),
                 ].map((item, idx, arr) => (

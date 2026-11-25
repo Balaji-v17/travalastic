@@ -8,6 +8,8 @@ import authenticate from '../middleware/authenticate.js';
 
 const router = express.Router();
 
+export const MAX_FLIGHT_PASSENGERS = 9;
+
 let regionNames;
 try {
   regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -137,13 +139,18 @@ router.post('/search', async (req, res, next) => {
       });
     }
 
-    // Validate passengers (count of adults)
+    // Validate passengers (count of adults, capped at Duffel/airline max of 9)
     let adultCount = 1;
     if (passengers != null) {
       const parsed = parseInt(passengers, 10);
       if (isNaN(parsed) || parsed < 1) {
         return res.status(400).json({
           error: 'passengers must be a positive integer',
+        });
+      }
+      if (parsed > MAX_FLIGHT_PASSENGERS) {
+        return res.status(400).json({
+          error: `Airlines allow up to ${MAX_FLIGHT_PASSENGERS} passengers per booking.`,
         });
       }
       adultCount = parsed;
@@ -386,6 +393,12 @@ router.post('/book', async (req, res, next) => {
 
   if (!Array.isArray(passengers) || passengers.length === 0) {
     return res.status(400).json({ error: 'passengers must be a non-empty array of travelers' });
+  }
+
+  if (passengers.length > MAX_FLIGHT_PASSENGERS) {
+    return res.status(400).json({
+      error: `Airlines allow up to ${MAX_FLIGHT_PASSENGERS} passengers per booking.`,
+    });
   }
 
   // Validate passenger fields

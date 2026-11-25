@@ -1,10 +1,18 @@
-import type { Journey } from '../data/mockData.ts';
+import type { Journey, TripCoverImage } from '../data/mockData.ts';
 import type { BackendDayPlan } from './itineraryApi.ts';
 import { backendDaysToItineraryDays } from './itineraryAdapter.ts';
-import { tripStatus, type TripStatus, normalizeDateString, getLocalDateString } from './tripStatus.ts';
+import { tripHasBooking, tripStatus, type TripStatus, normalizeDateString, getLocalDateString } from './tripStatus.ts';
 
 export const NEUTRAL_PLACEHOLDER_IMAGE =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23g)"/><circle cx="400" cy="250" r="160" fill="%23334155" opacity="0.2"/></svg>';
+
+export function hasRealCoverImage(journey: { coverImage?: TripCoverImage | null; imageUrl?: string }): boolean {
+  if (journey?.coverImage?.url && typeof journey.coverImage.url === 'string' && journey.coverImage.url.trim()) {
+    return true;
+  }
+  const url = typeof journey?.imageUrl === 'string' ? journey.imageUrl.trim() : '';
+  return Boolean(url && url !== NEUTRAL_PLACEHOLDER_IMAGE && !url.startsWith('data:image/svg+xml'));
+}
 
 export interface BackendSavedItinerary {
   _id?: string;
@@ -23,10 +31,12 @@ export interface BackendSavedItinerary {
   travelers?: Array<{ name?: string }> | number;
   days?: BackendDayPlan[];
   itinerary?: BackendDayPlan[];
+  coverImage?: TripCoverImage | null;
   imageUrl?: string;
   image?: string;
   destinationImage?: string;
   bookingsCount?: number;
+  recordedBookingsCount?: number;
 }
 
 export interface BackendBooking {
@@ -89,7 +99,8 @@ export function deriveStatus(
 export function toJourney(
   savedItinerary: BackendSavedItinerary,
   matchingBookings: (string | BackendBooking)[] = [],
-  signedInUserId: string = ''
+  signedInUserId: string = '',
+  matchingRecordedBookings: Array<{ status?: string }> = []
 ): Journey {
   const id = String(savedItinerary._id || savedItinerary.id || savedItinerary.itineraryId || '');
   const travelerId = signedInUserId || String(savedItinerary.userId || '');
@@ -115,9 +126,12 @@ export function toJourney(
     .map((b) => String(b._id || b.id || ''))
     .filter(Boolean);
 
-  const hasBooking =
-    bookingIds.length > 0 ||
-    (typeof savedItinerary.bookingsCount === 'number' && savedItinerary.bookingsCount > 0);
+  const hasBooking = tripHasBooking({
+    bookings: normalizedBookings,
+    recordedBookings: matchingRecordedBookings,
+    bookingsCount: savedItinerary.bookingsCount,
+    recordedBookingsCount: savedItinerary.recordedBookingsCount,
+  });
 
   const status = tripStatus({
     startDate,
@@ -135,8 +149,25 @@ export function toJourney(
       ? savedItinerary.totalBudget
       : undefined;
 
+  const rawCover = savedItinerary.coverImage;
+  const coverUrl =
+    rawCover && typeof rawCover.url === 'string' && rawCover.url.trim()
+      ? rawCover.url.trim()
+      : '';
+  const coverImage: TripCoverImage | null = coverUrl
+    ? {
+        url: coverUrl,
+        thumbUrl: rawCover?.thumbUrl ? String(rawCover.thumbUrl).trim() : coverUrl,
+        photographer: rawCover?.photographer ? String(rawCover.photographer).trim() : null,
+        photographerUrl: rawCover?.photographerUrl ? String(rawCover.photographerUrl).trim() : null,
+        sourceUrl: rawCover?.sourceUrl ? String(rawCover.sourceUrl).trim() : null,
+        source: rawCover?.source || 'pexels',
+        fetchedAt: rawCover?.fetchedAt ? String(rawCover.fetchedAt) : null,
+      }
+    : null;
+
   const rawImage =
-    savedItinerary.imageUrl || savedItinerary.image || savedItinerary.destinationImage;
+    coverUrl || savedItinerary.imageUrl || savedItinerary.image || savedItinerary.destinationImage;
   const imageUrl =
     rawImage && typeof rawImage === 'string' && rawImage.trim()
       ? rawImage.trim()
@@ -157,6 +188,7 @@ export function toJourney(
     totalSpend: 0,
     currency: savedItinerary.currency || 'INR',
     imageUrl,
+    coverImage,
     itinerary,
     notifications: [],
     disruptions: [],

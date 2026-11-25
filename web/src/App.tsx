@@ -16,21 +16,22 @@ import ProfilePage from './pages/traveler/ProfilePage';
 import DealsPage from './pages/traveler/DealsPage';
 import VisaCenterPage from './pages/traveler/VisaCenterPage';
 import MyBookingsPage from './pages/traveler/MyBookingsPage';
+import BookPage from './pages/traveler/BookPage';
 import JourneysPage from './pages/traveler/JourneysPage';
 import PackageDetailPage from './pages/traveler/PackageDetailPage';
 import HotelDetailPage from './pages/traveler/HotelDetailPage';
 import ExperienceDetailPage from './pages/traveler/ExperienceDetailPage';
 import FlightDetailPage from './pages/traveler/FlightDetailPage';
 import FlightBookingRouter from './pages/traveler/FlightBookingPage';
-import HotelsPage from './pages/traveler/HotelsPage';
 import AuthPage from './pages/traveler/AuthPage';
 import PrivacyPage from './pages/legal/PrivacyPage';
 import DeleteAccountPage from './pages/legal/DeleteAccountPage';
 import StyleCollectionPage from './pages/traveler/StyleCollectionPage';
-import GroundTransportPage from './pages/traveler/GroundTransportPage';
 
 import TravelAssistantFab from './components/chat/TravelAssistantFab';
 import TravelAssistantPanel from './components/chat/TravelAssistantPanel';
+import GlobalSearchOverlay from './components/layout/GlobalSearchOverlay';
+import ExternalHandoffBanner from './components/booking/ExternalHandoffBanner';
 import SampleDataBanner from './components/common/SampleDataBanner';
 import { SHOW_SAMPLE_PAGES } from './config/features';
 import { isPageAvailable, resolvePage, PAGE_STATUS } from './lib/pageStatus';
@@ -83,6 +84,7 @@ function Router() {
       case 'home':              return <HomePage />;
       case 'explore':           return <ExplorePage />;
       case 'search':            return <SearchPage />;
+      case 'book':              return <BookPage />;
       case 'destination':       return <DestinationRouter />;
       case 'hotel-detail':      return <HotelDetailPage />;
       case 'experience-detail': return <ExperienceDetailPage />;
@@ -97,14 +99,12 @@ function Router() {
       case 'deals':             return <DealsPage />;
       case 'visa-center':       return <VisaCenterPage />;
       case 'my-bookings':       return <MyBookingsPage />;
-      case 'hotels':            return <HotelsPage />;
       case 'journeys':          return <JourneysPage />;
       case 'package-detail':    return <PackageDetailPage />;
       case 'auth':              return <AuthPage />;
       case 'privacy':           return <PrivacyPage />;
       case 'delete-account':    return <DeleteAccountPage />;
       case 'style-collection':  return <StyleCollectionPage />;
-      case 'ground-transport':  return <GroundTransportPage />;
       default:                  return <HomePage />;
     }
   };
@@ -119,6 +119,8 @@ function Router() {
         {renderPage()}
       </main>
       {showFooter && <Footer />}
+      <ExternalHandoffBanner />
+      <GlobalSearchOverlay />
       <TravelAssistantFab />
       <TravelAssistantPanel />
     </div>

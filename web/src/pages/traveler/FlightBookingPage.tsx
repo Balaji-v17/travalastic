@@ -33,7 +33,7 @@ const GENDERS: { id: Gender; label: string }[] = [
 ];
 
 export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
-  const { navigate, searchQuery, journeys } = useApp();
+  const { navigate, openBook, searchQuery, journeys } = useApp();
   const { user } = useAuth();
 
   const adultCount = Math.max(1, searchQuery.travelers || 1);
@@ -168,7 +168,7 @@ export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
             This fare needs travel document details, which aren't supported on the web yet. Book in the mobile app or choose another fare.
           </p>
           <button
-            onClick={() => navigate('search')}
+            onClick={() => openBook('flights')}
             className="px-6 py-2.5 bg-[#111111] text-white text-sm font-semibold hover:bg-[#252525] transition-colors"
             style={{ borderRadius: '2px' }}
           >
@@ -345,7 +345,7 @@ export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
               View my trips
             </button>
             <button
-              onClick={() => navigate('search')}
+              onClick={() => openBook('flights')}
               className="px-6 py-3 bg-white border border-[#E8E4DC] text-sm font-semibold text-[#111111] hover:bg-[#FAFAF8] transition-colors text-center"
               style={{ borderRadius: '2px' }}
             >
@@ -424,7 +424,7 @@ export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
               </button>
             ) : (
               <button
-                onClick={() => navigate('search')}
+                onClick={() => openBook('flights')}
                 className="px-6 py-3 bg-white border border-[#E8E4DC] text-sm font-semibold text-[#111111] hover:bg-[#FAFAF8] transition-colors"
                 style={{ borderRadius: '2px' }}
               >
@@ -985,7 +985,7 @@ export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
                 Back to edit details
               </button>
               <button
-                onClick={() => navigate('search')}
+                onClick={() => openBook('flights')}
                 className="px-6 py-2.5 bg-[#111111] text-white text-xs font-semibold hover:bg-[#252525] transition-colors"
                 style={{ borderRadius: '2px' }}
               >
@@ -1000,7 +1000,7 @@ export function LiveFlightBookingPage({ offer }: { offer: FlightOffer }) {
 }
 
 export default function FlightBookingRouter() {
-  const { selectedOffer, selectedFlightId, bookingFlow, navigate } = useApp();
+  const { selectedOffer, selectedFlightId, bookingFlow, openBook } = useApp();
 
   // If live Duffel offer is selected
   if (selectedOffer) {
@@ -1027,7 +1027,7 @@ export default function FlightBookingRouter() {
         Your booking session may have refreshed or expired. Please search for flights to start a booking.
       </p>
       <button
-        onClick={() => navigate('search')}
+        onClick={() => openBook('flights')}
         className="px-6 py-2.5 bg-[#111111] text-white text-xs font-semibold hover:bg-[#252525] transition-colors"
         style={{ borderRadius: '2px' }}
       >

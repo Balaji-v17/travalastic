@@ -223,7 +223,7 @@ function PriceSummary({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function FlightBookingFlow() {
-  const { bookingFlow, confirmBooking, navigate, updateItineraryItemStatus, journeys } = useApp();
+  const { bookingFlow, confirmBooking, navigate, openBook, updateItineraryItemStatus, journeys } = useApp();
 
   // Resolve flight
   const flightOrNull: Flight | undefined = useMemo(() => {
@@ -1537,7 +1537,7 @@ export default function FlightBookingFlow() {
       <div className="sticky top-0 z-30 bg-white border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <button
-            onClick={() => step === 0 ? navigate('search') : goBack()}
+            onClick={() => step === 0 ? openBook('flights') : goBack()}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
           >
             ←

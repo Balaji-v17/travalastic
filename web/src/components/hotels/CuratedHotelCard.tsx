@@ -1,3 +1,5 @@
+import { rememberExternalHandoff } from '../../lib/handoff';
+
 export interface CuratedHotelItem {
   _id?: string;
   id?: string;
@@ -129,6 +131,7 @@ export default function CuratedHotelCard({ hotel, bookingUrl }: CuratedHotelCard
           href={effectiveUrl}
           target="_blank"
           rel={isAffiliate ? 'noopener noreferrer sponsored' : 'noopener noreferrer'}
+          onClick={() => rememberExternalHandoff('hotel', 'Booking.com')}
           className="mt-4 block text-center py-2.5 px-3 bg-[#111111] text-white text-xs font-semibold hover:bg-[#252525] transition-colors focus:outline-none focus:ring-1 focus:ring-[#C9A96E]"
           style={{ borderRadius: '2px' }}
         >

@@ -115,7 +115,8 @@ describe('accountDeletion - PackingTemplate removal verification', () => {
 
     // Stub all models called by countUserData and deleteUserAndData
     const Disruption = (await import('../src/models/Disruption.js')).default;
-    const models = [Itinerary, Conversation, Expense, Booking, PackingTemplate, Disruption, User];
+    const TripBooking = (await import('../src/models/TripBooking.js')).default;
+    const models = [Itinerary, Conversation, Expense, Booking, TripBooking, PackingTemplate, Disruption, User];
     const origMethods = models.map((m) => ({
       model: m,
       count: m.countDocuments,

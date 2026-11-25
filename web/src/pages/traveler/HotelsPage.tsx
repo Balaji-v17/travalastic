@@ -3,6 +3,9 @@ import { useApp } from '../../store/AppContext';
 import { listCuratedHotels, type CuratedHotelItem } from '../../lib/hotelsApi';
 import CuratedHotelCard, { isAffiliateUrl } from '../../components/hotels/CuratedHotelCard';
 import { validateStay, buildBookingUrl } from '../../lib/stay';
+import { rememberExternalHandoff } from '../../lib/handoff';
+import CountStepper from '../../components/common/CountStepper';
+import { HOTEL_LIMITS, stepHotelGuestsAndRooms } from '../../lib/countLimits';
 
 function getTodayLocalDate(): string {
   const d = new Date();
@@ -31,7 +34,7 @@ function getDefaultDates(): { checkIn: string; checkOut: string } {
   };
 }
 
-export default function HotelsPage() {
+export default function HotelsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { hotelsQuery, setHotelsQuery } = useApp();
 
   const today = getTodayLocalDate();
@@ -43,6 +46,7 @@ export default function HotelsPage() {
   const [checkOut, setCheckOut] = useState<string>(() => hotelsQuery?.checkOut || defaultDates.checkOut);
   const [guests, setGuests] = useState<number>(() => hotelsQuery?.guests || 2);
   const [rooms, setRooms] = useState<number>(() => hotelsQuery?.rooms || 1);
+  const [roomsAdjusted, setRoomsAdjusted] = useState<boolean>(false);
 
   // Search execution & results state
   const [searchedDest, setSearchedDest] = useState<string>('');
@@ -150,24 +154,26 @@ export default function HotelsPage() {
   const isAffiliate = isAffiliateUrl(effectiveBookingUrl);
 
   return (
-    <div className="min-h-screen bg-[#FDFCFB] text-[#111111]">
+    <div className={embedded ? 'text-[#111111]' : 'min-h-screen bg-[#FDFCFB] text-[#111111]'}>
       {/* ── Page Header ── */}
-      <section className="border-b border-[#E8E4DC] bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-          <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[#C9A96E] mb-2">
-            Accommodations
-          </p>
-          <h1 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-normal text-[#111111] tracking-tight">
-            Curated Hotels & Stays
-          </h1>
-          <p className="text-sm text-[#77736C] mt-2 max-w-2xl">
-            Browse hand-picked stays vetted for character and quality, or check real-time availability and book directly on Booking.com.
-          </p>
-        </div>
-      </section>
+      {!embedded && (
+        <section className="border-b border-[#E8E4DC] bg-white">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[#C9A96E] mb-2">
+              Accommodations
+            </p>
+            <h1 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-normal text-[#111111] tracking-tight">
+              Curated Hotels & Stays
+            </h1>
+            <p className="text-sm text-[#77736C] mt-2 max-w-2xl">
+              Browse hand-picked stays vetted for character and quality, or check real-time availability and book directly on Booking.com.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* ── Search Form Section ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <section className={embedded ? '' : 'max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8'}>
         <div
           className="bg-white border border-[#E8E4DC] p-5 sm:p-7 shadow-[0_4px_20px_rgba(0,0,0,0.03)]"
           style={{ borderRadius: '2px' }}
@@ -271,44 +277,63 @@ export default function HotelsPage() {
               </div>
 
               {/* Guests & Rooms */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-[#111111] mb-1">
-                    Guests
-                  </label>
-                  <select
-                    value={guests}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setGuests(val);
-                      if (rooms > val) setRooms(val);
-                    }}
-                    className="w-full px-2 py-2.5 text-sm border border-[#E8E4DC] bg-[#FAFAF8] text-[#111111] focus:bg-white focus:outline-none focus:border-[#C9A96E]"
-                    style={{ borderRadius: '2px' }}
-                  >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                      <option key={n} value={n}>
-                        {n} {n === 1 ? 'Guest' : 'Guests'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#111111] mb-1">
-                    Rooms
-                  </label>
-                  <select
-                    value={rooms}
-                    onChange={(e) => setRooms(parseInt(e.target.value, 10))}
-                    className="w-full px-2 py-2.5 text-sm border border-[#E8E4DC] bg-[#FAFAF8] text-[#111111] focus:bg-white focus:outline-none focus:border-[#C9A96E]"
-                    style={{ borderRadius: '2px' }}
-                  >
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n} disabled={n > guests}>
-                        {n} {n === 1 ? 'Room' : 'Rooms'}
-                      </option>
-                    ))}
-                  </select>
+              <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="hotels_guests_stepper" className="block text-xs font-semibold text-[#111111] mb-1">
+                      Guests
+                    </label>
+                    <CountStepper
+                      id="hotels_guests_stepper"
+                      label="Guests"
+                      value={guests}
+                      min={HOTEL_LIMITS.minGuests}
+                      max={HOTEL_LIMITS.maxGuests}
+                      onChange={(nextGuests) => {
+                        const res = stepHotelGuestsAndRooms(
+                          { guests, rooms },
+                          'guests',
+                          nextGuests - guests
+                        );
+                        setGuests(res.guests);
+                        setRooms(res.rooms);
+                        setRoomsAdjusted(res.roomsAdjusted);
+                      }}
+                      helperText={
+                        guests >= HOTEL_LIMITS.maxGuests
+                          ? HOTEL_LIMITS.guestsCapHelperText
+                          : undefined
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="hotels_rooms_stepper" className="block text-xs font-semibold text-[#111111] mb-1">
+                      Rooms
+                    </label>
+                    <CountStepper
+                      id="hotels_rooms_stepper"
+                      label="Rooms"
+                      value={rooms}
+                      min={HOTEL_LIMITS.minRooms}
+                      max={Math.min(HOTEL_LIMITS.maxRooms, guests)}
+                      onChange={(nextRooms) => {
+                        const res = stepHotelGuestsAndRooms(
+                          { guests, rooms },
+                          'rooms',
+                          nextRooms - rooms
+                        );
+                        setRooms(res.rooms);
+                        setRoomsAdjusted(false);
+                      }}
+                      helperText={
+                        rooms >= HOTEL_LIMITS.maxRooms
+                          ? HOTEL_LIMITS.roomsCapHelperText
+                          : roomsAdjusted
+                            ? HOTEL_LIMITS.roomsAdjustedNote
+                            : undefined
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -437,6 +462,7 @@ export default function HotelsPage() {
                   href={effectiveBookingUrl}
                   target="_blank"
                   rel={isAffiliate ? 'noopener noreferrer sponsored' : 'noopener noreferrer'}
+                  onClick={() => rememberExternalHandoff('hotel', 'Booking.com')}
                   className="shrink-0 px-6 py-3 bg-[#FFB700] hover:bg-[#F2AE00] text-[#003580] text-xs font-bold uppercase tracking-wider text-center transition-colors shadow-sm"
                   style={{ borderRadius: '2px' }}
                 >
@@ -467,6 +493,7 @@ export default function HotelsPage() {
                 href={effectiveBookingUrl}
                 target="_blank"
                 rel={isAffiliate ? 'noopener noreferrer sponsored' : 'noopener noreferrer'}
+                onClick={() => rememberExternalHandoff('hotel', 'Booking.com')}
                 className="inline-block px-6 py-3 bg-[#111111] hover:bg-[#252525] text-white text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm"
                 style={{ borderRadius: '2px' }}
               >

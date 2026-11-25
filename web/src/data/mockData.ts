@@ -243,6 +243,16 @@ export interface Disruption {
   resolvedAt?: string;
 }
 
+export interface TripCoverImage {
+  url: string;
+  thumbUrl?: string | null;
+  photographer?: string | null;
+  photographerUrl?: string | null;
+  sourceUrl?: string | null;
+  source?: 'pexels';
+  fetchedAt?: string | null;
+}
+
 export interface Journey {
   id: string;
   travelerId: string;
@@ -258,6 +268,7 @@ export interface Journey {
   totalSpend: number;
   currency: string;
   imageUrl: string;
+  coverImage?: TripCoverImage | null;
   itinerary: ItineraryDay[];
   notifications: Notification[];
   disruptions: Disruption[];

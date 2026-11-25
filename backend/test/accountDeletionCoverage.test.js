@@ -44,6 +44,7 @@ describe('Account Deletion Model Coverage', () => {
       'Conversation',
       'Expense',
       'Booking',
+      'TripBooking',
       'PackingTemplate',
       'Disruption',
     ]);
@@ -97,6 +98,7 @@ describe('Account Deletion Model Coverage', () => {
       mongoose.model('Conversation'),
       mongoose.model('Expense'),
       mongoose.model('Booking'),
+      mongoose.model('TripBooking'),
       mongoose.model('PackingTemplate'),
       mongoose.model('Disruption'),
       mongoose.model('User'),

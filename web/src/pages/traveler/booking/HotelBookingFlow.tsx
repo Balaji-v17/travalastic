@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useApp, type Page } from '../../../store/AppContext';
 import { hotels, currentTraveler, type RoomType } from '../../../data/mockData';
 import type { Booking, Hotel } from '../../../data/mockData';
+import CountStepper from '../../../components/common/CountStepper';
+import { BOOKING_FLOW_LIMITS } from '../../../lib/countLimits';
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -489,16 +491,22 @@ function StepRooms({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Guests</label>
-            <select
+            <label htmlFor="hotel_booking_guests" className="block text-xs font-medium text-stone-500 mb-1">Guests</label>
+            <CountStepper
+              id="hotel_booking_guests"
+              label="Guests"
+              unitLabel={guestCount === 1 ? 'guest' : 'guests'}
               value={guestCount}
-              onChange={(e) => setGuestCount(Number(e.target.value))}
-              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>{n} guest{n !== 1 ? 's' : ''}</option>
-              ))}
-            </select>
+              min={BOOKING_FLOW_LIMITS.minGuests}
+              max={BOOKING_FLOW_LIMITS.maxGuests}
+              onChange={setGuestCount}
+              variant="rounded"
+              helperText={
+                guestCount >= BOOKING_FLOW_LIMITS.maxGuests
+                  ? BOOKING_FLOW_LIMITS.capHelperText
+                  : undefined
+              }
+            />
           </div>
         </div>
       </div>

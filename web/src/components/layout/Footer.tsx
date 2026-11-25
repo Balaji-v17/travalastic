@@ -17,11 +17,11 @@ export {
 };
 
 export default function Footer() {
-  const { navigate, setSearchQuery, openTransport } = useApp();
+  const { navigate, setSearchQuery, openBook } = useApp();
 
   function handleLink(link: FooterLink) {
-    if (link.transportTab) {
-      openTransport(link.transportTab);
+    if (link.bookTab) {
+      openBook(link.bookTab);
       return;
     }
     if (link.searchType) {

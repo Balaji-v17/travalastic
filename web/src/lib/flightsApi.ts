@@ -1,4 +1,5 @@
 import { apiFetch } from './api.ts';
+import { PASSENGER_LIMITS } from './countLimits.ts';
 
 export interface AirportSuggestion {
   name: string;
@@ -82,7 +83,10 @@ export async function searchFlights({
     origin: origin.trim().toUpperCase(),
     destination: destination.trim().toUpperCase(),
     departureDate: departureDate.trim(),
-    passengers: Math.max(1, Math.min(9, Math.floor(adults))),
+    passengers: Math.max(
+      PASSENGER_LIMITS.minAdults,
+      Math.min(PASSENGER_LIMITS.maxTotal, Math.floor(adults))
+    ),
   };
 
   return apiFetch<RawBackendOffer[]>('/flights/search', {

@@ -3,34 +3,18 @@ import { useApp } from '../../store/AppContext';
 import type { Page } from '../../store/AppContext';
 import { useAuth } from '../../store/AuthContext';
 import { SHOW_SAMPLE_PAGES } from '../../config/features';
-import { visibleNav, isPageAvailable, getAvatarInitial } from '../../lib/pageStatus';
-
-// ─── Nav link definition ────────────────────────────────────────────────────
-
-interface NavItem {
-  label: string;
-  page: Page;
-  searchType?: 'flights' | 'hotels' | 'experiences' | 'packages';
-  activePaths?: Page[];
-  badge?: string;
-  icon?: string;
-}
-
-const PRIMARY_NAV: NavItem[] = [
-  { label: 'Explore', page: 'explore', activePaths: ['explore', 'destination'] },
-  { label: 'Journey AI', page: 'ai-planner', activePaths: ['ai-planner'] },
-  { label: 'Flights', page: 'search', searchType: 'flights', activePaths: ['flight-detail', 'search'] },
-  { label: 'Hotels', page: 'hotels', activePaths: ['hotels', 'hotel-detail'] },
-  { label: 'Experiences', page: 'search', searchType: 'experiences', activePaths: ['experience-detail'] },
-  { label: 'Journeys', page: 'journeys', activePaths: ['journeys', 'package-detail'] },
-  { label: 'Trips', page: 'my-trips', activePaths: ['my-trips', 'journey'] },
-  { label: 'Bookings', page: 'my-bookings', activePaths: ['my-bookings'] },
-];
+import {
+  PRIMARY_NAV,
+  visibleNav,
+  isPageAvailable,
+  getAvatarInitial,
+  type PrimaryNavItem,
+} from '../../lib/pageStatus';
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function TopNav() {
-  const { page, navigate, notifications, searchQuery, setSearchQuery, markNotificationRead } = useApp();
+  const { page, navigate, openBook, openGlobalSearch, notifications, markNotificationRead } = useApp();
   const { user, status, logout, setRedirectTarget } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -60,41 +44,53 @@ export default function TopNav() {
   const transparent = isHome && !scrolled;
   const unread = notifications.filter((n) => !n.read).length;
 
-  function handleNavClick(item: NavItem) {
-    if (item.searchType) setSearchQuery({ type: item.searchType });
-    navigate(item.page);
+  function handleNavClick(item: PrimaryNavItem) {
+    if (item.page === 'book') {
+      openBook('flights');
+    } else {
+      navigate(item.page);
+    }
     setMobileOpen(false);
   }
 
-  function isActive(item: NavItem): boolean {
+  function isActive(item: PrimaryNavItem): boolean {
     if (item.activePaths) {
-      if (item.label === 'Flights' && (page === 'search' || page === 'flight-detail')) {
-        return page === 'flight-detail' || (page === 'search' && (!searchQuery.type || searchQuery.type === 'flights'));
-      }
       return item.activePaths.includes(page);
     }
     return page === item.page;
   }
 
+  const heroTextShadow = transparent ? 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]' : '';
+
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 motion-reduce:transition-none ${
           transparent
             ? 'bg-transparent border-transparent'
             : 'bg-slate-950/95 backdrop-blur-xl border-b border-white/8 shadow-[0_1px_0_rgba(255,255,255,0.06)]'
         }`}
       >
+        {transparent && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-0 right-0 h-[160px] -z-10 transition-opacity duration-300 motion-reduce:transition-none"
+            style={{
+              background:
+                'linear-gradient(to bottom, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.62) 60px, rgba(0, 0, 0, 0) 160px)',
+            }}
+          />
+        )}
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-[60px] gap-8">
 
             {/* ── Logo ── */}
             <button
               onClick={() => navigate('home')}
-              className="flex items-center flex-shrink-0 group"
+              className={`flex items-center flex-shrink-0 group text-white ${heroTextShadow}`}
               aria-label="Travalastic home"
             >
-              <span className="font-sans font-bold text-[18px] tracking-tight text-white group-hover:text-white/80 transition-colors">
+              <span className="font-sans font-bold text-[18px] tracking-tight text-white group-hover:text-white/95 transition-colors">
                 Travalastic
               </span>
             </button>
@@ -107,10 +103,10 @@ export default function TopNav() {
                   <button
                     key={item.label}
                     onClick={() => handleNavClick(item)}
-                    className={`relative flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 tracking-[0.01em] ${
+                    className={`relative flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 tracking-[0.01em] ${heroTextShadow} ${
                       active
                         ? 'text-white'
-                        : 'text-white/55 hover:text-white'
+                        : 'text-white/95 hover:text-white'
                     }`}
                   >
                     {item.label}
@@ -125,26 +121,28 @@ export default function TopNav() {
             {/* ── Right actions (desktop) ── */}
             <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
 
-              {/* Search */}
-              {isPageAvailable('search', SHOW_SAMPLE_PAGES) && (
-                <button
-                  onClick={() => navigate('search')}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/8 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                  aria-label="Search"
-                >
-                  <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
-                    <circle cx="8" cy="8" r="5.5"/><path d="M13.5 13.5l2.5 2.5" strokeLinecap="round"/>
-                  </svg>
-                  <span className="text-xs">Search</span>
-                </button>
-              )}
+              {/* Global Search */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.focus();
+                  openGlobalSearch('');
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-white/95 hover:text-white hover:bg-white/10 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${heroTextShadow}`}
+                aria-label="Search"
+              >
+                <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="8" cy="8" r="5.5"/><path d="M13.5 13.5l2.5 2.5" strokeLinecap="round"/>
+                </svg>
+                <span className="text-xs font-medium">Search</span>
+              </button>
 
               {/* Visa Center */}
               {isPageAvailable('visa-center', SHOW_SAMPLE_PAGES) && (
                 <button
                   onClick={() => navigate('visa-center')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-slate-950 ${
-                    page === 'visa-center' ? 'text-white' : 'text-white/55 hover:text-white'
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-slate-950 ${heroTextShadow} ${
+                    page === 'visa-center' ? 'text-white' : 'text-white/95 hover:text-white'
                   }`}
                 >
                   <span>Visa</span>
@@ -158,7 +156,7 @@ export default function TopNav() {
                   <div className="relative" ref={notifRef}>
                     <button
                       onClick={() => { setNotifOpen(!notifOpen); setMobileOpen(false); }}
-                      className="relative w-9 h-9 flex items-center justify-center rounded-lg text-white/60 hover:text-white hover:bg-white/8 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                      className={`relative w-9 h-9 flex items-center justify-center rounded-lg text-white/95 hover:text-white hover:bg-white/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${heroTextShadow}`}
                       aria-label="Notifications"
                     >
                       <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -227,14 +225,14 @@ export default function TopNav() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => navigate('profile')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
-                      page === 'profile' ? 'bg-white/10 text-white' : 'text-white/70 hover:text-white hover:bg-white/8'
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${heroTextShadow} ${
+                      page === 'profile' ? 'bg-white/15 text-white' : 'text-white/95 hover:text-white hover:bg-white/10'
                     }`}
                     aria-label="Profile"
                   >
                     <div
                       className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
-                      style={{ backgroundColor: '#77736C' }}
+                      style={{ backgroundColor: '#5C5852' }}
                     >
                       {getAvatarInitial(user.name, user.email)}
                     </div>
@@ -244,7 +242,7 @@ export default function TopNav() {
                   </button>
                   <button
                     onClick={() => logout()}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 transition-all"
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/95 hover:text-white hover:bg-white/10 transition-all motion-reduce:transition-none ${heroTextShadow}`}
                     aria-label="Sign out"
                   >
                     Sign out
@@ -256,7 +254,7 @@ export default function TopNav() {
                     if (page !== 'auth') setRedirectTarget(page);
                     navigate('auth');
                   }}
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-white bg-white/10 hover:bg-white/15 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-white bg-black/35 hover:bg-black/50 border border-white/25 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${heroTextShadow}`}
                   aria-label="Sign in"
                 >
                   Sign in
@@ -266,11 +264,23 @@ export default function TopNav() {
 
             {/* ── Mobile right ── */}
             <div className="lg:hidden flex items-center gap-1 ml-auto">
+              {/* Mobile Search shortcut */}
+              <button
+                type="button"
+                onClick={() => { setMobileOpen(false); openGlobalSearch(''); }}
+                className={`w-9 h-9 flex items-center justify-center rounded-lg text-white/95 hover:bg-white/10 transition-all motion-reduce:transition-none ${heroTextShadow}`}
+                aria-label="Search"
+              >
+                <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="8" cy="8" r="5.5"/><path d="M13.5 13.5l2.5 2.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+
               {/* Notif mobile */}
               {SHOW_SAMPLE_PAGES && (
                 <button
                   onClick={() => navigate('my-bookings')}
-                  className="relative w-9 h-9 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10 transition-all"
+                  className={`relative w-9 h-9 flex items-center justify-center rounded-lg text-white/95 hover:bg-white/10 transition-all ${heroTextShadow}`}
                   aria-label="Notifications"
                 >
                   <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -287,7 +297,7 @@ export default function TopNav() {
 
               {/* Hamburger */}
               <button
-                className="w-9 h-9 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10 transition-all"
+                className={`w-9 h-9 flex items-center justify-center rounded-lg text-white/95 hover:bg-white/10 transition-all motion-reduce:transition-none ${heroTextShadow}`}
                 onClick={() => { setMobileOpen(!mobileOpen); setNotifOpen(false); }}
                 aria-label="Menu"
                 aria-expanded={mobileOpen}
@@ -308,6 +318,24 @@ export default function TopNav() {
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40 bg-slate-950/98 backdrop-blur-xl pt-[60px]">
           <div className="flex flex-col h-full overflow-y-auto">
+            {/* Search button in mobile drawer */}
+            <div className="px-4 pt-4 pb-2 border-b border-white/8">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  openGlobalSearch('');
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/8 hover:bg-white/12 text-white/95 text-sm font-medium transition-colors"
+                aria-label="Search places and trips"
+              >
+                <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="8" cy="8" r="5.5"/><path d="M13.5 13.5l2.5 2.5" strokeLinecap="round"/>
+                </svg>
+                <span>Search places &amp; trips</span>
+              </button>
+            </div>
+
             {/* Primary nav */}
             <div className="px-4 py-4 space-y-1 border-b border-white/8">
               {visibleNav(PRIMARY_NAV, SHOW_SAMPLE_PAGES).map((item) => {
@@ -317,7 +345,7 @@ export default function TopNav() {
                     key={item.label}
                     onClick={() => handleNavClick(item)}
                     className={`w-full text-left flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                      active ? 'bg-blue-500/15 text-white' : 'text-white/60 hover:bg-white/8 hover:text-white'
+                      active ? 'bg-blue-500/15 text-white' : 'text-white/95 hover:bg-white/8 hover:text-white'
                     }`}
                   >
                     <span className="flex items-center gap-2.5">
@@ -337,17 +365,17 @@ export default function TopNav() {
             {SHOW_SAMPLE_PAGES && (
               <div className="px-4 py-4 space-y-1">
                 {isPageAvailable('visa-center', SHOW_SAMPLE_PAGES) && (
-                  <button onClick={() => { navigate('visa-center'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/60 hover:bg-white/8 hover:text-white transition-all">
+                  <button onClick={() => { navigate('visa-center'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/95 hover:bg-white/8 hover:text-white transition-all">
                     Visa Center
                   </button>
                 )}
                 {isPageAvailable('deals', SHOW_SAMPLE_PAGES) && (
-                  <button onClick={() => { navigate('deals'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/60 hover:bg-white/8 hover:text-white transition-all">
+                  <button onClick={() => { navigate('deals'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/95 hover:bg-white/8 hover:text-white transition-all">
                     Deals
                   </button>
                 )}
                 {isPageAvailable('support', SHOW_SAMPLE_PAGES) && (
-                  <button onClick={() => { navigate('support'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/60 hover:bg-white/8 hover:text-white transition-all">
+                  <button onClick={() => { navigate('support'); setMobileOpen(false); }} className="w-full text-left flex items-center px-4 py-3 rounded-xl text-sm text-white/95 hover:bg-white/8 hover:text-white transition-all">
                     Help &amp; Support
                   </button>
                 )}

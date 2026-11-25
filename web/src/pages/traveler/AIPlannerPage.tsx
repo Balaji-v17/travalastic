@@ -19,6 +19,8 @@ import {
 import { makeDefaultDna, validateDna, formatLocalDate } from '../../lib/plannerForm';
 import ItineraryMap from '../../components/itinerary/ItineraryMap';
 import ChangeJourneyPanel from '../../components/itinerary/ChangeJourneyPanel';
+import CountStepper from '../../components/common/CountStepper';
+import { PLANNER_LIMITS } from '../../lib/countLimits';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -1091,22 +1093,24 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              <label htmlFor="planner_travelers_stepper" className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 Travelers
               </label>
-              <select
+              <CountStepper
+                id="planner_travelers_stepper"
+                label="Travelers"
+                unitLabel={dna.travelers === 1 ? 'traveler' : 'travelers'}
                 value={dna.travelers}
-                onChange={(e) => setDna((p) => ({ ...p, travelers: Number(e.target.value) }))}
-                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors bg-white ${
-                  errors.travelers
-                    ? 'border-red-300 focus:border-red-500'
-                    : 'border-slate-200 focus:border-blue-400'
-                }`}
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                  <option key={n} value={n}>{n} {n === 1 ? 'traveler' : 'travelers'}</option>
-                ))}
-              </select>
+                min={PLANNER_LIMITS.minTravelers}
+                max={PLANNER_LIMITS.maxTravelers}
+                onChange={(nextVal) => setDna((p) => ({ ...p, travelers: nextVal }))}
+                variant="rounded"
+                helperText={
+                  dna.travelers >= PLANNER_LIMITS.maxTravelers
+                    ? PLANNER_LIMITS.capHelperText
+                    : undefined
+                }
+              />
               {errors.travelers && (
                 <p className="text-xs text-red-500 mt-1">{errors.travelers}</p>
               )}
