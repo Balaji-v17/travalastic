@@ -303,17 +303,23 @@ describe('Delete Dialogs & Replace Undo Verification (Web)', () => {
   it('verifies exact deletion notice copy for child resources and unlinked bookings', async () => {
     const fs = await import('node:fs');
     const myTripsContent = fs.readFileSync('src/pages/traveler/MyTripsPage.tsx', 'utf8');
+    const confirmModalContent = fs.readFileSync('src/components/trips/PermanentDeleteConfirmModal.tsx', 'utf8');
 
-    // Both dialogs must contain the permanent deletion notice
-    const expectedChildNotice = 'Deleting a trip permanently removes its chat history, expenses, packing data, and disruption alerts.';
-    const expectedBookingNotice = 'Flight bookings made through Travalastic are kept in your Bookings history, but unlinked from the deleted trip.';
-
-    assert.ok(myTripsContent.includes(expectedChildNotice), 'Must state permanent deletion of chat, expenses, packing, and disruptions');
-    assert.ok(myTripsContent.includes(expectedBookingNotice), 'Must state flight bookings are kept but unlinked');
-
-    // Clear past dialog notice check
-    const clearPastNotice = 'Deleting past trips permanently removes their chat history, expenses, packing data, and disruption alerts.';
-    assert.ok(myTripsContent.includes(clearPastNotice), 'Clear past dialog must also state child resource deletion');
+    assert.ok(myTripsContent.includes('PermanentDeleteConfirmModal'), 'MyTripsPage must use PermanentDeleteConfirmModal for duplicate & past clearing');
+    assert.ok(myTripsContent.includes('handleOpenClearPastModal'), 'Clear past trips must open shared PermanentDeleteConfirmModal');
+    assert.ok(
+      confirmModalContent.includes('AI chat history, expenses, packing data, and disruption alerts'),
+      'Must state permanent deletion of chat, expenses, packing, and disruptions'
+    );
+    assert.ok(
+      confirmModalContent.includes('Flight bookings made through Travalastic and recorded bookings are kept in your Bookings history'),
+      'Must state flight and recorded bookings are kept and detached'
+    );
+    assert.ok(
+      confirmModalContent.includes("I understand this can't be undone.") ||
+        confirmModalContent.includes('I understand this can&apos;t be undone.'),
+      'Must require non-undoable acknowledgement checkbox'
+    );
   });
 
   it('verifies replace warning copy in AIPlannerPage duplicate modal', async () => {

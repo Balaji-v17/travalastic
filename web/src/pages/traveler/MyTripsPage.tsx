@@ -1,12 +1,24 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '../../store/AppContext';
 import type { Journey } from '../../data/mockData';
 import TripChatPanel from '../../components/chat/TripChatPanel';
 import TripCoverVisual from '../../components/trips/TripCoverVisual';
+import DuplicateReviewModal from '../../components/trips/DuplicateReviewModal';
+import PermanentDeleteConfirmModal from '../../components/trips/PermanentDeleteConfirmModal';
 import { apiFetch } from '../../lib/api';
 import { fetchTripCover } from '../../lib/itineraryApi';
 import { backfillMissingTripCovers } from '../../lib/tripCoverBackfill';
 import { getBookablePlanItems } from '../../lib/tripStatus';
+import { limitConcurrency } from '../../lib/stylePicks';
+import {
+  deleteTripsSequentially,
+  groupDuplicateTrips,
+  readDuplicateNoticeDismissed,
+  writeDuplicateNoticeDismissed,
+  type DuplicateTripGroup,
+  type SequentialDeleteOutcome,
+  type TripExtrasCount,
+} from '../../lib/duplicateTrips';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -355,20 +367,23 @@ export default function MyTripsPage() {
   const [aiJourney, setAiJourney] = useState<Journey | null>(null);
   const attemptedCoverIdsRef = useRef<Set<string>>(new Set());
 
-  // Duplicates detection state
-  const [dismissDuplicatesNotice, setDismissDuplicatesNotice] = useState(false);
-  const [deleteDuplicatesTargetGroup, setDeleteDuplicatesTargetGroup] = useState<{
-    destination: string;
-    startDate: string;
-    endDate: string;
-    keepTrip: Journey;
+  // Duplicates review & safe deletion state (dismissal stored in sessionStorage only)
+  const [dismissDuplicatesNotice, setDismissDuplicatesNotice] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? readDuplicateNoticeDismissed(window.sessionStorage) : false
+  );
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [expensesByTripId, setExpensesByTripId] = useState<Record<string, TripExtrasCount | undefined>>({});
+  const [loadingExtras, setLoadingExtras] = useState(false);
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    mode: 'duplicates' | 'past';
+    title: string;
+    subtitle: string;
+    keepTrips: Journey[];
     deleteTrips: Journey[];
+    confirmButtonLabel?: string;
   } | null>(null);
-  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
-
-  // Past trips clearing state
-  const [clearPastConfirmOpen, setClearPastConfirmOpen] = useState(false);
-  const [isClearingPast, setIsClearingPast] = useState(false);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+  const [deleteOutcome, setDeleteOutcome] = useState<SequentialDeleteOutcome | null>(null);
 
   // Compute status counts using pure tripStatus
   const upcomingCount = journeys.filter((j) => upcomingStatuses.has(j.status)).length;
@@ -378,38 +393,11 @@ export default function MyTripsPage() {
   const pastJourneys = journeys.filter((j) => pastStatuses.has(j.status));
   const pastCount = pastJourneys.length;
 
-  // Detect duplicate groups (same normalized destination + same start and end dates)
-  const duplicateGroups: Array<{
-    key: string;
-    destination: string;
-    startDate: string;
-    endDate: string;
-    trips: Journey[];
-  }> = [];
-
-  const groupMap = new Map<string, Journey[]>();
-  for (const j of journeys) {
-    const norm = (j.destination || '').trim().toLowerCase().replace(/\s+/g, ' ');
-    const start = (j.startDate || '').slice(0, 10);
-    const end = (j.endDate || '').slice(0, 10);
-    if (norm && start && end) {
-      const key = `${norm}|${start}|${end}`;
-      if (!groupMap.has(key)) groupMap.set(key, []);
-      groupMap.get(key)!.push(j);
-    }
-  }
-
-  for (const [key, list] of groupMap.entries()) {
-    if (list.length > 1) {
-      duplicateGroups.push({
-        key,
-        destination: list[0].destination,
-        startDate: list[0].startDate,
-        endDate: list[0].endDate,
-        trips: list,
-      });
-    }
-  }
+  // Detect exact duplicate & overlapping-date similar trip groups (pure helper)
+  const duplicateGrouping = useMemo(
+    () => groupDuplicateTrips(journeys, expensesByTripId),
+    [journeys, expensesByTripId]
+  );
 
   // Featured journey: first active (in-progress), then upcoming
   const featuredJourney =
@@ -462,35 +450,114 @@ export default function MyTripsPage() {
     };
   }, [journeysStatus, filtered, featuredJourney, planningJourney, updateJourneyCover]);
 
-  const handleClearPastTrips = async () => {
-    setIsClearingPast(true);
-    try {
-      for (const j of pastJourneys) {
-        await apiFetch(`/itineraries/${j.id}`, { method: 'DELETE' });
+  const loadExpensesForTrips = useCallback(
+    async (trips: Journey[]) => {
+      const missingIds = Array.from(new Set(trips.map((t) => t.id))).filter(
+        (id) => !(id in expensesByTripId)
+      );
+      if (missingIds.length === 0) return;
+
+      setLoadingExtras(true);
+      try {
+        const updates: Record<string, TripExtrasCount> = {};
+        await limitConcurrency(
+          missingIds.map((id) => async () => {
+            try {
+              const res = await apiFetch<{ expenses?: unknown[] }>(
+                `/itinerary/${encodeURIComponent(id)}/expenses`
+              );
+              updates[id] = {
+                expensesCount: Array.isArray(res?.expenses) ? res.expenses.length : 0,
+              };
+            } catch {
+              updates[id] = { expensesCount: null };
+            }
+          }),
+          3
+        );
+        setExpensesByTripId((prev) => ({ ...prev, ...updates }));
+      } finally {
+        setLoadingExtras(false);
       }
-      setClearPastConfirmOpen(false);
-      setFilter('all');
-      await refreshJourneys();
-    } catch (err) {
-      console.error('Failed to clear past trips:', err);
-    } finally {
-      setIsClearingPast(false);
+    },
+    [expensesByTripId]
+  );
+
+  const handleDismissNotice = () => {
+    setDismissDuplicatesNotice(true);
+    if (typeof window !== 'undefined') {
+      writeDuplicateNoticeDismissed(window.sessionStorage, true);
     }
   };
 
-  const handleConfirmDeleteDuplicates = async () => {
-    if (!deleteDuplicatesTargetGroup) return;
-    setIsDeletingDuplicates(true);
+  const handleOpenReviewModal = () => {
+    setDeleteOutcome(null);
+    setReviewModalOpen(true);
+    const groupTrips = [
+      ...duplicateGrouping.exactGroups.flatMap((g) => g.trips),
+      ...duplicateGrouping.similarGroups.flatMap((g) => g.trips),
+    ];
+    void loadExpensesForTrips(groupTrips);
+  };
+
+  const handleOpenClearPastModal = () => {
+    setDeleteOutcome(null);
+    setDeleteConfirmState({
+      mode: 'past',
+      title: 'Clear past trips without bookings',
+      subtitle: `Review the ${pastJourneys.length} past trip${pastJourneys.length > 1 ? 's' : ''} below before permanently deleting them.`,
+      keepTrips: [],
+      deleteTrips: pastJourneys,
+      confirmButtonLabel: `Clear ${pastJourneys.length} trip${pastJourneys.length > 1 ? 's' : ''}`,
+    });
+    void loadExpensesForTrips(pastJourneys);
+  };
+
+  const handleRequestDeleteGroup = ({
+    group,
+    keepTrips,
+    deleteTrips,
+  }: {
+    group: DuplicateTripGroup;
+    keepTrips: Journey[];
+    deleteTrips: Journey[];
+  }) => {
+    setDeleteOutcome(null);
+    setDeleteConfirmState({
+      mode: 'duplicates',
+      title: 'Delete selected duplicate trips',
+      subtitle: `${group.destination} (${group.startDate} – ${group.endDate}) — keeping ${keepTrips.length} and removing ${deleteTrips.length}.`,
+      keepTrips,
+      deleteTrips,
+      confirmButtonLabel: `Delete ${deleteTrips.length} trip${deleteTrips.length > 1 ? 's' : ''}`,
+    });
+    void loadExpensesForTrips(deleteTrips);
+  };
+
+  const handleConfirmDeleteBatch = async () => {
+    if (!deleteConfirmState || deleteConfirmState.deleteTrips.length === 0) return;
+    setIsDeletingBatch(true);
     try {
-      for (const t of deleteDuplicatesTargetGroup.deleteTrips) {
-        await apiFetch(`/itineraries/${t.id}`, { method: 'DELETE' });
-      }
-      setDeleteDuplicatesTargetGroup(null);
+      const outcome = await deleteTripsSequentially(deleteConfirmState.deleteTrips, async (id) => {
+        await apiFetch(`/itineraries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      });
+      setDeleteOutcome(outcome);
       await refreshJourneys();
-    } catch (err) {
-      console.error('Failed to delete duplicates:', err);
+
+      if (outcome.failedItems.length === 0) {
+        if (deleteConfirmState.mode === 'past') {
+          setFilter('all');
+        }
+        setDeleteConfirmState(null);
+      } else {
+        const failedIds = new Set(outcome.failedItems.map((f) => f.id));
+        const remainingFailed = deleteConfirmState.deleteTrips.filter((t) => failedIds.has(t.id));
+        setDeleteConfirmState((prev) =>
+          prev ? { ...prev, deleteTrips: remainingFailed } : null
+        );
+      }
     } finally {
-      setIsDeletingDuplicates(false);
+      setIsDeletingBatch(false);
     }
   };
 
@@ -549,57 +616,46 @@ export default function MyTripsPage() {
             ))}
           </div>
 
-          {/* Dismissible Possible duplicates notice */}
-          {duplicateGroups.length > 0 && !dismissDuplicatesNotice && (
-            <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-4 mb-8 shadow-sm">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-600" />
-                  <h3 className="text-sm font-bold text-blue-900">Possible duplicates detected</h3>
+          {/* Dismissible duplicate & similar trips review banner (session-only dismissal) */}
+          {duplicateGrouping.totalSets > 0 && !dismissDuplicatesNotice && (
+            <div
+              data-testid="duplicates-review-banner"
+              className="bg-blue-50/80 border border-blue-200 rounded-xl p-4 mb-8 shadow-sm flex items-center justify-between gap-4 flex-wrap"
+            >
+              <div className="flex items-start gap-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-blue-950">
+                    You have {duplicateGrouping.totalSets} set{duplicateGrouping.totalSets > 1 ? 's' : ''} of similar trips. Review them.
+                  </p>
+                  <p className="text-xs text-blue-800 mt-0.5">
+                    {duplicateGrouping.exactGroups.length > 0 &&
+                      `${duplicateGrouping.exactGroups.length} exact duplicate group${duplicateGrouping.exactGroups.length > 1 ? 's' : ''}`}
+                    {duplicateGrouping.exactGroups.length > 0 &&
+                      duplicateGrouping.similarGroups.length > 0 &&
+                      ' · '}
+                    {duplicateGrouping.similarGroups.length > 0 &&
+                      `${duplicateGrouping.similarGroups.length} overlapping-date similar group${duplicateGrouping.similarGroups.length > 1 ? 's' : ''}`}
+                    {' — compare trips side by side before deleting anything.'}
+                  </p>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
-                  onClick={() => setDismissDuplicatesNotice(true)}
-                  className="text-slate-400 hover:text-slate-600 text-xs px-2 py-1 rounded"
+                  onClick={handleOpenReviewModal}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shadow-sm"
+                >
+                  Review duplicates
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissNotice}
+                  className="text-slate-400 hover:text-slate-600 text-xs px-2 py-1.5 rounded-lg"
                   aria-label="Dismiss notice"
                 >
                   ✕
                 </button>
-              </div>
-              <p className="text-xs text-blue-800 mb-3">
-                You have multiple trips saved for the same destination and dates. You can keep the newest version and delete older duplicates.
-              </p>
-              <div className="space-y-2.5">
-                {duplicateGroups.map((group) => {
-                  const newest = group.trips[0];
-                  const older = group.trips.slice(1);
-                  return (
-                    <div key={group.key} className="flex items-center justify-between bg-white rounded-lg p-3 border border-blue-100 flex-wrap gap-2">
-                      <div>
-                        <span className="font-semibold text-sm text-slate-800">{group.destination}</span>
-                        <span className="text-xs text-slate-500 ml-2">({group.startDate} – {group.endDate})</span>
-                        <span className="text-xs bg-blue-100 text-blue-700 font-medium px-2 py-0.5 rounded ml-2">
-                          {group.trips.length} duplicate trips
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDeleteDuplicatesTargetGroup({
-                            destination: group.destination,
-                            startDate: group.startDate,
-                            endDate: group.endDate,
-                            keepTrip: newest,
-                            deleteTrips: older,
-                          })
-                        }
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                      >
-                        Keep the newest, delete the rest
-                      </button>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           )}
@@ -643,7 +699,7 @@ export default function MyTripsPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setClearPastConfirmOpen(true)}
+                onClick={handleOpenClearPastModal}
                 className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shadow-sm"
               >
                 Clear past trips without bookings
@@ -680,107 +736,39 @@ export default function MyTripsPage() {
         </>
       )}
 
-      {/* Confirmation Dialog: Delete Duplicate Trips */}
-      {deleteDuplicatesTargetGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-2">Delete duplicate trips</h3>
-            <p className="text-slate-600 text-sm mb-4">
-              You are keeping the newest trip and deleting {deleteDuplicatesTargetGroup.deleteTrips.length} older duplicate{deleteDuplicatesTargetGroup.deleteTrips.length > 1 ? 's' : ''}:
-            </p>
+      {/* Review Duplicates & Similar Trips Panel */}
+      <DuplicateReviewModal
+        open={reviewModalOpen}
+        exactGroups={duplicateGrouping.exactGroups}
+        similarGroups={duplicateGrouping.similarGroups}
+        extrasByTripId={expensesByTripId}
+        loadingExtras={loadingExtras}
+        lastOutcome={!deleteConfirmState ? deleteOutcome : null}
+        onRequestDeleteGroup={handleRequestDeleteGroup}
+        onClose={() => {
+          setReviewModalOpen(false);
+          setDeleteOutcome(null);
+        }}
+      />
 
-            <div className="mb-4">
-              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-1">Keeping (Newest):</p>
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900">
-                <span className="font-semibold">{deleteDuplicatesTargetGroup.keepTrip.title || deleteDuplicatesTargetGroup.keepTrip.destination}</span>
-                <span className="text-emerald-700 block text-[11px] mt-0.5">ID: {deleteDuplicatesTargetGroup.keepTrip.id}</span>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-1">Deleting:</p>
-              <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                {deleteDuplicatesTargetGroup.deleteTrips.map((t) => (
-                  <div key={t.id} className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900">
-                    <span className="font-semibold">{t.title || t.destination}</span>
-                    <span className="text-red-700 block text-[11px] mt-0.5">ID: {t.id}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4 text-xs text-red-800 leading-relaxed">
-              <p className="font-semibold text-red-900 mb-1">Permanent Deletion Notice:</p>
-              Deleting a trip permanently removes its chat history, expenses, packing data, and disruption alerts. Flight bookings made through Travalastic are kept in your Bookings history, but unlinked from the deleted trip.
-            </div>
-
-            <p className="text-xs text-red-600 mb-5 font-medium">This action cannot be undone.</p>
-
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteDuplicatesTargetGroup(null)}
-                disabled={isDeletingDuplicates}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteDuplicates}
-                disabled={isDeletingDuplicates}
-                className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors"
-              >
-                {isDeletingDuplicates ? 'Deleting...' : 'Delete duplicates'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirmation Dialog: Clear Past Trips */}
-      {clearPastConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-2">Clear past trips without bookings</h3>
-            <p className="text-slate-600 text-sm mb-4">
-              Are you sure you want to delete {pastJourneys.length} past trip{pastJourneys.length > 1 ? 's' : ''}?
-            </p>
-            <div className="max-h-48 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3 mb-5 space-y-1.5 text-xs text-slate-700">
-              {pastJourneys.map((j) => (
-                <div key={j.id} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
-                  <span className="font-medium text-slate-800">{j.title || j.destination}</span>
-                  <span className="text-slate-500">{j.startDate} – {j.endDate}</span>
-                </div>
-              ))}
-            </div>
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4 text-xs text-red-800 leading-relaxed">
-              <p className="font-semibold text-red-900 mb-1">Permanent Deletion Notice:</p>
-              Deleting past trips permanently removes their chat history, expenses, packing data, and disruption alerts. Flight bookings made through Travalastic are kept in your Bookings history, but unlinked from any deleted trip.
-            </div>
-
-            <p className="text-xs text-red-600 mb-5 font-medium">This action cannot be undone.</p>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setClearPastConfirmOpen(false)}
-                disabled={isClearingPast}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleClearPastTrips}
-                disabled={isClearingPast}
-                className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors flex items-center gap-2"
-              >
-                {isClearingPast ? 'Clearing...' : `Clear ${pastJourneys.length} trips`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Shared Permanent Deletion Confirmation Dialog (Duplicates & Clear Past) */}
+      <PermanentDeleteConfirmModal
+        open={Boolean(deleteConfirmState)}
+        title={deleteConfirmState?.title || ''}
+        subtitle={deleteConfirmState?.subtitle || ''}
+        keepTrips={deleteConfirmState?.keepTrips || []}
+        deleteTrips={deleteConfirmState?.deleteTrips || []}
+        extrasByTripId={expensesByTripId}
+        loadingExtras={loadingExtras}
+        isDeleting={isDeletingBatch}
+        outcome={deleteOutcome}
+        confirmButtonLabel={deleteConfirmState?.confirmButtonLabel}
+        onCancel={() => {
+          setDeleteConfirmState(null);
+          setDeleteOutcome(null);
+        }}
+        onConfirm={handleConfirmDeleteBatch}
+      />
 
       {/* Trip Chat Panel */}
       {aiJourney && <TripChatPanel journey={aiJourney} onClose={() => setAiJourney(null)} />}

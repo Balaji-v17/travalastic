@@ -207,6 +207,7 @@ export interface ItineraryActivity {
     placeName?: string | null;
   } | null;
   kind?: 'place' | 'meal' | 'transit' | 'rest';
+  done?: boolean;
 }
 
 export interface ItineraryDay {
@@ -272,6 +273,11 @@ export interface Journey {
   itinerary: ItineraryDay[];
   notifications: Notification[];
   disruptions: Disruption[];
+  createdAt?: string | null;
+  lastEditedAt?: string | null;
+  editCount?: number;
+  flightBookingsCount?: number;
+  recordedBookingsCount?: number;
 }
 
 // ─── Traveler ─────────────────────────────────────────────────

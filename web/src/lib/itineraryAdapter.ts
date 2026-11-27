@@ -176,6 +176,7 @@ export function backendDaysToItineraryDays(
             : undefined,
           location: act.location,
           kind: (act as any).kind || ((act as any).type === 'activity' ? 'place' : undefined),
+          done: Boolean((act as any).done),
         };
       }
     );
