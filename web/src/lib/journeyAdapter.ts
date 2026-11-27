@@ -37,6 +37,9 @@ export interface BackendSavedItinerary {
   destinationImage?: string;
   bookingsCount?: number;
   recordedBookingsCount?: number;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  undo?: { count?: number; lastEditId?: string | null; lastEditDays?: number[] } | null;
 }
 
 export interface BackendBooking {
@@ -173,6 +176,53 @@ export function toJourney(
       ? rawImage.trim()
       : NEUTRAL_PLACEHOLDER_IMAGE;
 
+  const activeFlightMatches = normalizedBookings.filter(
+    (b) => String(b.status || '').trim().toLowerCase() !== 'cancelled'
+  ).length;
+  const flightBookingsCount =
+    normalizedBookings.length > 0
+      ? activeFlightMatches
+      : typeof savedItinerary.bookingsCount === 'number'
+      ? Math.max(0, savedItinerary.bookingsCount)
+      : 0;
+
+  const activeRecordedMatches = matchingRecordedBookings.filter(
+    (rb) => String(rb?.status || '').trim().toLowerCase() !== 'cancelled'
+  ).length;
+  const recordedBookingsCount =
+    matchingRecordedBookings.length > 0
+      ? activeRecordedMatches
+      : typeof savedItinerary.recordedBookingsCount === 'number'
+      ? Math.max(0, savedItinerary.recordedBookingsCount)
+      : 0;
+
+  const editCount =
+    savedItinerary.undo && typeof savedItinerary.undo.count === 'number'
+      ? Math.max(0, savedItinerary.undo.count)
+      : 0;
+
+  let createdAt: string | null = null;
+  if (savedItinerary.createdAt instanceof Date && !isNaN(savedItinerary.createdAt.getTime())) {
+    createdAt = savedItinerary.createdAt.toISOString();
+  } else if (typeof savedItinerary.createdAt === 'string' && savedItinerary.createdAt.trim()) {
+    createdAt = savedItinerary.createdAt.trim();
+  }
+
+  let lastEditedAt: string | null = null;
+  if (savedItinerary.updatedAt instanceof Date && !isNaN(savedItinerary.updatedAt.getTime())) {
+    lastEditedAt = savedItinerary.updatedAt.toISOString();
+  } else if (typeof savedItinerary.updatedAt === 'string' && savedItinerary.updatedAt.trim()) {
+    lastEditedAt = savedItinerary.updatedAt.trim();
+  } else if (
+    savedItinerary.undo?.lastEditId &&
+    /^[a-f0-9]{24}$/i.test(String(savedItinerary.undo.lastEditId).trim())
+  ) {
+    const secs = parseInt(String(savedItinerary.undo.lastEditId).trim().slice(0, 8), 16);
+    if (!Number.isNaN(secs) && secs > 0) {
+      lastEditedAt = new Date(secs * 1000).toISOString();
+    }
+  }
+
   return {
     id,
     travelerId,
@@ -192,6 +242,11 @@ export function toJourney(
     itinerary,
     notifications: [],
     disruptions: [],
+    createdAt,
+    lastEditedAt,
+    editCount,
+    flightBookingsCount,
+    recordedBookingsCount,
   };
 }
 
