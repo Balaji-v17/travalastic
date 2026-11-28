@@ -20,6 +20,8 @@ const EXEMPT_GLOBAL_MODELS = new Set([
   'AdminUser',         // Dedicated admin accounts; not owned by traveler users
   'AuditLog',          // Tamper-evident administrative audit log
   'StyleCollection',   // Curated style collections catalog; shared across all users
+  'City',              // Public world cities reference catalog (SimpleMaps); not user-scoped
+  'Region',            // Public world state/region reference catalog derived from cities; not user-scoped
 ]);
 
 describe('Account Deletion Model Coverage', () => {

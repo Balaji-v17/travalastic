@@ -5,8 +5,18 @@ import TouristPlace from '../models/TouristPlace.js';
 import { requireAdmin, requireRole } from '../middleware/adminAuth.js';
 import { runAudited } from '../services/audit.js';
 import { invalidateDestinationCache } from './destinations.js';
+import {
+  BLOCKING_PUBLISH_FLAGS,
+  HERITAGE_SOURCE,
+  findCuratedOverlap,
+  getBlockingPublishFlags,
+  recomputeHeritageFlags,
+} from '../utils/heritageProcessor.js';
+import { tryEmbedPublishedPlace } from '../utils/placeEmbedding.js';
 
 const router = express.Router();
+
+export const MAX_BULK_HERITAGE_ACTION = 50;
 
 // Rate limiter: max 30 place mutations per minute per admin
 const placeMutationLimiter = rateLimit({
@@ -42,6 +52,8 @@ const ALLOWED_PLACE_FIELDS = [
   'timeNeededHours',
 ];
 
+const CONCURRENCY_META_FIELDS = ['expectedVersion', 'expectedUpdatedAt'];
+
 const ALLOWED_AUDIT_FIELDS = [
   'name',
   'city',
@@ -56,10 +68,12 @@ const ALLOWED_AUDIT_FIELDS = [
   'latitude',
   'longitude',
   'placeId',
+  'sourceId',
   'source',
   'isCurated',
   'hidden',
   'hiddenReason',
+  'reviewFlags',
   'embeddingStale',
   'updatedBy',
 ];
@@ -128,7 +142,23 @@ function validateNumericField(val, fieldName, { min = 0, max = Infinity, require
   return null;
 }
 
-function mapPlaceResponse(doc) {
+function checkConcurrencyConflict(place, body = {}) {
+  if (body.expectedVersion !== undefined && body.expectedVersion !== null) {
+    const currentVersion = Number(place.__v ?? 0);
+    if (Number(body.expectedVersion) !== currentVersion) {
+      return 'This place was modified by another editor. Refresh and try again.';
+    }
+  }
+  if (body.expectedUpdatedAt) {
+    const currentUpdatedAt = place.updatedAt ? new Date(place.updatedAt).toISOString() : null;
+    if (currentUpdatedAt && String(body.expectedUpdatedAt) !== currentUpdatedAt) {
+      return 'This place was modified by another editor. Refresh and try again.';
+    }
+  }
+  return null;
+}
+
+export function mapPlaceResponse(doc) {
   const updatedByEmail = doc.updatedBy && typeof doc.updatedBy === 'object' && doc.updatedBy.email
     ? doc.updatedBy.email
     : null;
@@ -142,14 +172,15 @@ function mapPlaceResponse(doc) {
     _id: doc._id.toString(),
     id: doc._id.toString(),
     placeId: doc.placeId || doc._id.toString(),
+    sourceId: doc.sourceId || null,
     name: doc.name,
     city: doc.city,
-    state: doc.state,
+    state: doc.state ?? null,
     zone: doc.zone || null,
     type: doc.type,
     significance: doc.significance || null,
     googleRating: doc.googleRating ?? null,
-    entranceFeeINR: doc.entranceFeeINR ?? 0,
+    entranceFeeINR: doc.entranceFeeINR ?? null,
     timeNeededHours: doc.timeNeededHours ?? null,
     bestTimeToVisit: doc.bestTimeToVisit || null,
     latitude: doc.latitude ?? doc.lat ?? null,
@@ -159,6 +190,23 @@ function mapPlaceResponse(doc) {
     source: doc.source || 'kaggle',
     isCurated: doc.isCurated === true,
     embeddingStale: doc.embeddingStale === true,
+    reviewFlags: Array.isArray(doc.reviewFlags) ? doc.reviewFlags : [],
+    heritage: doc.heritage
+      ? {
+          protectedBy: doc.heritage.protectedBy || null,
+          asiCircle: doc.heritage.asiCircle || null,
+          location: doc.heritage.location || null,
+          coordsApprox: Boolean(doc.heritage.coordsApprox),
+          mergedSourceIds: Array.isArray(doc.heritage.mergedSourceIds)
+            ? doc.heritage.mergedSourceIds
+            : [],
+          extraCoords: Array.isArray(doc.heritage.extraCoords)
+            ? doc.heritage.extraCoords
+            : [],
+          matchedCuratedPlace: doc.heritage.matchedCuratedPlace || null,
+        }
+      : null,
+    version: doc.__v ?? 0,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     updatedBy: updatedById,
@@ -171,21 +219,37 @@ router.use(requireAdmin);
 router.use(requireRole('content_editor', 'super_admin'));
 
 /**
- * GET /admin/places?q&city&state&type&hidden&limit&cursor
+ * GET /admin/places?q&city&state&type&hidden&hiddenReason&source&flag&protectedBy&sort&limit&cursor&offset
  */
 router.get('/', async (req, res) => {
   try {
-    const { q, city, state, type, hidden, limit, cursor } = req.query;
+    const {
+      q,
+      city,
+      state,
+      type,
+      hidden,
+      hiddenReason,
+      source,
+      flag,
+      protectedBy,
+      sort,
+      limit,
+      cursor,
+      offset,
+    } = req.query;
 
     const filter = {};
 
-    // Escaped search query, max 60 chars
+    // Escaped search query matching name, city (district), and heritage.location, max 60 chars
     if (typeof q === 'string' && q.trim()) {
       const cleanQ = q.trim().slice(0, 60);
       const escaped = escapeRegex(cleanQ);
+      const rx = new RegExp(escaped, 'i');
       filter.$or = [
-        { name: new RegExp(escaped, 'i') },
-        { city: new RegExp(escaped, 'i') },
+        { name: rx },
+        { city: rx },
+        { 'heritage.location': rx },
       ];
     }
 
@@ -193,10 +257,17 @@ router.get('/', async (req, res) => {
       filter.city = new RegExp('^' + escapeRegex(city.trim()) + '$', 'i');
     }
     if (typeof state === 'string' && state.trim()) {
-      filter.state = new RegExp('^' + escapeRegex(state.trim()) + '$', 'i');
+      if (state.trim() === '__unmapped__') {
+        filter.state = null;
+      } else {
+        filter.state = new RegExp('^' + escapeRegex(state.trim()) + '$', 'i');
+      }
     }
     if (typeof type === 'string' && type.trim()) {
       filter.type = new RegExp('^' + escapeRegex(type.trim()) + '$', 'i');
+    }
+    if (typeof source === 'string' && source.trim()) {
+      filter.source = source.trim();
     }
 
     if (hidden === 'true') {
@@ -205,31 +276,216 @@ router.get('/', async (req, res) => {
       filter.hidden = { $ne: true };
     }
 
-    if (cursor) {
+    if (typeof hiddenReason === 'string' && hiddenReason.trim() && hiddenReason !== 'all') {
+      const hr = hiddenReason.trim();
+      if (hr === 'none') {
+        filter.hiddenReason = null;
+      } else {
+        filter.hiddenReason = hr;
+      }
+    }
+
+    if (typeof flag === 'string' && flag.trim() && flag !== 'all') {
+      const f = flag.trim();
+      if (f === 'no_blocking') {
+        filter.reviewFlags = { $nin: BLOCKING_PUBLISH_FLAGS };
+      } else if (f === 'clean') {
+        filter.reviewFlags = { $size: 0 };
+      } else {
+        filter.reviewFlags = f;
+      }
+    }
+
+    if (typeof protectedBy === 'string' && protectedBy.trim() && protectedBy !== 'all') {
+      const pb = protectedBy.trim();
+      if (pb.toLowerCase() === 'asi') {
+        filter.sourceId = /^asi:/i;
+      } else if (pb.toLowerCase() === 'soi') {
+        filter.sourceId = /^soi:/i;
+      } else {
+        filter['heritage.protectedBy'] = new RegExp('^' + escapeRegex(pb) + '$', 'i');
+      }
+    }
+
+    const sortByStateName = sort === 'state_name';
+    const sortSpec = sortByStateName ? { state: 1, name: 1, _id: 1 } : { _id: -1 };
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
+    const offsetNum = Math.max(parseInt(offset, 10) || 0, 0);
+
+    if (cursor && !sortByStateName) {
       if (!mongoose.Types.ObjectId.isValid(cursor)) {
         return res.status(400).json({ error: 'Invalid cursor format' });
       }
       filter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
     }
 
-    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
+    let query = TouristPlace.find(filter)
+      .select('-embedding')
+      .sort(sortSpec);
 
-    const docs = await TouristPlace.find(filter)
-      .sort({ _id: -1 })
+    if (sortByStateName && offsetNum > 0) {
+      query = query.skip(offsetNum);
+    }
+
+    const docs = await query
       .limit(limitNum + 1)
       .populate('updatedBy', 'email')
       .lean();
 
     const hasMore = docs.length > limitNum;
     const items = hasMore ? docs.slice(0, limitNum) : docs;
-    const nextCursor = hasMore ? items[items.length - 1]._id.toString() : null;
+    const nextCursor = !sortByStateName && hasMore ? items[items.length - 1]._id.toString() : null;
+    const nextOffset = sortByStateName && hasMore ? offsetNum + items.length : null;
 
     const places = items.map(mapPlaceResponse);
 
-    return res.status(200).json({ places, nextCursor });
+    return res.status(200).json({ places, nextCursor, nextOffset });
   } catch (err) {
     console.error('Error fetching admin places:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /admin/places/bulk-action
+ * Bulk publish, reject, or skip_curated up to 50 places with blocking-flag enforcement,
+ * curated overlap confirmation, optimistic concurrency, and audited logging.
+ */
+router.post('/bulk-action', placeMutationLimiter, async (req, res) => {
+  const { action, ids, versions, confirmCuratedOverlap } = req.body || {};
+
+  if (!['publish', 'reject', 'skip_curated'].includes(action)) {
+    return res.status(400).json({ error: 'action must be "publish", "reject", or "skip_curated"' });
+  }
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  if (ids.length > MAX_BULK_HERITAGE_ACTION) {
+    return res.status(400).json({
+      error: `Bulk action is limited to ${MAX_BULK_HERITAGE_ACTION} records per request`,
+    });
+  }
+
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id))));
+  for (const id of uniqueIds) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid place ID format: ${id}` });
+    }
+  }
+
+  try {
+    const docs = await TouristPlace.find({ _id: { $in: uniqueIds } });
+    const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
+
+    const eligible = [];
+    const blocked = [];
+    const conflicts = [];
+    const notFound = [];
+
+    for (const id of uniqueIds) {
+      const place = docMap.get(id);
+      if (!place) {
+        notFound.push(id);
+        continue;
+      }
+
+      if (versions && typeof versions === 'object' && versions[id] !== undefined) {
+        const conflictMsg = checkConcurrencyConflict(place, { expectedVersion: versions[id] });
+        if (conflictMsg) {
+          conflicts.push({ id, name: place.name, error: conflictMsg });
+          continue;
+        }
+      }
+
+      if (action === 'publish') {
+        const blockingFlags = getBlockingPublishFlags(place);
+        if (blockingFlags.length > 0) {
+          blocked.push({ id, name: place.name, blockingFlags });
+          continue;
+        }
+        if (place.reviewFlags?.includes('matches_curated') && confirmCuratedOverlap !== true) {
+          blocked.push({
+            id,
+            name: place.name,
+            blockingFlags: ['matches_curated'],
+            matchedCuratedPlace: place.heritage?.matchedCuratedPlace || null,
+          });
+          continue;
+        }
+      }
+
+      eligible.push(place);
+    }
+
+    const auditAction =
+      action === 'publish'
+        ? 'place.bulk_publish'
+        : action === 'skip_curated'
+          ? 'place.bulk_skip_curated'
+          : 'place.bulk_reject';
+
+    const succeeded = [];
+    if (eligible.length > 0) {
+      await runAudited(
+        req,
+        {
+          action: auditAction,
+          targetType: 'TouristPlace',
+          targetId: eligible.map((p) => p._id.toString()).join(',').slice(0, 200),
+          summary: `Bulk ${action} (${eligible.length} place${eligible.length === 1 ? '' : 's'})`,
+          allowedFields: ['ids', 'count', 'action'],
+          before: { count: eligible.length, ids: eligible.map((p) => p._id.toString()) },
+          after: { action, count: eligible.length, ids: eligible.map((p) => p._id.toString()) },
+        },
+        async (session) => {
+          for (const place of eligible) {
+            if (action === 'publish') {
+              place.hidden = false;
+              place.hiddenReason = null;
+              place.isCurated = true;
+              place.embeddingStale = true;
+            } else if (action === 'skip_curated') {
+              place.hidden = true;
+              place.hiddenReason = 'already_curated';
+              place.isCurated = false;
+            } else {
+              place.hidden = true;
+              place.hiddenReason = 'rejected';
+              place.isCurated = false;
+            }
+            place.updatedBy = req.admin.id;
+            if (typeof place.increment === 'function') place.increment();
+            await place.save(session ? { session } : {});
+            succeeded.push(place);
+          }
+        }
+      );
+
+      invalidateDestinationCache();
+
+      if (action === 'publish') {
+        for (const place of succeeded) {
+          await tryEmbedPublishedPlace(place);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      action,
+      succeededCount: succeeded.length,
+      succeeded: succeeded.map((p) =>
+        mapPlaceResponse({
+          ...p.toObject(),
+          updatedBy: { _id: req.admin.id, email: req.admin.email },
+        })
+      ),
+      blocked,
+      conflicts,
+      notFound,
+    });
+  } catch (err) {
+    console.error('Error in bulk-action:', err.message);
+    return res.status(500).json({ error: 'Failed to process bulk action' });
   }
 });
 
@@ -243,7 +499,7 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    const doc = await TouristPlace.findById(id).populate('updatedBy', 'email').lean();
+    const doc = await TouristPlace.findById(id).select('-embedding').populate('updatedBy', 'email').lean();
     if (!doc) {
       return res.status(404).json({ error: 'Place not found' });
     }
@@ -305,12 +561,12 @@ router.post('/', placeMutationLimiter, async (req, res) => {
   if (hoursErr) return res.status(400).json({ error: hoursErr });
 
   try {
-    // Duplicate check on normalized name + city
-    const existing = await TouristPlace.findOne({
+    // Duplicate check on normalized name + city (for visible / non-duplicate places)
+    const existingMatches = await TouristPlace.find({
       name: new RegExp('^' + escapeRegex(body.name.trim()) + '$', 'i'),
       city: new RegExp('^' + escapeRegex(body.city.trim()) + '$', 'i'),
     });
-    if (existing) {
+    if ((existingMatches || []).some((d) => d.hiddenReason !== 'duplicate')) {
       return res.status(409).json({ error: 'Place with this name and city already exists' });
     }
 
@@ -329,9 +585,9 @@ router.post('/', placeMutationLimiter, async (req, res) => {
       zone: body.zone ? body.zone.trim() : undefined,
       significance: body.significance ? body.significance.trim() : undefined,
       bestTimeToVisit: body.bestTimeToVisit ? body.bestTimeToVisit.trim() : undefined,
-      googleRating: body.googleRating !== undefined && body.googleRating !== null ? Number(body.googleRating) : undefined,
-      entranceFeeINR: body.entranceFeeINR !== undefined && body.entranceFeeINR !== null ? Number(body.entranceFeeINR) : 0,
-      timeNeededHours: body.timeNeededHours !== undefined && body.timeNeededHours !== null ? Number(body.timeNeededHours) : undefined,
+      googleRating: body.googleRating !== undefined && body.googleRating !== null ? Number(body.googleRating) : null,
+      entranceFeeINR: body.entranceFeeINR !== undefined && body.entranceFeeINR !== null ? Number(body.entranceFeeINR) : null,
+      timeNeededHours: body.timeNeededHours !== undefined && body.timeNeededHours !== null ? Number(body.timeNeededHours) : null,
       isCurated: true,
       source: 'admin',
       hidden: false,
@@ -383,11 +639,12 @@ router.patch('/:id', placeMutationLimiter, async (req, res) => {
 
   const body = req.body || {};
   const bodyKeys = Object.keys(body);
-  if (bodyKeys.length === 0) {
+  const updateKeys = bodyKeys.filter((k) => !CONCURRENCY_META_FIELDS.includes(k));
+  if (updateKeys.length === 0) {
     return res.status(400).json({ error: 'No update fields provided' });
   }
 
-  for (const key of bodyKeys) {
+  for (const key of updateKeys) {
     if (!ALLOWED_PLACE_FIELDS.includes(key)) {
       return res.status(400).json({ error: `Unknown field: ${key}` });
     }
@@ -451,19 +708,26 @@ router.patch('/:id', placeMutationLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Place not found' });
     }
 
+    const conflictErr = checkConcurrencyConflict(place, body);
+    if (conflictErr) {
+      return res.status(409).json({ error: conflictErr });
+    }
+
     const targetName = body.name !== undefined ? body.name.trim() : place.name;
     const targetCity = body.city !== undefined ? body.city.trim() : place.city;
+    const isHiddenHeritage = place.source === HERITAGE_SOURCE && place.hidden === true;
 
     if (
-      targetName.toLowerCase() !== place.name.toLowerCase() ||
-      targetCity.toLowerCase() !== place.city.toLowerCase()
+      !isHiddenHeritage &&
+      (targetName.toLowerCase() !== place.name.toLowerCase() ||
+        targetCity.toLowerCase() !== place.city.toLowerCase())
     ) {
-      const dup = await TouristPlace.findOne({
+      const dupMatches = await TouristPlace.find({
         _id: { $ne: place._id },
         name: new RegExp('^' + escapeRegex(targetName) + '$', 'i'),
         city: new RegExp('^' + escapeRegex(targetCity) + '$', 'i'),
       });
-      if (dup) {
+      if ((dupMatches || []).some((d) => d.hiddenReason !== 'duplicate')) {
         return res.status(409).json({ error: 'Place with this name and city already exists' });
       }
     }
@@ -491,6 +755,28 @@ router.patch('/:id', placeMutationLimiter, async (req, res) => {
       }
     }
 
+    if (
+      place.source === HERITAGE_SOURCE ||
+      (Array.isArray(place.reviewFlags) && place.reviewFlags.length > 0)
+    ) {
+      const baseFlags = recomputeHeritageFlags(after).filter((f) => f !== 'matches_curated');
+      if (place.source === HERITAGE_SOURCE) {
+        const curatedQuery = TouristPlace.find({ source: { $ne: HERITAGE_SOURCE } });
+        const curatedPlaces =
+          curatedQuery && typeof curatedQuery.select === 'function'
+            ? await curatedQuery.select('_id name city state latitude longitude source').lean()
+            : Array.isArray(curatedQuery)
+              ? curatedQuery
+              : await curatedQuery;
+        const overlap = findCuratedOverlap(after, curatedPlaces || []);
+        after.heritage = { ...(after.heritage || {}), matchedCuratedPlace: overlap || null };
+        if (overlap) {
+          baseFlags.push('matches_curated');
+        }
+      }
+      after.reviewFlags = baseFlags;
+    }
+
     if (textChanged) {
       after.embeddingStale = true;
     }
@@ -512,6 +798,10 @@ router.patch('/:id', placeMutationLimiter, async (req, res) => {
           if (key === '_id' || key === '__v') continue;
           place[key] = val;
         }
+        if (after.heritage && typeof place.markModified === 'function') {
+          place.markModified('heritage');
+        }
+        if (typeof place.increment === 'function') place.increment();
         await place.save(session ? { session } : {});
         return place;
       }
@@ -531,6 +821,188 @@ router.patch('/:id', placeMutationLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/**
+ * POST /admin/places/:id/publish
+ * Publishes an unreviewed/hidden place after checking blocking quality flags, curated overlap
+ * confirmation, and version concurrency. Triggers best-effort non-blocking embedding.
+ */
+router.post('/:id/publish', placeMutationLimiter, async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid place ID format' });
+  }
+
+  try {
+    const place = await TouristPlace.findById(id);
+    if (!place) {
+      return res.status(404).json({ error: 'Place not found' });
+    }
+
+    const conflictErr = checkConcurrencyConflict(place, req.body || {});
+    if (conflictErr) {
+      return res.status(409).json({ error: conflictErr });
+    }
+
+    const blockingFlags = getBlockingPublishFlags(place);
+    if (blockingFlags.length > 0) {
+      return res.status(400).json({
+        error: `Cannot publish while unresolved flags remain: ${blockingFlags.join(', ')}`,
+        blockingFlags,
+      });
+    }
+
+    if (
+      Array.isArray(place.reviewFlags) &&
+      place.reviewFlags.includes('matches_curated') &&
+      req.body?.confirmCuratedOverlap !== true
+    ) {
+      return res.status(400).json({
+        error: 'Confirm overlap with existing curated place before publishing',
+        code: 'CURATED_OVERLAP_CONFIRMATION_REQUIRED',
+        matchedCuratedPlace: place.heritage?.matchedCuratedPlace || null,
+      });
+    }
+
+    const before = place.toObject();
+    const after = {
+      ...before,
+      hidden: false,
+      hiddenReason: null,
+      isCurated: true,
+      embeddingStale: true,
+      updatedBy: req.admin.id,
+    };
+
+    const updatedPlace = await runAudited(
+      req,
+      {
+        action: 'place.publish',
+        targetType: 'TouristPlace',
+        targetId: place._id.toString(),
+        summary: `Published place ${place.name}`.slice(0, 200),
+        allowedFields: ['hidden', 'hiddenReason', 'isCurated', 'embeddingStale', 'updatedBy'],
+        before,
+        after,
+      },
+      async (session) => {
+        place.hidden = false;
+        place.hiddenReason = null;
+        place.isCurated = true;
+        place.embeddingStale = true;
+        place.updatedBy = req.admin.id;
+        if (typeof place.increment === 'function') place.increment();
+        await place.save(session ? { session } : {});
+        return place;
+      }
+    );
+
+    invalidateDestinationCache();
+
+    // Best-effort single-doc embedding; never blocks or fails the publish response
+    await tryEmbedPublishedPlace(updatedPlace);
+
+    return res.status(200).json(mapPlaceResponse({
+      ...updatedPlace.toObject(),
+      updatedBy: { _id: req.admin.id, email: req.admin.email },
+    }));
+  } catch (err) {
+    if (err.statusCode === 500) {
+      return res.status(500).json({ error: 'Failed to publish place' });
+    }
+    console.error('Error publishing place:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function handleMarkHeritageHidden(req, res, { hiddenReason, action, summaryPrefix, failMessage }) {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid place ID format' });
+  }
+
+  try {
+    const place = await TouristPlace.findById(id);
+    if (!place) {
+      return res.status(404).json({ error: 'Place not found' });
+    }
+
+    const conflictErr = checkConcurrencyConflict(place, req.body || {});
+    if (conflictErr) {
+      return res.status(409).json({ error: conflictErr });
+    }
+
+    const before = place.toObject();
+    const after = {
+      ...before,
+      hidden: true,
+      hiddenReason,
+      isCurated: false,
+      updatedBy: req.admin.id,
+    };
+
+    const updatedPlace = await runAudited(
+      req,
+      {
+        action,
+        targetType: 'TouristPlace',
+        targetId: place._id.toString(),
+        summary: `${summaryPrefix} ${place.name}`.slice(0, 200),
+        allowedFields: ['hidden', 'hiddenReason', 'isCurated', 'updatedBy'],
+        before,
+        after,
+      },
+      async (session) => {
+        place.hidden = true;
+        place.hiddenReason = hiddenReason;
+        place.isCurated = false;
+        place.updatedBy = req.admin.id;
+        if (typeof place.increment === 'function') place.increment();
+        await place.save(session ? { session } : {});
+        return place;
+      }
+    );
+
+    invalidateDestinationCache();
+
+    return res.status(200).json(mapPlaceResponse({
+      ...updatedPlace.toObject(),
+      updatedBy: { _id: req.admin.id, email: req.admin.email },
+    }));
+  } catch (err) {
+    if (err.statusCode === 500) {
+      return res.status(500).json({ error: failMessage });
+    }
+    console.error(`${failMessage}:`, err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+/**
+ * POST /admin/places/:id/reject
+ * Marks a pending/unreviewed heritage monument as rejected (remains hidden).
+ */
+router.post('/:id/reject', placeMutationLimiter, (req, res) =>
+  handleMarkHeritageHidden(req, res, {
+    hiddenReason: 'rejected',
+    action: 'place.reject',
+    summaryPrefix: 'Rejected place',
+    failMessage: 'Failed to reject place',
+  })
+);
+
+/**
+ * POST /admin/places/:id/skip-curated
+ * Marks a heritage monument matching an existing curated place as skipped (remains hidden, hiddenReason: 'already_curated').
+ */
+router.post('/:id/skip-curated', placeMutationLimiter, (req, res) =>
+  handleMarkHeritageHidden(req, res, {
+    hiddenReason: 'already_curated',
+    action: 'place.skip_curated',
+    summaryPrefix: 'Skipped already-curated place',
+    failMessage: 'Failed to skip curated heritage place',
+  })
+);
 
 /**
  * POST /admin/places/:id/hide
@@ -580,6 +1052,7 @@ router.post('/:id/hide', placeMutationLimiter, async (req, res) => {
         place.hidden = true;
         place.hiddenReason = finalReason;
         place.updatedBy = req.admin.id;
+        if (typeof place.increment === 'function') place.increment();
         await place.save(session ? { session } : {});
         return place;
       }
@@ -615,6 +1088,14 @@ router.post('/:id/restore', placeMutationLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Place not found' });
     }
 
+    const blockingFlags = getBlockingPublishFlags(place);
+    if (blockingFlags.length > 0) {
+      return res.status(400).json({
+        error: `Cannot restore while unresolved flags remain: ${blockingFlags.join(', ')}`,
+        blockingFlags,
+      });
+    }
+
     const before = place.toObject();
     const after = {
       ...before,
@@ -638,6 +1119,7 @@ router.post('/:id/restore', placeMutationLimiter, async (req, res) => {
         place.hidden = false;
         place.hiddenReason = null;
         place.updatedBy = req.admin.id;
+        if (typeof place.increment === 'function') place.increment();
         await place.save(session ? { session } : {});
         return place;
       }
@@ -660,4 +1142,3 @@ router.post('/:id/restore', placeMutationLimiter, async (req, res) => {
 
 export default router;
 export { router as adminPlacesRouter };
-

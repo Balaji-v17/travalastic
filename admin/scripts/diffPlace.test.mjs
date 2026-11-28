@@ -85,7 +85,7 @@ describe('diffPlace helper', () => {
     });
   });
 
-  it('returns full payload in create mode (original is null)', () => {
+  it('returns full payload in create mode (original is null) and keeps blank entranceFeeINR null', () => {
     const newValues = {
       name: 'Aguada Fort',
       city: 'Goa',
@@ -102,6 +102,34 @@ describe('diffPlace helper', () => {
     assert.equal(diff.latitude, 15.49);
     assert.equal(diff.longitude, 73.77);
     assert.equal(diff.entranceFeeINR, 50);
+
+    const blankFeeDiff = diffPlace(null, { ...newValues, entranceFeeINR: '' });
+    assert.equal(blankFeeDiff.entranceFeeINR, undefined);
+    assert.notEqual(blankFeeDiff.entranceFeeINR, 0);
+  });
+
+  it('stores null (not 0) when clearing entranceFeeINR in edit mode and omits unchanged null fee', () => {
+    const clearedDiff = diffPlace(originalPlace, {
+      ...matchingFormValues,
+      entranceFeeINR: '',
+    });
+    assert.deepEqual(clearedDiff, {
+      entranceFeeINR: null,
+    });
+
+    const unchangedNullPlace = {
+      ...originalPlace,
+      entranceFeeINR: null,
+      googleRating: null,
+      timeNeededHours: null,
+    };
+    const unchangedDiff = diffPlace(unchangedNullPlace, {
+      ...matchingFormValues,
+      entranceFeeINR: '',
+      googleRating: '',
+      timeNeededHours: '',
+    });
+    assert.deepEqual(unchangedDiff, {});
   });
 });
 

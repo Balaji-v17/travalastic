@@ -8,6 +8,7 @@ import { AdminsPage } from './pages/AdminsPage.tsx';
 import { ChangePasswordPage } from './pages/ChangePasswordPage.tsx';
 import { PlacesListPage } from './pages/PlacesListPage.tsx';
 import { PlaceFormPage } from './pages/PlaceFormPage.tsx';
+import { HeritageReviewPage } from './pages/HeritageReviewPage.tsx';
 import { HotelsListPage } from './pages/HotelsListPage.tsx';
 import { HotelFormPage } from './pages/HotelFormPage.tsx';
 import { CollectionsListPage } from './pages/CollectionsListPage.tsx';
@@ -110,6 +111,21 @@ function AdminRouter() {
     return (
       <Layout currentPath="/places">
         <PlacesListPage />
+      </Layout>
+    );
+  }
+
+  if (normalizedPath === '/heritage') {
+    if (!isRouteAllowed(admin.role, '/heritage')) {
+      return (
+        <Layout currentPath="/heritage">
+          <NotPermittedPage />
+        </Layout>
+      );
+    }
+    return (
+      <Layout currentPath="/heritage">
+        <HeritageReviewPage />
       </Layout>
     );
   }

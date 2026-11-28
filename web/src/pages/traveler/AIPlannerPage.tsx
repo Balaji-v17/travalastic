@@ -20,7 +20,15 @@ import { makeDefaultDna, validateDna, formatLocalDate } from '../../lib/plannerF
 import ItineraryMap from '../../components/itinerary/ItineraryMap';
 import ChangeJourneyPanel from '../../components/itinerary/ChangeJourneyPanel';
 import CountStepper from '../../components/common/CountStepper';
+import CityTypeahead from '../../components/common/CityTypeahead';
+import {
+  buildDidYouMeanHint,
+  checkDestinationKnown,
+  isDestinationInUserTrips,
+  type DidYouMeanHint,
+} from '../../lib/didYouMean';
 import { PLANNER_LIMITS } from '../../lib/countLimits';
+import type { Hotel, Activity } from '../../data/mockData';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -70,6 +78,7 @@ type Phase = 'dna' | 'building' | 'result';
 export default function AIPlannerPage() {
   const {
     navigate,
+    journeys,
     refreshJourneys,
     plannerDestination,
     plannerDestinationId,
@@ -290,6 +299,7 @@ export default function AIPlannerPage() {
         <DNAForm
           dna={dna}
           setDna={setDna}
+          journeys={journeys}
           onBuild={handleBuildJourney}
           toggleInterest={toggleInterest}
         />
@@ -385,6 +395,8 @@ export default function AIPlannerPage() {
 
   // hidden until backed by real data
   const showUnsupported: boolean = false;
+  const hotels: Hotel[] = [];
+  const activities: Activity[] = [];
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
@@ -981,15 +993,74 @@ export default function AIPlannerPage() {
 
 // ─── DNA Form ─────────────────────────────────────────────────────────────────
 
-function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
+function DNAForm({ dna, setDna, journeys, onBuild, toggleInterest }: {
   dna: JourneyDNA;
   setDna: React.Dispatch<React.SetStateAction<JourneyDNA>>;
+  journeys: readonly { destination?: string | null }[];
   onBuild: () => void;
   toggleInterest: (i: string) => void;
 }) {
   const today = new Date();
   const todayStr = formatLocalDate(today);
   const { ok, errors } = validateDna(dna, today);
+
+  const [didYouMean, setDidYouMean] = useState<DidYouMeanHint | null>(null);
+  const pickedFromTypeaheadRef = useRef(false);
+  const checkSeqRef = useRef(0);
+  const checkAbortRef = useRef<AbortController | null>(null);
+
+  const runDestinationCheck = async (rawDest: string) => {
+    const trimmed = rawDest.trim();
+    if (trimmed.length < 2 || pickedFromTypeaheadRef.current || isDestinationInUserTrips(trimmed, journeys)) {
+      setDidYouMean(null);
+      return;
+    }
+
+    if (checkAbortRef.current) checkAbortRef.current.abort();
+    const controller = new AbortController();
+    checkAbortRef.current = controller;
+    const seq = ++checkSeqRef.current;
+
+    try {
+      const result = await checkDestinationKnown(trimmed, { signal: controller.signal });
+      if (seq !== checkSeqRef.current || controller.signal.aborted) return;
+      const hint = buildDidYouMeanHint({
+        destination: trimmed,
+        known: result.known,
+        suggestions: result.suggestions,
+      });
+      setDidYouMean(hint.shouldShow ? hint : null);
+    } catch {
+      if (seq === checkSeqRef.current && !controller.signal.aborted) {
+        setDidYouMean(null);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const trimmed = dna.destination.trim();
+    if (trimmed.length < 2 || pickedFromTypeaheadRef.current || isDestinationInUserTrips(trimmed, journeys)) {
+      if (checkAbortRef.current) checkAbortRef.current.abort();
+      checkSeqRef.current++;
+      setDidYouMean(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      runDestinationCheck(trimmed);
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dna.destination, journeys]);
+
+  useEffect(() => {
+    return () => {
+      if (checkAbortRef.current) checkAbortRef.current.abort();
+    };
+  }, []);
 
   return (
     <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-8">
@@ -1014,20 +1085,28 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 Destination
               </label>
-              <input
+              <CityTypeahead
+                ariaLabel="Destination"
                 value={dna.destination}
-                onChange={(e) =>
+                onChange={(nextVal, selectedCity) => {
+                  pickedFromTypeaheadRef.current = Boolean(selectedCity);
+                  if (selectedCity) {
+                    setDidYouMean(null);
+                  }
                   // When user edits the destination text, set destination AND reset destinationId to ''.
                   // This prevents the stale-destination bug where destinationId remained stuck (e.g. 'tokyo')
                   // from a prior prefill or default, causing every destination to select the wrong template.
                   setDna((p) => ({
                     ...p,
-                    destination: e.target.value,
+                    destination: nextVal,
                     destinationId: '',
-                  }))
-                }
+                  }));
+                }}
+                onBlur={() => {
+                  runDestinationCheck(dna.destination);
+                }}
                 placeholder="Where do you want to go?"
-                className={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors ${
+                inputClassName={`w-full px-3 py-2.5 border rounded-xl text-sm text-slate-800 focus:outline-none transition-colors ${
                   errors.destination
                     ? 'border-red-300 focus:border-red-500 bg-red-50/20'
                     : 'border-slate-200 focus:border-blue-400'
@@ -1035,6 +1114,38 @@ function DNAForm({ dna, setDna, onBuild, toggleInterest }: {
               />
               {errors.destination && (
                 <p className="text-xs text-red-500 mt-1">{errors.destination}</p>
+              )}
+              {!errors.destination && didYouMean?.shouldShow && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-2 p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-900"
+                >
+                  <p>{didYouMean.message}</p>
+                  {didYouMean.suggestions.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-amber-700 font-medium">Did you mean:</span>
+                      {didYouMean.suggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            pickedFromTypeaheadRef.current = true;
+                            setDidYouMean(null);
+                            setDna((p) => ({
+                              ...p,
+                              destination: s.name,
+                              destinationId: '',
+                            }));
+                          }}
+                          className="px-2 py-0.5 rounded bg-white border border-amber-300 text-amber-900 font-medium hover:bg-amber-100 transition-colors cursor-pointer"
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

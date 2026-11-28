@@ -4,6 +4,13 @@ import { getApiErrorMessage } from '../lib/apiErrors.ts';
 import { validatePlaceForm, type PlaceFormValues } from '../lib/placeForm.ts';
 import { diffPlace, type PlaceModel } from '../lib/diffPlace.ts';
 import { getOsmLink } from '../lib/osmLink.ts';
+import {
+  FLAG_LABELS,
+  buildOsmEmbedUrl,
+  canPublishPlace,
+  getPlaceBlockingFlags,
+  hasCuratedOverlap,
+} from '../lib/heritageReview.ts';
 import { Modal } from '../components/Modal.tsx';
 
 interface PlaceFormPageProps {
@@ -20,7 +27,7 @@ const INITIAL_FORM_VALUES: PlaceFormValues = {
   latitude: '',
   longitude: '',
   googleRating: '',
-  entranceFeeINR: '0',
+  entranceFeeINR: '',
   timeNeededHours: '',
   bestTimeToVisit: '',
   significance: '',
@@ -42,8 +49,13 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
   const [isHiding, setIsHiding] = useState<boolean>(false);
   const [hideError, setHideError] = useState<string | null>(null);
 
-  // Restore action state
+  // Restore / Publish / Reject / Skip-curated action state
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
+  const [isRejecting, setIsRejecting] = useState<boolean>(false);
+  const [isSkippingCurated, setIsSkippingCurated] = useState<boolean>(false);
+  const [isOverlapPublishModalOpen, setIsOverlapPublishModalOpen] = useState<boolean>(false);
+  const [showMapPreview, setShowMapPreview] = useState<boolean>(false);
 
   // Unsaved changes leave confirmation dialog
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState<boolean>(false);
@@ -67,7 +79,7 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
         latitude: data.latitude !== null && data.latitude !== undefined ? String(data.latitude) : '',
         longitude: data.longitude !== null && data.longitude !== undefined ? String(data.longitude) : '',
         googleRating: data.googleRating !== null && data.googleRating !== undefined ? String(data.googleRating) : '',
-        entranceFeeINR: data.entranceFeeINR !== null && data.entranceFeeINR !== undefined ? String(data.entranceFeeINR) : '0',
+        entranceFeeINR: data.entranceFeeINR !== null && data.entranceFeeINR !== undefined ? String(data.entranceFeeINR) : '',
         timeNeededHours: data.timeNeededHours !== null && data.timeNeededHours !== undefined ? String(data.timeNeededHours) : '',
         bestTimeToVisit: data.bestTimeToVisit || '',
         significance: data.significance || '',
@@ -191,7 +203,11 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
       } else if (mode === 'edit' && placeId && diff) {
         const updated = await apiFetch<PlaceModel>(`/admin/places/${placeId}`, {
           method: 'PATCH',
-          body: diff,
+          body: {
+            ...diff,
+            expectedVersion: originalPlace?.version,
+            expectedUpdatedAt: originalPlace?.updatedAt,
+          },
         });
         setOriginalPlace(updated);
         setSuccessMessage('Place updated successfully.');
@@ -200,6 +216,10 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
       }
     } catch (err) {
       if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setServerError(err.message || 'This place was modified elsewhere. Please reload and try again.');
+          return;
+        }
         const msg = err.message || '';
         // Map field-specific server errors if message points to a known field
         const lowerMsg = msg.toLowerCase();
@@ -273,6 +293,99 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
     }
   };
 
+  // Publish heritage / pending_review place action
+  const handlePublishPlace = async (confirmOverlap: boolean = false) => {
+    if (!placeId) return;
+    if (!confirmOverlap && hasCuratedOverlap(originalPlace)) {
+      setIsOverlapPublishModalOpen(true);
+      return;
+    }
+    setIsPublishing(true);
+    setServerError(null);
+    setSuccessMessage(null);
+
+    try {
+      const updated = await apiFetch<PlaceModel>(`/admin/places/${placeId}/publish`, {
+        method: 'POST',
+        body: {
+          expectedVersion: originalPlace?.version,
+          expectedUpdatedAt: originalPlace?.updatedAt,
+          ...(confirmOverlap ? { confirmCuratedOverlap: true } : {}),
+        },
+      });
+      setIsOverlapPublishModalOpen(false);
+      setOriginalPlace(updated);
+      setSuccessMessage('Place published and now visible in Explore & search.');
+      await fetchPlace();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setServerError(getApiErrorMessage(err));
+      } else {
+        setServerError('Failed to publish place.');
+      }
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  // Reject heritage / pending_review place action
+  const handleRejectPlace = async () => {
+    if (!placeId) return;
+    setIsRejecting(true);
+    setServerError(null);
+    setSuccessMessage(null);
+
+    try {
+      const updated = await apiFetch<PlaceModel>(`/admin/places/${placeId}/reject`, {
+        method: 'POST',
+        body: {
+          expectedVersion: originalPlace?.version,
+          expectedUpdatedAt: originalPlace?.updatedAt,
+        },
+      });
+      setOriginalPlace(updated);
+      setSuccessMessage('Place marked as rejected (remains hidden).');
+      await fetchPlace();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setServerError(getApiErrorMessage(err));
+      } else {
+        setServerError('Failed to reject place.');
+      }
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  // Skip heritage record that overlaps with an existing curated place
+  const handleSkipCuratedPlace = async () => {
+    if (!placeId) return;
+    setIsSkippingCurated(true);
+    setServerError(null);
+    setSuccessMessage(null);
+
+    try {
+      const updated = await apiFetch<PlaceModel>(`/admin/places/${placeId}/skip-curated`, {
+        method: 'POST',
+        body: {
+          expectedVersion: originalPlace?.version,
+          expectedUpdatedAt: originalPlace?.updatedAt,
+        },
+      });
+      setOriginalPlace(updated);
+      setSuccessMessage('Place skipped as already curated (remains hidden).');
+      await fetchPlace();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setServerError(getApiErrorMessage(err));
+      } else {
+        setServerError('Failed to skip place as already curated.');
+      }
+    } finally {
+      setIsSkippingCurated(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-12 text-center text-slate-500 text-sm flex flex-col items-center justify-center space-y-3">
@@ -286,6 +399,13 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
   }
 
   const isHidden = originalPlace?.hidden === true;
+  const isHeritage = originalPlace?.source === 'asi-soi-heritage';
+  const blockingFlags = originalPlace ? getPlaceBlockingFlags(originalPlace) : [];
+  const canPublish = originalPlace ? canPublishPlace(originalPlace) : false;
+  const matchedCurated = originalPlace?.heritage?.matchedCuratedPlace || null;
+  const parsedLat = values.latitude.trim() ? Number(values.latitude) : NaN;
+  const parsedLng = values.longitude.trim() ? Number(values.longitude) : NaN;
+  const osmEmbedUrl = buildOsmEmbedUrl(parsedLat, parsedLng);
   const isSaveDisabled = mode === 'edit' && (!diff || Object.keys(diff).length === 0);
 
   return (
@@ -317,6 +437,100 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
           </button>
         )}
       </div>
+
+      {/* Heritage Review Banner */}
+      {mode === 'edit' && originalPlace && (isHeritage || (originalPlace.reviewFlags?.length ?? 0) > 0) && (
+        <div
+          role="region"
+          aria-label="Heritage review status"
+          className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-sm space-y-3"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <div className="font-semibold text-slate-900">
+                {originalPlace.heritage?.protectedBy === 'ASI'
+                  ? 'Protected monument — Archaeological Survey of India (ASI)'
+                  : originalPlace.heritage?.protectedBy === 'SOI'
+                    ? 'Protected monument — Survey of India (SOI)'
+                    : 'Heritage review record'}
+              </div>
+              <div className="text-xs text-slate-600 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+                {originalPlace.sourceId && <span>Source ID: {originalPlace.sourceId}</span>}
+                {originalPlace.heritage?.location && <span>Location: {originalPlace.heritage.location}</span>}
+                {originalPlace.heritage?.asiCircle && <span>Circle: {originalPlace.heritage.asiCircle}</span>}
+                {originalPlace.heritage?.coordsApprox && <span>Coordinates approximate (bbox centroid)</span>}
+              </div>
+              {matchedCurated && (
+                <div className="text-xs text-indigo-800 mt-1.5">
+                  Possible overlap with curated place:{' '}
+                  <a
+                    href={`#/places/${matchedCurated.placeId}`}
+                    className="font-semibold underline hover:text-indigo-950"
+                  >
+                    {matchedCurated.name}
+                  </a>
+                  {matchedCurated.city ? ` (${matchedCurated.city}${matchedCurated.state ? `, ${matchedCurated.state}` : ''})` : ''}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {isHidden && originalPlace.hiddenReason !== 'rejected' && (
+                <button
+                  type="button"
+                  disabled={isPublishing || !canPublish}
+                  onClick={() => handlePublishPlace(false)}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={!canPublish ? `Resolve blocking flags before publishing: ${blockingFlags.join(', ')}` : 'Publish to Explore & search'}
+                >
+                  {isPublishing ? 'Publishing...' : 'Publish'}
+                </button>
+              )}
+              {(hasCuratedOverlap(originalPlace) || originalPlace.hiddenReason === 'pending_review') &&
+                originalPlace.hiddenReason !== 'already_curated' && (
+                  <button
+                    type="button"
+                    disabled={isSkippingCurated}
+                    onClick={handleSkipCuratedPlace}
+                    className="inline-flex items-center px-3 py-1.5 border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                  >
+                    {isSkippingCurated ? 'Skipping...' : 'Skip - already curated'}
+                  </button>
+                )}
+              {originalPlace.hiddenReason !== 'rejected' && (
+                <button
+                  type="button"
+                  disabled={isRejecting}
+                  onClick={handleRejectPlace}
+                  className="inline-flex items-center px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                >
+                  {isRejecting ? 'Rejecting...' : 'Reject'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {originalPlace.reviewFlags && originalPlace.reviewFlags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {originalPlace.reviewFlags.map((flag) => {
+                const isBlocking = blockingFlags.includes(flag);
+                return (
+                  <span
+                    key={flag}
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      isBlocking
+                        ? 'bg-red-100 text-red-800 border border-red-200'
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}
+                  >
+                    {FLAG_LABELS[flag] || flag}
+                    {isBlocking ? ' (blocks publish)' : ''}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Hidden Status Banner */}
       {mode === 'edit' && isHidden && (
@@ -585,24 +799,45 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
             </div>
           </div>
 
-          {/* OpenStreetMap External Link */}
-          <div className="mt-3">
+          {/* OpenStreetMap External Link & Optional Preview */}
+          <div className="mt-3 space-y-2">
             {osmUrl ? (
-              <a
-                href={osmUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors focus:outline-hidden underline"
-              >
-                <span>Check this location on OpenStreetMap</span>
-                <svg className="h-3 w-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </a>
+              <div className="flex flex-wrap items-center gap-4">
+                <a
+                  href={osmUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors focus:outline-hidden underline"
+                >
+                  <span>Check this location on OpenStreetMap</span>
+                  <svg className="h-3 w-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+                {osmEmbedUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMapPreview((prev) => !prev)}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900 underline"
+                  >
+                    {showMapPreview ? 'Hide map preview' : 'Show map preview'}
+                  </button>
+                )}
+              </div>
             ) : (
               <span className="text-xs text-slate-400">
                 Enter valid coordinates to preview location on OpenStreetMap
               </span>
+            )}
+            {showMapPreview && osmEmbedUrl && (
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <iframe
+                  title={`OpenStreetMap preview for ${values.name || 'place'}`}
+                  src={osmEmbedUrl}
+                  className="w-full h-48 border-0"
+                  loading="lazy"
+                />
+              </div>
             )}
           </div>
         </div>
@@ -630,7 +865,7 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
                 className={`block w-full px-3 py-2 text-sm border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
                   fieldErrors.googleRating ? 'border-red-300 bg-red-50/30' : 'border-slate-300 bg-white'
                 }`}
-                placeholder="e.g. 4.6"
+                placeholder="Not listed"
               />
               {fieldErrors.googleRating && (
                 <p id="rating-error" className="mt-1 text-xs text-red-600">
@@ -650,13 +885,13 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
                 step="1"
                 id="place-fee"
                 name="entranceFeeINR"
-                value={values.entranceFeeINR ?? '0'}
+                value={values.entranceFeeINR ?? ''}
                 onChange={handleChange}
                 aria-describedby={fieldErrors.entranceFeeINR ? 'fee-error' : undefined}
                 className={`block w-full px-3 py-2 text-sm border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
                   fieldErrors.entranceFeeINR ? 'border-red-300 bg-red-50/30' : 'border-slate-300 bg-white'
                 }`}
-                placeholder="0 for free"
+                placeholder="Not listed"
               />
               {fieldErrors.entranceFeeINR && (
                 <p id="fee-error" className="mt-1 text-xs text-red-600">
@@ -683,7 +918,7 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
                 className={`block w-full px-3 py-2 text-sm border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
                   fieldErrors.timeNeededHours ? 'border-red-300 bg-red-50/30' : 'border-slate-300 bg-white'
                 }`}
-                placeholder="e.g. 2.0"
+                placeholder="Not listed"
               />
               {fieldErrors.timeNeededHours && (
                 <p id="hours-error" className="mt-1 text-xs text-red-600">
@@ -858,6 +1093,40 @@ export function PlaceFormPage({ mode, placeId }: PlaceFormPageProps) {
               className="px-3 py-1.5 border border-transparent rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
             >
               Discard and leave
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Curated Overlap Publish Confirmation Modal */}
+      <Modal
+        isOpen={isOverlapPublishModalOpen}
+        onClose={() => setIsOverlapPublishModalOpen(false)}
+        title="Confirm Publishing Curated Overlap"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            This heritage monument appears to overlap with existing curated place{' '}
+            <strong className="text-slate-900">
+              {matchedCurated?.name || 'an existing curated record'}
+            </strong>
+            {matchedCurated?.city ? ` (${matchedCurated.city})` : ''}. Publishing will keep both records visible publicly.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIsOverlapPublishModalOpen(false)}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isPublishing}
+              onClick={() => handlePublishPlace(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {isPublishing ? 'Publishing...' : 'Publish anyway'}
             </button>
           </div>
         </div>

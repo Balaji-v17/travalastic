@@ -6,28 +6,29 @@ import {
 } from '../src/lib/routes.ts';
 
 describe('routes helper', () => {
-  it('contains ONLY routes that currently exist (Dashboard, Places, Hotels, Collections, Support, Admins, and Audit Log)', () => {
+  it('contains ONLY routes that currently exist (Dashboard, Places, Heritage review, Hotels, Collections, Support, Admins, and Audit Log)', () => {
     const paths = AVAILABLE_ROUTES.map((r) => r.path);
-    assert.deepEqual(paths, ['/', '/places', '/hotels', '/collections', '/support', '/admins', '/audit']);
+    assert.deepEqual(paths, ['/', '/places', '/heritage', '/hotels', '/collections', '/support', '/admins', '/audit']);
 
     // Ensure built sections are present
     const allLabels = AVAILABLE_ROUTES.map((r) => r.label.toLowerCase());
     assert.equal(allLabels.includes('places'), true);
+    assert.equal(allLabels.includes('heritage review'), true);
     assert.equal(allLabels.includes('hotels'), true);
     assert.equal(allLabels.includes('collections'), true);
     assert.equal(allLabels.includes('support'), true);
   });
 
-  it('super_admin receives Dashboard, Places, Hotels, Collections, Support, Admins, and Audit Log in nav', () => {
+  it('super_admin receives Dashboard, Places, Heritage review, Hotels, Collections, Support, Admins, and Audit Log in nav', () => {
     const nav = getNavRoutes('super_admin');
     const paths = nav.map((r) => r.path);
-    assert.deepEqual(paths, ['/', '/places', '/hotels', '/collections', '/support', '/admins', '/audit']);
+    assert.deepEqual(paths, ['/', '/places', '/heritage', '/hotels', '/collections', '/support', '/admins', '/audit']);
   });
 
-  it('content_editor receives Dashboard, Places, Hotels, and Collections in nav', () => {
+  it('content_editor receives Dashboard, Places, Heritage review, Hotels, and Collections in nav', () => {
     const nav = getNavRoutes('content_editor');
     const paths = nav.map((r) => r.path);
-    assert.deepEqual(paths, ['/', '/places', '/hotels', '/collections']);
+    assert.deepEqual(paths, ['/', '/places', '/heritage', '/hotels', '/collections']);
   });
 
   it('support_agent receives Dashboard and Support in nav', () => {

@@ -5,44 +5,20 @@ import 'dotenv/config';
 
 import embedText from '../src/services/embeddingService.js';
 import TouristPlace from '../src/models/TouristPlace.js';
+import { EMBED_UNEMBEDDED_QUERY, buildDescriptiveText } from '../src/utils/placeEmbedding.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Builds descriptive text from name + type + significance + city
- * e.g. "Golden Temple, a Religious site in Amritsar, Punjab"
- */
-export function buildDescriptiveText(place) {
-  const { name, type, significance, city, state } = place;
-
-  const descriptors = [];
-  if (type) descriptors.push(type);
-  if (significance && (!type || !type.toLowerCase().includes(significance.toLowerCase()))) {
-    descriptors.push(significance);
-  }
-
-  const descriptorPhrase =
-    descriptors.length > 0 ? `a ${descriptors.join(' ')} site` : 'a destination';
-
-  let text = `${name}, ${descriptorPhrase}`;
-  if (city) {
-    text += ` in ${city}`;
-    if (state && state.toLowerCase() !== city.toLowerCase()) {
-      text += `, ${state}`;
-    }
-  }
-
-  return text;
-}
+export { buildDescriptiveText, EMBED_UNEMBEDDED_QUERY };
 
 /**
  * Helper to call embedText with retry and exponential backoff for rate limits.
  */
-async function embedWithRetry(text, retries = 5, delayMs = 2500) {
+async function embedWithRetry(text, embedFn = embedText, retries = 5, delayMs = 2500) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const vector = await embedText(text);
+      const vector = await embedFn(text);
       if (!Array.isArray(vector) || vector.length !== 768) {
         throw new Error(
           `Expected 768 dimensions from embeddingService, got ${vector?.length || 0}`
@@ -73,102 +49,95 @@ async function embedWithRetry(text, retries = 5, delayMs = 2500) {
   }
 }
 
-async function embedTouristPlaces() {
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    console.error('Error: MONGODB_URI is not set in environment variables');
-    process.exit(1);
+/**
+ * Finds and embeds visible (non-hidden) TouristPlace documents missing an embedding or marked stale.
+ * Strictly skips hidden records (hidden: true).
+ */
+export async function embedTouristPlaces({
+  TouristPlaceModel = TouristPlace,
+  embedFn = embedText,
+  connect = true,
+  closeConnection = true,
+  throttleMs = 300,
+  logger = console,
+} = {}) {
+  const shouldConnect = connect && mongoose.connection.readyState === 0;
+  if (shouldConnect) {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      throw new Error('MONGODB_URI is not set in environment variables');
+    }
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey && embedFn === embedText) {
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
+    }
+    logger.log('Connecting to MongoDB...');
+    await mongoose.connect(mongoUri);
+    logger.log('Connected to MongoDB successfully.');
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    console.error('Error: GEMINI_API_KEY is not set in environment variables');
-    process.exit(1);
-  }
+  try {
+    const totalAll = await TouristPlaceModel.countDocuments({});
+    const rawCandidates = await TouristPlaceModel.find(EMBED_UNEMBEDDED_QUERY);
+    // Defensive in-memory guard: never embed hidden records even if a mock ignores query filters
+    const placesToEmbed = (rawCandidates || []).filter((p) => p && p.hidden !== true);
+    const alreadyEmbeddedCount = Math.max(0, totalAll - placesToEmbed.length);
 
-  console.log('Connecting to MongoDB...');
-  await mongoose.connect(mongoUri);
-  console.log('Connected to MongoDB successfully.');
+    logger.log(`\n======================================================`);
+    logger.log(`TOURIST PLACES EMBEDDING SCRIPT`);
+    logger.log(`======================================================`);
+    logger.log(`Total documents in collection: ${totalAll}`);
+    logger.log(`Already embedded / hidden:     ${alreadyEmbeddedCount}`);
+    logger.log(`Pending visible embedding:     ${placesToEmbed.length}`);
+    logger.log(`======================================================\n`);
 
-  // Find all TouristPlace documents without an embedding yet
-  const queryUnembedded = {
-    $or: [
-      { embedding: { $exists: false } },
-      { embedding: null },
-      { embedding: { $size: 0 } },
-    ],
-  };
-
-  const totalAll = await TouristPlace.countDocuments({});
-  const placesToEmbed = await TouristPlace.find(queryUnembedded);
-  const alreadyEmbeddedCount = totalAll - placesToEmbed.length;
-
-  console.log(`\n======================================================`);
-  console.log(`TOURIST PLACES EMBEDDING SCRIPT`);
-  console.log(`======================================================`);
-  console.log(`Total documents in collection: ${totalAll}`);
-  console.log(`Already embedded (skipping):    ${alreadyEmbeddedCount}`);
-  console.log(`Pending embedding:             ${placesToEmbed.length}`);
-  console.log(`======================================================\n`);
-
-  if (placesToEmbed.length === 0) {
-    console.log('All documents already have 768-dim embeddings. Nothing to do!');
-    await mongoose.connection.close();
-    return;
-  }
-
-  let successCount = 0;
-  let failCount = 0;
-
-  for (let i = 0; i < placesToEmbed.length; i++) {
-    const doc = placesToEmbed[i];
-
-    // Double-check: skip documents that already have an embedding
-    if (Array.isArray(doc.embedding) && doc.embedding.length === 768) {
-      continue;
+    if (placesToEmbed.length === 0) {
+      logger.log('All visible documents already have current 768-dim embeddings. Nothing to do!');
+      return { totalAll, embeddedCount: 0, errorCount: 0 };
     }
 
-    const descText = buildDescriptiveText(doc);
+    let successCount = 0;
+    let errorCount = 0;
 
-    try {
-      console.log(
-        `[${i + 1}/${placesToEmbed.length}] Embedding: "${descText.slice(0, 70)}..."`
-      );
+    for (let i = 0; i < placesToEmbed.length; i++) {
+      const place = placesToEmbed[i];
+      const text = buildDescriptiveText(place);
 
-      const embeddingVector = await embedWithRetry(descText);
+      try {
+        const vector = await embedWithRetry(text, embedFn);
+        await TouristPlaceModel.updateOne(
+          { _id: place._id },
+          { $set: { embedding: vector, embeddingStale: false } }
+        );
+        successCount++;
+        if (successCount % 10 === 0 || i === placesToEmbed.length - 1) {
+          logger.log(`Processed [${i + 1}/${placesToEmbed.length}] -> "${place.name}" (${place.city})`);
+        }
+      } catch (err) {
+        errorCount++;
+        logger.error(`Failed to embed "${place.name}" (${place._id}):`, err.message);
+      }
 
-      await TouristPlace.updateOne(
-        { _id: doc._id },
-        { $set: { embedding: embeddingVector } }
-      );
+      if (throttleMs > 0 && i < placesToEmbed.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, throttleMs));
+      }
+    }
 
-      successCount++;
-
-      // Gentle pause to respect Gemini API rate limits
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    } catch (err) {
-      console.error(`Failed to embed place "${doc.name}":`, err.message);
-      failCount++;
+    logger.log(`\nEmbedding finished! Success: ${successCount}, Errors: ${errorCount}`);
+    return { totalAll, embeddedCount: successCount, errorCount };
+  } finally {
+    if (shouldConnect && closeConnection) {
+      await mongoose.connection.close();
+      logger.log('Database connection closed.');
     }
   }
-
-  console.log(`\n======================================================`);
-  console.log(`EMBEDDING COMPLETE`);
-  console.log(`======================================================`);
-  console.log(`Newly embedded: ${successCount}`);
-  console.log(`Failed:         ${failCount}`);
-  console.log(`Skipped (prior): ${alreadyEmbeddedCount}`);
-  console.log(`Total embedded: ${alreadyEmbeddedCount + successCount}/${totalAll}`);
-  console.log(`======================================================\n`);
-
-  await mongoose.connection.close();
-  console.log('Database connection closed.');
 }
 
-// Execute if run directly from CLI
-if (process.argv[1] && process.argv[1].endsWith('embedTouristPlaces.js')) {
-  embedTouristPlaces().catch((err) => {
-    console.error('Fatal error during embedding execution:', err);
-    mongoose.connection.close().finally(() => process.exit(1));
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  embedTouristPlaces()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('Embedding script error:', err.message);
+      mongoose.connection.close().finally(() => process.exit(1));
+    });
 }

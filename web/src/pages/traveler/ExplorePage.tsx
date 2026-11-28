@@ -3,7 +3,14 @@ import { useApp } from '../../store/AppContext';
 import { destinations, type Destination } from '../../data/mockData';
 import { SHOW_SAMPLE_PAGES } from '../../config/features';
 import { apiFetch } from '../../lib/api';
-import type { PlaceResult } from '../../lib/destinationView';
+import {
+  formatEntranceFee,
+  formatPlaceRating,
+  formatTimeNeeded,
+  getPlaceAuthorityLabel,
+  isHeritagePlace,
+  type PlaceResult,
+} from '../../lib/destinationView';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -615,11 +622,15 @@ export default function ExplorePage() {
                                 className="px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase"
                                 style={{
                                   borderRadius: '2px',
-                                  backgroundColor: place.isCurated ? '#C9A96E' : 'rgba(17,17,17,0.75)',
-                                  color: place.isCurated ? '#111111' : '#FFFFFF',
+                                  backgroundColor: isHeritagePlace(place)
+                                    ? '#C9A96E'
+                                    : place.isCurated
+                                      ? '#C9A96E'
+                                      : 'rgba(17,17,17,0.75)',
+                                  color: isHeritagePlace(place) || place.isCurated ? '#111111' : '#FFFFFF',
                                 }}
                               >
-                                {place.isCurated ? 'Curated' : 'Nearby, not curated'}
+                                {getPlaceAuthorityLabel(place) || (place.isCurated ? 'Curated' : 'Nearby, not curated')}
                               </span>
                               {(place.category || place.type) && (
                                 <span className="px-2 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium tracking-wide" style={{ borderRadius: '2px' }}>
@@ -633,11 +644,25 @@ export default function ExplorePage() {
                             <p className="text-xs text-[#77736C] mb-2">
                               {place.address || [place.city, place.state].filter(Boolean).join(', ')}
                             </p>
+                            {place.heritage?.coordsApprox && (
+                              <p className="text-[11px] text-[#77736C] mb-2">
+                                Location approximate
+                              </p>
+                            )}
                             {place.significance && (
                               <p className="text-xs text-[#252525] line-clamp-2 leading-relaxed mb-3">
                                 {place.significance}
                               </p>
                             )}
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#77736C]">
+                              {formatPlaceRating(place.googleRating ?? place.rating) && (
+                                <span>★ {formatPlaceRating(place.googleRating ?? place.rating)}</span>
+                              )}
+                              <span>{formatTimeNeeded(place.timeNeededHours)}</span>
+                              {place.entranceFeeINR !== undefined && (
+                                <span>Entry: {formatEntranceFee(place.entranceFeeINR)}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
 

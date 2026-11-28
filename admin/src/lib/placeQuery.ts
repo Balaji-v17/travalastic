@@ -6,6 +6,7 @@ export interface PlaceFilterState {
   state: string;
   type: string;
   hidden: VisibilityFilter;
+  hiddenReason: string;
 }
 
 export const DEFAULT_PLACE_FILTERS: PlaceFilterState = {
@@ -14,6 +15,7 @@ export const DEFAULT_PLACE_FILTERS: PlaceFilterState = {
   state: '',
   type: '',
   hidden: 'all',
+  hiddenReason: '',
 };
 
 /**
@@ -61,6 +63,11 @@ export function parsePlaceQuery(hash: string): PlaceFilterState {
     result.hidden = 'all';
   }
 
+  const hiddenReason = searchParams.get('hiddenReason');
+  if (hiddenReason !== null && hiddenReason.trim().length > 0) {
+    result.hiddenReason = hiddenReason.trim();
+  }
+
   return result;
 }
 
@@ -86,6 +93,9 @@ export function buildPlaceQuery(filters: Partial<PlaceFilterState>): string {
   if (filters.hidden === 'true' || filters.hidden === 'false') {
     params.set('hidden', filters.hidden);
   }
+  if (filters.hiddenReason && typeof filters.hiddenReason === 'string' && filters.hiddenReason.trim().length > 0) {
+    params.set('hiddenReason', filters.hiddenReason.trim());
+  }
 
   const qs = params.toString();
   return qs.length > 0 ? `?${qs}` : '';
@@ -98,4 +108,3 @@ export function buildPlaceHash(filters: Partial<PlaceFilterState>): string {
   const qs = buildPlaceQuery(filters);
   return `#/places${qs}`;
 }
-

@@ -4,6 +4,7 @@ import { deals } from '../../data/mockData';
 import { allPackages, formatPackagePrice } from '../../data/packagesData';
 import { SHOW_SAMPLE_PAGES } from '../../config/features';
 import AirportInput from '../../components/flights/AirportInput';
+import CityTypeahead from '../../components/common/CityTypeahead';
 import { validateStay } from '../../lib/stay';
 import { STYLE_KEYS, STYLE_COLLECTIONS } from '../../data/styleCollections';
 import CountStepper from '../../components/common/CountStepper';
@@ -178,7 +179,7 @@ export default function HomePage() {
           HERO — cinematic, full-bleed photography
       ══════════════════════════════════════════════════════════ */}
       <section
-        className="relative flex min-h-[100svh] flex-col justify-end overflow-hidden -mt-[60px] pt-[60px] lg:min-h-[88svh]"
+        className="relative flex min-h-[100svh] flex-col justify-end overflow-x-clip -mt-[60px] pt-[60px] lg:min-h-[88svh]"
       >
         {/* Background */}
         <img
@@ -315,11 +316,12 @@ export default function HomePage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                   <div className="col-span-2 lg:col-span-1">
                     <label className={labelCls}>Destination</label>
-                    <input
-                      className={inputCls}
+                    <CityTypeahead
+                      ariaLabel="Hotel destination"
+                      inputClassName={inputCls}
                       value={hotelDest}
-                      onChange={(e) => {
-                        setHotelDest(e.target.value);
+                      onChange={(nextVal) => {
+                        setHotelDest(nextVal);
                         if (hotelError) setHotelError('');
                       }}
                       placeholder="City, area or hotel"
@@ -465,7 +467,13 @@ export default function HomePage() {
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
                   <div className="col-span-2 lg:col-span-1">
                     <label className={labelCls}>Where to?</label>
-                    <input className={inputCls} value={journeyDest} onChange={(e) => setJourneyDest(e.target.value)} placeholder="Japan, Bali, Italy…" />
+                    <CityTypeahead
+                      ariaLabel="Journey destination"
+                      inputClassName={inputCls}
+                      value={journeyDest}
+                      onChange={(nextVal) => setJourneyDest(nextVal)}
+                      placeholder="Japan, Bali, Italy…"
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>When?</label>

@@ -11,19 +11,25 @@ export interface PlaceResult {
   zone?: string;
   type?: string;
   category?: string | null;
-  significance?: string;
-  description?: string;
-  rating?: number;
-  googleRating?: number;
-  entranceFeeINR?: number;
-  timeNeededHours?: number;
-  bestTimeToVisit?: string;
+  significance?: string | null;
+  description?: string | null;
+  rating?: number | null;
+  googleRating?: number | null;
+  entranceFeeINR?: number | null;
+  timeNeededHours?: number | null;
+  bestTimeToVisit?: string | null;
   lat?: number | string | null;
   lon?: number | string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   isCurated?: boolean;
-  source?: string;
+  source?: string | null;
+  heritage?: {
+    protectedBy?: string | null;
+    asiCircle?: string | null;
+    location?: string | null;
+    coordsApprox?: boolean;
+  } | null;
   notice?: string;
   fallbackNotice?: string;
   photoUrl?: string;
@@ -105,5 +111,31 @@ export function buildMapsUrl(
   const queryStr = cleanName ? `${cleanName} ${latNum},${lonNum}` : `${latNum},${lonNum}`;
 
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryStr)}`;
+}
+
+export function isHeritagePlace(place: Partial<PlaceResult> | null | undefined): boolean {
+  if (!place) return false;
+  return place.source === 'asi-soi-heritage' || Boolean(place.heritage?.protectedBy);
+}
+
+export function getPlaceAuthorityLabel(place: Partial<PlaceResult> | null | undefined): string | null {
+  if (!isHeritagePlace(place)) return null;
+  return 'Protected monument (ASI / Survey of India)';
+}
+
+export function formatPlaceRating(rating: number | null | undefined): string | null {
+  if (typeof rating !== 'number' || !Number.isFinite(rating) || rating <= 0) return null;
+  return rating.toFixed(1);
+}
+
+export function formatEntranceFee(fee: number | null | undefined): string {
+  if (typeof fee !== 'number' || !Number.isFinite(fee) || fee < 0) return 'Not listed';
+  if (fee === 0) return 'Free';
+  return `₹${fee}`;
+}
+
+export function formatTimeNeeded(hours: number | null | undefined): string {
+  if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0) return 'Time varies';
+  return `${hours} hrs`;
 }
 
