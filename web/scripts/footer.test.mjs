@@ -1,13 +1,21 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  CITY_DATA_ATTRIBUTION,
+  HERITAGE_DATA_ATTRIBUTION,
   currentYear,
   filterFooterColumns,
   FOOTER_COLUMNS,
 } from '../src/lib/footer.ts';
 
 import { PAGE_STATUS } from '../src/lib/pageStatus.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WEB_SRC = path.resolve(__dirname, '../src');
 
 test('currentYear helper', async (t) => {
   await t.test('computes year correctly on Dec 31', () => {
@@ -101,3 +109,45 @@ test('footer filter with flag ON (SHOW_SAMPLE_PAGES = true)', async (t) => {
     assert.equal(labels.includes('Travel Insurance'), false);
   });
 });
+
+test('SimpleMaps CC BY 4.0 attribution is present in Footer and legal credits', () => {
+  assert.equal(CITY_DATA_ATTRIBUTION.providerName, 'SimpleMaps');
+  assert.equal(CITY_DATA_ATTRIBUTION.sourceUrl, 'https://simplemaps.com/data/world-cities');
+  assert.equal(CITY_DATA_ATTRIBUTION.licenseName, 'CC BY 4.0');
+  assert.equal(CITY_DATA_ATTRIBUTION.licenseUrl, 'https://creativecommons.org/licenses/by/4.0/');
+  assert.match(CITY_DATA_ATTRIBUTION.text, /SimpleMaps/);
+  assert.match(CITY_DATA_ATTRIBUTION.text, /https:\/\/simplemaps\.com\/data\/world-cities/);
+  assert.match(CITY_DATA_ATTRIBUTION.text, /https:\/\/creativecommons\.org\/licenses\/by\/4\.0\//);
+  assert.match(CITY_DATA_ATTRIBUTION.text, /Modified: filtered and indexed for Travalastic\./);
+
+  const footerSrc = fs.readFileSync(path.join(WEB_SRC, 'components/layout/Footer.tsx'), 'utf8');
+  assert.match(footerSrc, /CITY_DATA_ATTRIBUTION/);
+
+  const legalContentSrc = fs.readFileSync(path.join(WEB_SRC, 'pages/legal/legalContent.ts'), 'utf8');
+  assert.match(legalContentSrc, /SimpleMaps/);
+  assert.match(legalContentSrc, /https:\/\/simplemaps\.com\/data\/world-cities/);
+  assert.match(legalContentSrc, /https:\/\/creativecommons\.org\/licenses\/by\/4\.0\//);
+  assert.match(legalContentSrc, /Modified: filtered and indexed for Travalastic\./);
+});
+
+test('ASI / Survey of India heritage attribution is present in Footer and legal credits', () => {
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /Archaeological Survey of India/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /Survey of India/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /Bhuvan/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /therajasekhar\/india-public-cultural-heritage/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /NDSAP/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /Locations are approximate/);
+  assert.match(HERITAGE_DATA_ATTRIBUTION.text, /Licence terms at source to be confirmed/);
+
+  const footerSrc = fs.readFileSync(path.join(WEB_SRC, 'components/layout/Footer.tsx'), 'utf8');
+  assert.match(footerSrc, /HERITAGE_DATA_ATTRIBUTION/);
+
+  const legalContentSrc = fs.readFileSync(path.join(WEB_SRC, 'pages/legal/legalContent.ts'), 'utf8');
+  assert.match(legalContentSrc, /Archaeological Survey of India/);
+  assert.match(legalContentSrc, /Survey of India/);
+  assert.match(legalContentSrc, /therajasekhar\/india-public-cultural-heritage/);
+  assert.match(legalContentSrc, /NDSAP/);
+  assert.match(legalContentSrc, /Locations are approximate/);
+  assert.match(legalContentSrc, /Licence terms at source to be confirmed/);
+});
+

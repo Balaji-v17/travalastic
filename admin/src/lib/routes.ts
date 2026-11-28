@@ -22,6 +22,11 @@ export const AVAILABLE_ROUTES: readonly RouteItem[] = [
     label: 'Places',
   },
   {
+    id: 'heritage',
+    path: '/heritage',
+    label: 'Heritage review',
+  },
+  {
     id: 'hotels',
     path: '/hotels',
     label: 'Hotels',

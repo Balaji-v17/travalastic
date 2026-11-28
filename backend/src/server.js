@@ -90,7 +90,17 @@ app.use((req, res, next) => {
 });
 
 app.use(helmet());
-app.use(morgan('dev'));
+morgan.token('safe-url', (req) => {
+  const rawUrl = req.originalUrl || req.url || '';
+  if (rawUrl.startsWith('/destinations/cities')) {
+    return '/destinations/cities';
+  }
+  if (rawUrl.startsWith('/destinations/check')) {
+    return '/destinations/check';
+  }
+  return rawUrl;
+});
+app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]'));
 
 // Duffel webhook: raw body parsing mounted BEFORE express.json() for exact signature verification
 app.use(

@@ -3,14 +3,19 @@ import { useApp } from '../../store/AppContext';
 import { useAuth } from '../../store/AuthContext';
 import { apiFetch } from '../../lib/api';
 import type { PlaceResult } from '../../lib/destinationView';
+import { fetchCitySuggestions, type CitySuggestion } from '../../lib/citySearch';
 import {
+  CITY_SEARCH_DEBOUNCE_MS,
+  CITY_SEARCH_MIN_CHARS,
   GLOBAL_SEARCH_DEBOUNCE_MS,
   GLOBAL_SEARCH_MIN_CHARS,
   buildGlobalSearchGroups,
   isExternalOpenStreetMapResult,
   isSlashShortcutTarget,
   nextSearchHighlightIndex,
+  shouldTriggerCityTypeahead,
   shouldTriggerTypeahead,
+  type GlobalSearchCityItem,
   type GlobalSearchPlaceItem,
   type TripSearchEntry,
 } from '../../lib/globalSearch';
@@ -23,6 +28,7 @@ interface SearchResponsePayload {
 
 type FlatItem =
   | { type: 'trip'; trip: TripSearchEntry }
+  | { type: 'city'; city: GlobalSearchCityItem }
   | { type: 'place'; place: GlobalSearchPlaceItem };
 
 export default function GlobalSearchOverlay() {
@@ -33,6 +39,7 @@ export default function GlobalSearchOverlay() {
     closeGlobalSearch,
     journeys,
     openPlace,
+    setSearchQuery,
     navigate,
   } = useApp();
   const { status } = useAuth();
@@ -40,9 +47,12 @@ export default function GlobalSearchOverlay() {
 
   const [query, setQuery] = useState('');
   const [places, setPlaces] = useState<PlaceResult[]>([]);
+  const [cities, setCities] = useState<CitySuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [citiesLoading, setCitiesLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearchedCities, setHasSearchedCities] = useState(false);
   const [usedExternalFallback, setUsedExternalFallback] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
 
@@ -51,6 +61,8 @@ export default function GlobalSearchOverlay() {
   const openerRef = useRef<HTMLElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  const cityAbortRef = useRef<AbortController | null>(null);
+  const cityRequestSeqRef = useRef(0);
 
   // Global "/" shortcut to open overlay
   useEffect(() => {
@@ -81,8 +93,10 @@ export default function GlobalSearchOverlay() {
       }
       setQuery(globalSearchInitialQuery || '');
       setPlaces([]);
+      setCities([]);
       setErrorMsg('');
       setHasSearched(false);
+      setHasSearchedCities(false);
       setUsedExternalFallback(false);
       setHighlightIndex(-1);
 
@@ -96,6 +110,10 @@ export default function GlobalSearchOverlay() {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
+    }
+    if (cityAbortRef.current) {
+      cityAbortRef.current.abort();
+      cityAbortRef.current = null;
     }
     const restoreTarget =
       openerRef.current ||
@@ -157,7 +175,56 @@ export default function GlobalSearchOverlay() {
     }
   }
 
-  // Typeahead effect: min 3 chars, 400ms debounce, internal DB only (fallback=0)
+  // Cities typeahead effect: min 2 chars, 200ms debounce, internal DB only (no external calls)
+  useEffect(() => {
+    if (!isGlobalSearchOpen) return;
+    const trimmed = query.trim();
+
+    if (trimmed.length < CITY_SEARCH_MIN_CHARS) {
+      if (cityAbortRef.current) {
+        cityAbortRef.current.abort();
+        cityAbortRef.current = null;
+      }
+      cityRequestSeqRef.current++;
+      setCitiesLoading(false);
+      setCities([]);
+      setHasSearchedCities(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      if (cityAbortRef.current) {
+        cityAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      cityAbortRef.current = controller;
+      const seq = ++cityRequestSeqRef.current;
+      setCitiesLoading(true);
+
+      try {
+        const list = await fetchCitySuggestions(trimmed, {
+          limit: 6,
+          signal: controller.signal,
+        });
+        if (seq !== cityRequestSeqRef.current || controller.signal.aborted) return;
+        setCities(list);
+        setHasSearchedCities(true);
+      } catch {
+        if (seq === cityRequestSeqRef.current && !controller.signal.aborted) {
+          setCities([]);
+          setHasSearchedCities(true);
+        }
+      } finally {
+        if (seq === cityRequestSeqRef.current) {
+          setCitiesLoading(false);
+        }
+      }
+    }, CITY_SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [query, isGlobalSearchOpen]);
+
+  // Places typeahead effect: min 3 chars, 400ms debounce, internal DB only (fallback=0)
   useEffect(() => {
     if (!isGlobalSearchOpen) return;
     const trimmed = query.trim();
@@ -192,8 +259,9 @@ export default function GlobalSearchOverlay() {
         isSignedIn,
         trips: journeys,
         places,
+        cities,
       }),
-    [query, isSignedIn, journeys, places]
+    [query, isSignedIn, journeys, places, cities]
   );
 
   const flatItems = useMemo<FlatItem[]>(() => {
@@ -201,6 +269,8 @@ export default function GlobalSearchOverlay() {
     for (const g of groups) {
       if (g.key === 'trips') {
         for (const trip of g.items) items.push({ type: 'trip', trip });
+      } else if (g.key === 'cities') {
+        for (const city of g.items) items.push({ type: 'city', city });
       } else {
         for (const place of g.items) items.push({ type: 'place', place });
       }
@@ -212,6 +282,9 @@ export default function GlobalSearchOverlay() {
     closeGlobalSearch();
     if (item.type === 'trip') {
       navigate('journey', { selectedJourneyId: item.trip.id });
+    } else if (item.type === 'city') {
+      setSearchQuery({ destination: item.city.name });
+      navigate('explore');
     } else {
       openPlace(item.place.raw);
     }
@@ -269,7 +342,10 @@ export default function GlobalSearchOverlay() {
   if (!isGlobalSearchOpen) return null;
 
   const ready = shouldTriggerTypeahead(query);
-  const showEmpty = ready && !loading && !errorMsg && hasSearched && flatItems.length === 0;
+  const citiesReady = shouldTriggerCityTypeahead(query);
+  const anyLoading = loading || (citiesLoading && flatItems.length === 0);
+  const showEmpty =
+    ready && !loading && !citiesLoading && !errorMsg && hasSearched && hasSearchedCities && flatItems.length === 0;
 
   return (
     <div
@@ -307,8 +383,8 @@ export default function GlobalSearchOverlay() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search places or your trips (type at least 3 characters)…"
-            aria-label="Search places and trips"
+            placeholder="Search cities, places, or your trips…"
+            aria-label="Search cities, places, and trips"
             className="flex-1 bg-transparent text-sm sm:text-base text-[#111111] placeholder-[#77736C] focus:outline-none"
           />
           {query && (
@@ -337,13 +413,13 @@ export default function GlobalSearchOverlay() {
 
         {/* Results Body */}
         <div className="max-h-[65vh] overflow-y-auto p-4 space-y-5">
-          {!ready && (
+          {!citiesReady && !ready && (
             <p className="text-xs text-[#77736C] py-4 text-center">
-              Type at least {GLOBAL_SEARCH_MIN_CHARS} characters to search{isSignedIn ? ' your trips and ' : ' '}places. Press <kbd className="px-1.5 py-0.5 bg-[#F7F5F0] border border-[#E8E4DC] font-mono text-[11px]">Enter</kbd> to include OpenStreetMap worldwide results.
+              Type at least {CITY_SEARCH_MIN_CHARS} characters for cities or {GLOBAL_SEARCH_MIN_CHARS} for{isSignedIn ? ' your trips and ' : ' '}places. Press <kbd className="px-1.5 py-0.5 bg-[#F7F5F0] border border-[#E8E4DC] font-mono text-[11px]">Enter</kbd> to include OpenStreetMap worldwide results.
             </p>
           )}
 
-          {ready && loading && (
+          {(citiesReady || ready) && anyLoading && flatItems.length === 0 && (
             <p className="text-xs text-[#77736C] py-4 text-center">
               Searching…
             </p>
@@ -412,6 +488,41 @@ export default function GlobalSearchOverlay() {
                     );
                   })}
 
+                {group.key === 'cities' &&
+                  group.items.map((city) => {
+                    const idx = flatItems.findIndex(
+                      (f) => f.type === 'city' && f.city.id === city.id
+                    );
+                    const isHi = idx === highlightIndex;
+                    return (
+                      <button
+                        key={city.id}
+                        type="button"
+                        onClick={() => selectFlatItem({ type: 'city', city })}
+                        className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 transition-colors border ${
+                          isHi
+                            ? 'bg-[#F7F5F0] border-[#C9A96E]'
+                            : 'bg-white border-transparent hover:bg-[#FAFAF8] hover:border-[#E8E4DC]'
+                        }`}
+                        style={{ borderRadius: '2px' }}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#111111] truncate">
+                            {city.name}
+                          </p>
+                          {city.subtitle && (
+                            <p className="text-xs text-[#77736C] truncate">
+                              {city.subtitle}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs text-[#77736C] shrink-0">
+                          {city.isRegion ? 'State / region →' : 'Explore city →'}
+                        </span>
+                      </button>
+                    );
+                  })}
+
                 {group.key === 'places' &&
                   group.items.map((place) => {
                     const idx = flatItems.findIndex(
@@ -459,7 +570,7 @@ export default function GlobalSearchOverlay() {
           {ready && !loading && !errorMsg && flatItems.length > 0 && !usedExternalFallback && (
             <div className="pt-2 border-t border-[#E8E4DC] flex items-center justify-between">
               <span className="text-[11px] text-[#77736C]">
-                Showing Travalastic places{isSignedIn ? ' & your trips' : ''}.
+                Showing Travalastic cities, places{isSignedIn ? ' & your trips' : ''}.
               </span>
               <button
                 type="button"

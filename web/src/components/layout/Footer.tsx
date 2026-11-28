@@ -2,6 +2,8 @@ import { useApp } from '../../store/AppContext';
 import { SHOW_SAMPLE_PAGES } from '../../config/features';
 import {
   FOOTER_COLUMNS,
+  CITY_DATA_ATTRIBUTION,
+  HERITAGE_DATA_ATTRIBUTION,
   currentYear,
   filterFooterColumns,
   type FooterLink,
@@ -10,6 +12,8 @@ import {
 
 export {
   FOOTER_COLUMNS,
+  CITY_DATA_ATTRIBUTION,
+  HERITAGE_DATA_ATTRIBUTION,
   currentYear,
   filterFooterColumns,
   type FooterLink,
@@ -73,10 +77,34 @@ export default function Footer() {
           ))}
         </div>
 
-        {/* Bottom strip: Clean copyright notice with clearance for FAB */}
-        <div className="border-t border-white/8 pt-6 pb-16 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pr-0 sm:pr-56">
+        {/* Bottom strip: Clean copyright notice and open-data attribution with clearance for FAB */}
+        <div className="border-t border-white/8 pt-6 pb-16 sm:pb-2 flex flex-col gap-2 pr-0 sm:pr-56">
           <p className="text-white/40 text-xs tracking-wide">
             &copy; {currentYear()} Travalastic. All rights reserved.
+          </p>
+          <p className="text-white/40 text-xs leading-relaxed">
+            City data &copy;{' '}
+            <a
+              href={CITY_DATA_ATTRIBUTION.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-white/70 transition-colors"
+            >
+              {CITY_DATA_ATTRIBUTION.providerName}
+            </a>{' '}
+            ({CITY_DATA_ATTRIBUTION.sourceUrl}), licensed under{' '}
+            <a
+              href={CITY_DATA_ATTRIBUTION.licenseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-white/70 transition-colors"
+            >
+              {CITY_DATA_ATTRIBUTION.licenseName}
+            </a>{' '}
+            ({CITY_DATA_ATTRIBUTION.licenseUrl}). {CITY_DATA_ATTRIBUTION.modificationNote}
+          </p>
+          <p className="text-white/40 text-xs leading-relaxed">
+            {HERITAGE_DATA_ATTRIBUTION.text}
           </p>
         </div>
       </div>

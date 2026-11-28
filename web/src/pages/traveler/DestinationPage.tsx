@@ -6,6 +6,11 @@ import {
   destinationView,
   findTripForPlace,
   buildMapsUrl,
+  formatEntranceFee,
+  formatPlaceRating,
+  formatTimeNeeded,
+  getPlaceAuthorityLabel,
+  isHeritagePlace,
   type PlaceResult,
 } from '../../lib/destinationView';
 import { apiFetch } from '../../lib/api';
@@ -151,11 +156,11 @@ export function LiveDestinationPage({ place }: { place: PlaceResult }) {
               className="px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase"
               style={{
                 borderRadius: '2px',
-                backgroundColor: place.isCurated ? '#C9A96E' : 'rgba(255,255,255,0.15)',
-                color: place.isCurated ? '#111111' : '#FFFFFF',
+                backgroundColor: isHeritagePlace(place) || place.isCurated ? '#C9A96E' : 'rgba(255,255,255,0.15)',
+                color: isHeritagePlace(place) || place.isCurated ? '#111111' : '#FFFFFF',
               }}
             >
-              {place.isCurated ? 'Curated' : 'Nearby, not curated'}
+              {getPlaceAuthorityLabel(place) || (place.isCurated ? 'Curated' : 'Nearby, not curated')}
             </span>
           </div>
 
@@ -206,6 +211,33 @@ export function LiveDestinationPage({ place }: { place: PlaceResult }) {
           </section>
         )}
 
+        {/* ── Visitor Details (Null-Safe) ── */}
+        <section className="mb-10">
+          <div
+            className="p-4 border border-[#E8E4DC] bg-white grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs"
+            style={{ borderRadius: '2px' }}
+          >
+            <div>
+              <span className="block uppercase tracking-wider text-[10px] text-[#77736C] font-semibold">Suggested Time</span>
+              <span className="font-semibold text-[#111111] mt-0.5 block">
+                {formatTimeNeeded(place.timeNeededHours)}
+              </span>
+            </div>
+            <div>
+              <span className="block uppercase tracking-wider text-[10px] text-[#77736C] font-semibold">Entrance Fee</span>
+              <span className="font-semibold text-[#111111] mt-0.5 block">
+                {formatEntranceFee(place.entranceFeeINR)}
+              </span>
+            </div>
+            <div>
+              <span className="block uppercase tracking-wider text-[10px] text-[#77736C] font-semibold">Rating</span>
+              <span className="font-semibold text-[#111111] mt-0.5 block">
+                {formatPlaceRating(place.googleRating ?? place.rating) ? `★ ${formatPlaceRating(place.googleRating ?? place.rating)}` : 'Not listed'}
+              </span>
+            </div>
+          </div>
+        </section>
+
         {/* ── Location & Directions Section ── */}
         {mapsUrl && (
           <section className="mb-10">
@@ -222,6 +254,7 @@ export function LiveDestinationPage({ place }: { place: PlaceResult }) {
                 {place.address && <p className="text-xs text-[#77736C] mt-0.5">{place.address}</p>}
                 <p className="text-xs text-[#77736C] mt-0.5 font-mono">
                   Coordinates: {Number(lat).toFixed(4)}, {Number(lon).toFixed(4)}
+                  {place.heritage?.coordsApprox ? ' · Location approximate' : ''}
                 </p>
               </div>
               <a

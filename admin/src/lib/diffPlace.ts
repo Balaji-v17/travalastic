@@ -1,11 +1,31 @@
 import type { PlaceFormValues } from './placeForm.ts';
 
+export interface MatchedCuratedPlaceInfo {
+  placeId: string;
+  name: string;
+  city?: string | null;
+  state?: string | null;
+  reason?: string | null;
+  distanceMeters?: number | null;
+}
+
+export interface PlaceHeritageInfo {
+  protectedBy?: string | null;
+  asiCircle?: string | null;
+  location?: string | null;
+  coordsApprox?: boolean;
+  mergedSourceIds?: string[];
+  extraCoords?: { lat: number; lng: number }[];
+  matchedCuratedPlace?: MatchedCuratedPlaceInfo | null;
+}
+
 export interface PlaceModel {
   _id?: string;
   id?: string;
+  sourceId?: string | null;
   name: string;
   city: string;
-  state: string;
+  state: string | null;
   type: string;
   zone?: string | null;
   significance?: string | null;
@@ -20,6 +40,9 @@ export interface PlaceModel {
   source?: string;
   isCurated?: boolean;
   embeddingStale?: boolean;
+  reviewFlags?: string[];
+  heritage?: PlaceHeritageInfo | null;
+  version?: number;
   updatedByEmail?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -31,7 +54,7 @@ export interface PlaceModel {
  * Computes the minimal update payload containing ONLY fields that changed.
  * Key constraints:
  * - Latitude and longitude must always be sent together if either changed.
- * - Clearing an optional field sends null so the server clears it.
+ * - Clearing an optional field (including entranceFeeINR) sends null so the server clears it.
  * - Returns empty object {} if no changes were made.
  */
 export function diffPlace(
@@ -94,8 +117,8 @@ export function diffPlace(
     }
   }
 
-  // Optional numeric fields (googleRating, timeNeededHours)
-  const optionalNumberFields = ['googleRating', 'timeNeededHours'] as const;
+  // Optional numeric fields (googleRating, entranceFeeINR, timeNeededHours) — null preserved!
+  const optionalNumberFields = ['googleRating', 'entranceFeeINR', 'timeNeededHours'] as const;
   for (const field of optionalNumberFields) {
     const rawVal = values[field];
     const currentVal = rawVal !== undefined && rawVal !== '' && rawVal !== null ? Number(rawVal) : null;
@@ -103,14 +126,6 @@ export function diffPlace(
     if (currentVal !== origVal) {
       diff[field] = currentVal;
     }
-  }
-
-  // entranceFeeINR
-  const rawFee = values.entranceFeeINR;
-  const currentFee = rawFee !== undefined && rawFee !== '' && rawFee !== null ? Number(rawFee) : 0;
-  const origFee = original.entranceFeeINR !== undefined && original.entranceFeeINR !== null ? Number(original.entranceFeeINR) : 0;
-  if (currentFee !== origFee) {
-    diff.entranceFeeINR = currentFee;
   }
 
   // Coordinates: latitude and longitude MUST be sent together if either changed
@@ -131,4 +146,3 @@ export function diffPlace(
 
   return diff;
 }
-

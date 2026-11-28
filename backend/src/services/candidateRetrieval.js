@@ -53,15 +53,39 @@ export async function retrieveCandidates(destination) {
       let lat = cp.lat != null ? Number(cp.lat) : cp.latitude != null ? Number(cp.latitude) : null;
       let lon = cp.lon != null ? Number(cp.lon) : cp.longitude != null ? Number(cp.longitude) : null;
 
-      // If coordinates not stored on curated record, geocode place or fallback to destination centre
-      if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) {
+      const hasValidOwnCoords =
+        lat != null &&
+        lon != null &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lon >= -180 &&
+        lon <= 180 &&
+        !(lat === 0 && lon === 0);
+
+      if (!hasValidOwnCoords) {
+        // Never place a heritage pin without valid coordinates on the record itself
+        if (cp.source === 'asi-soi-heritage') {
+          continue;
+        }
         if (destGeo) {
           lat = Number(destGeo.latitude);
           lon = Number(destGeo.longitude);
+        } else {
+          continue;
         }
       }
 
-      if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon)) {
+      if (
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lon >= -180 &&
+        lon <= 180 &&
+        !(lat === 0 && lon === 0)
+      ) {
         const roundedLat = Math.round(lat * 1000) / 1000;
         const roundedLon = Math.round(lon * 1000) / 1000;
         const normName = cp.name.toLowerCase().trim();

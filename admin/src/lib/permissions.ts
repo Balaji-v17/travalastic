@@ -4,6 +4,7 @@ export type AdminRoute =
   | '/'
   | '/places'
   | '/places/new'
+  | '/heritage'
   | '/hotels'
   | '/hotels/new'
   | '/collections'
@@ -20,6 +21,7 @@ export const ROUTE_PERMISSIONS: Record<AdminRoute, readonly AdminRole[]> = {
   '/': ['super_admin', 'content_editor', 'support_agent'],
   '/places': ['super_admin', 'content_editor'],
   '/places/new': ['super_admin', 'content_editor'],
+  '/heritage': ['super_admin', 'content_editor'],
   '/hotels': ['super_admin', 'content_editor'],
   '/hotels/new': ['super_admin', 'content_editor'],
   '/collections': ['super_admin', 'content_editor'],

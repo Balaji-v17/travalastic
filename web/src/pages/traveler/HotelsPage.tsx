@@ -5,6 +5,7 @@ import CuratedHotelCard, { isAffiliateUrl } from '../../components/hotels/Curate
 import { validateStay, buildBookingUrl } from '../../lib/stay';
 import { rememberExternalHandoff } from '../../lib/handoff';
 import CountStepper from '../../components/common/CountStepper';
+import CityTypeahead from '../../components/common/CityTypeahead';
 import { HOTEL_LIMITS, stepHotelGuestsAndRooms } from '../../lib/countLimits';
 
 function getTodayLocalDate(): string {
@@ -185,12 +186,12 @@ export default function HotelsPage({ embedded = false }: { embedded?: boolean } 
                 <label className="block text-xs font-semibold text-[#111111] mb-1">
                   Destination <span className="text-[#C9A96E]">*</span>
                 </label>
-                <input
-                  type="text"
+                <CityTypeahead
+                  ariaLabel="Hotel destination"
                   placeholder="e.g. Goa, Paris, Tokyo, Jaipur"
                   value={destination}
-                  onChange={(e) => {
-                    setDestination(e.target.value);
+                  onChange={(nextVal) => {
+                    setDestination(nextVal);
                     if (validationErrors.destination) {
                       setValidationErrors((prev) => {
                         const next = { ...prev };
@@ -199,10 +200,10 @@ export default function HotelsPage({ embedded = false }: { embedded?: boolean } 
                       });
                     }
                   }}
-                  className={`w-full px-3.5 py-2.5 text-sm border ${
+                  inputClassName={`w-full px-3.5 py-2.5 text-sm border ${
                     validationErrors.destination ? 'border-rose-400 bg-rose-50/20' : 'border-[#E8E4DC]'
                   } bg-[#FAFAF8] text-[#111111] focus:bg-white focus:outline-none focus:border-[#C9A96E] transition-colors`}
-                  style={{ borderRadius: '2px' }}
+                  inputStyle={{ borderRadius: '2px' }}
                 />
                 {validationErrors.destination && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium">

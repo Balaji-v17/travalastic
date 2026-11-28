@@ -67,3 +67,19 @@ export function filterFooterColumns(
     }))
     .filter((col) => col.links.length > 0);
 }
+
+export const CITY_DATA_ATTRIBUTION = {
+  text: 'City data © SimpleMaps (https://simplemaps.com/data/world-cities), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Modified: filtered and indexed for Travalastic.',
+  providerName: 'SimpleMaps',
+  sourceUrl: 'https://simplemaps.com/data/world-cities',
+  licenseName: 'CC BY 4.0',
+  licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+  modificationNote: 'Modified: filtered and indexed for Travalastic.',
+} as const;
+
+export const HERITAGE_DATA_ATTRIBUTION = {
+  text: 'Heritage site data: Archaeological Survey of India and Survey of India (via Bhuvan), as compiled in therajasekhar/india-public-cultural-heritage under NDSAP. Locations are approximate. Licence terms at source to be confirmed.',
+  sourceRepo: 'therajasekhar/india-public-cultural-heritage',
+  releaseUrl: 'https://github.com/ramSeraph/indian_facilities/releases/tag/cultural',
+} as const;
+

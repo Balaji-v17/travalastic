@@ -10,7 +10,68 @@ import TouristPlace from '../src/models/TouristPlace.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function importTouristPlaces() {
+/**
+ * Parses an optional numeric CSV field, returning null when missing, blank, or non-numeric.
+ */
+export function parseOptionalFloat(raw) {
+  if (raw === undefined || raw === null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Parses a single CSV row from tourist_places.csv.
+ * Keeps googleRating, entranceFeeINR, and timeNeededHours null when omitted or invalid.
+ */
+export function parseTouristPlaceCsvRow(row) {
+  if (!row || typeof row !== 'object') return null;
+
+  const name = row['Name'] || row['name'];
+  const city = row['City'] || row['city'];
+
+  if (!name || !city || !String(name).trim() || !String(city).trim()) {
+    return null;
+  }
+
+  const state = row['State'] || row['state'] || '';
+  const zone = row['Zone'] || row['zone'] || '';
+  const type = row['Type'] || row['type'] || '';
+  const significance = row['Significance'] || row['significance'] || '';
+
+  const rawRating = row['Google review rating'] || row['googleRating'] || row['rating'];
+  const googleRating = parseOptionalFloat(rawRating);
+
+  const rawFee = row['Entrance Fee in INR'] || row['entranceFeeINR'] || row['fee'];
+  const parsedFee = parseOptionalFloat(rawFee);
+  const entranceFeeINR = parsedFee !== null && parsedFee >= 0 ? parsedFee : null;
+
+  const rawHours =
+    row['time needed to visit in hrs'] ||
+    row['Time needed to visit in hrs'] ||
+    row['timeNeededHours'] ||
+    row['time_needed'];
+  const parsedHours = parseOptionalFloat(rawHours);
+  const timeNeededHours = parsedHours !== null && parsedHours >= 0 ? parsedHours : null;
+
+  const bestTimeToVisit = row['Best Time to visit'] || row['bestTimeToVisit'] || '';
+
+  return {
+    name: String(name).trim(),
+    city: String(city).trim(),
+    state: String(state).trim(),
+    zone: String(zone).trim(),
+    type: String(type).trim(),
+    significance: String(significance).trim(),
+    googleRating,
+    entranceFeeINR,
+    timeNeededHours,
+    bestTimeToVisit: String(bestTimeToVisit).trim(),
+  };
+}
+
+export async function importTouristPlaces() {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
     console.error('Error: MONGODB_URI is not set in environment variables');
@@ -59,54 +120,15 @@ async function importTouristPlaces() {
   let skippedCount = 0;
 
   for (const row of records) {
-    // Normalizing column names regardless of minor spacing or casing discrepancies
-    const name = row['Name'] || row['name'];
-    const city = row['City'] || row['city'];
-
-    if (!name || !city) {
+    const placeData = parseTouristPlaceCsvRow(row);
+    if (!placeData) {
       skippedCount++;
       continue;
     }
 
-    const state = row['State'] || row['state'] || '';
-    const zone = row['Zone'] || row['zone'] || '';
-    const type = row['Type'] || row['type'] || '';
-    const significance = row['Significance'] || row['significance'] || '';
-
-    if (type) {
-      distinctTypes.add(type);
+    if (placeData.type) {
+      distinctTypes.add(placeData.type);
     }
-
-    const rawRating = row['Google review rating'] || row['googleRating'] || row['rating'];
-    const parsedRating = rawRating ? parseFloat(rawRating) : null;
-    const googleRating = !isNaN(parsedRating) ? parsedRating : null;
-
-    const rawFee = row['Entrance Fee in INR'] || row['entranceFeeINR'] || row['fee'];
-    const parsedFee = rawFee ? parseFloat(rawFee) : 0;
-    const entranceFeeINR = !isNaN(parsedFee) ? parsedFee : 0;
-
-    const rawHours =
-      row['time needed to visit in hrs'] ||
-      row['Time needed to visit in hrs'] ||
-      row['timeNeededHours'] ||
-      row['time_needed'];
-    const parsedHours = rawHours ? parseFloat(rawHours) : null;
-    const timeNeededHours = !isNaN(parsedHours) ? parsedHours : null;
-
-    const bestTimeToVisit = row['Best Time to visit'] || row['bestTimeToVisit'] || '';
-
-    const placeData = {
-      name: name.trim(),
-      city: city.trim(),
-      state: state.trim(),
-      zone: zone.trim(),
-      type: type.trim(),
-      significance: significance.trim(),
-      googleRating,
-      entranceFeeINR,
-      timeNeededHours,
-      bestTimeToVisit: bestTimeToVisit.trim(),
-    };
 
     // Upsert matching on name + city to prevent duplicates on repeated runs
     await TouristPlace.findOneAndUpdate(
@@ -136,7 +158,9 @@ async function importTouristPlaces() {
   console.log('Database connection closed.');
 }
 
-importTouristPlaces().catch((err) => {
-  console.error('Error importing tourist places:', err);
-  mongoose.connection.close().finally(() => process.exit(1));
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  importTouristPlaces().catch((err) => {
+    console.error('Error importing tourist places:', err);
+    mongoose.connection.close().finally(() => process.exit(1));
+  });
+}

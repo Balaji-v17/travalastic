@@ -1,7 +1,14 @@
 import type { PlaceResult } from './destinationView.ts';
+import {
+  CITY_SEARCH_DEBOUNCE_MS,
+  CITY_SEARCH_MIN_CHARS,
+  formatCitySecondary,
+  type CitySuggestion,
+} from './citySearch.ts';
 
 export const GLOBAL_SEARCH_MIN_CHARS = 3;
 export const GLOBAL_SEARCH_DEBOUNCE_MS = 400;
+export { CITY_SEARCH_MIN_CHARS, CITY_SEARCH_DEBOUNCE_MS };
 
 export interface TripSearchEntry {
   id: string;
@@ -19,11 +26,24 @@ export interface GlobalSearchPlaceItem {
   raw: PlaceResult;
 }
 
+export interface GlobalSearchCityItem {
+  id: string;
+  name: string;
+  subtitle: string;
+  isRegion: boolean;
+  raw: CitySuggestion;
+}
+
 export type GlobalSearchGroup =
   | {
       key: 'trips';
       label: 'My trips';
       items: TripSearchEntry[];
+    }
+  | {
+      key: 'cities';
+      label: 'Cities';
+      items: GlobalSearchCityItem[];
     }
   | {
       key: 'places';
@@ -33,6 +53,10 @@ export type GlobalSearchGroup =
 
 export function shouldTriggerTypeahead(query: string): boolean {
   return query.trim().length >= GLOBAL_SEARCH_MIN_CHARS;
+}
+
+export function shouldTriggerCityTypeahead(query: string): boolean {
+  return query.trim().length >= CITY_SEARCH_MIN_CHARS;
 }
 
 export function filterUserTrips<T extends TripSearchEntry>(
@@ -80,46 +104,82 @@ export function buildGlobalSearchGroups(params: {
   isSignedIn: boolean;
   trips: readonly TripSearchEntry[];
   places: readonly PlaceResult[];
+  cities?: readonly CitySuggestion[];
 }): GlobalSearchGroup[] {
-  if (!shouldTriggerTypeahead(params.query)) {
+  const tripsAndPlacesReady = shouldTriggerTypeahead(params.query);
+  const citiesReady = shouldTriggerCityTypeahead(params.query);
+
+  if (!tripsAndPlacesReady && !citiesReady) {
     return [];
   }
 
   const groups: GlobalSearchGroup[] = [];
 
-  const matchingTrips = filterUserTrips(params.trips, params.query, params.isSignedIn);
-  if (params.isSignedIn && matchingTrips.length > 0) {
-    groups.push({
-      key: 'trips',
-      label: 'My trips',
-      items: matchingTrips.slice(0, 6),
-    });
+  if (tripsAndPlacesReady) {
+    const matchingTrips = filterUserTrips(params.trips, params.query, params.isSignedIn);
+    if (params.isSignedIn && matchingTrips.length > 0) {
+      groups.push({
+        key: 'trips',
+        label: 'My trips',
+        items: matchingTrips.slice(0, 6),
+      });
+    }
   }
 
-  const seen = new Set<string>();
-  const placeItems: GlobalSearchPlaceItem[] = [];
-  for (const place of params.places) {
-    if (!place || typeof place.name !== 'string' || !place.name.trim()) continue;
-    const dedupeKey = `${place.name.trim().toLowerCase()}::${(place.city || '').trim().toLowerCase()}`;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+  if (citiesReady && Array.isArray(params.cities) && params.cities.length > 0) {
+    const seenCities = new Set<string>();
+    const cityItems: GlobalSearchCityItem[] = [];
+    for (const city of params.cities) {
+      if (!city || typeof city.name !== 'string' || !city.name.trim()) continue;
+      const dedupeKey = `${city.name.trim().toLowerCase()}::${(city.admin || '').trim().toLowerCase()}::${(city.country || '').trim().toLowerCase()}`;
+      if (seenCities.has(dedupeKey)) continue;
+      seenCities.add(dedupeKey);
 
-    placeItems.push({
-      id: place.placeId || place._id || dedupeKey,
-      name: place.name.trim(),
-      subtitle: formatPlaceSubtitle(place),
-      photoUrl: getPlacePhoto(place),
-      raw: place,
-    });
-    if (placeItems.length >= 10) break;
+      cityItems.push({
+        id: city.id || dedupeKey,
+        name: city.name.trim(),
+        subtitle: formatCitySecondary(city),
+        isRegion: city.type === 'region',
+        raw: city,
+      });
+      if (cityItems.length >= 6) break;
+    }
+
+    if (cityItems.length > 0) {
+      groups.push({
+        key: 'cities',
+        label: 'Cities',
+        items: cityItems,
+      });
+    }
   }
 
-  if (placeItems.length > 0) {
-    groups.push({
-      key: 'places',
-      label: 'Places',
-      items: placeItems,
-    });
+  if (tripsAndPlacesReady) {
+    const seen = new Set<string>();
+    const placeItems: GlobalSearchPlaceItem[] = [];
+    for (const place of params.places) {
+      if (!place || typeof place.name !== 'string' || !place.name.trim()) continue;
+      const dedupeKey = `${place.name.trim().toLowerCase()}::${(place.city || '').trim().toLowerCase()}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      placeItems.push({
+        id: place.placeId || place._id || dedupeKey,
+        name: place.name.trim(),
+        subtitle: formatPlaceSubtitle(place),
+        photoUrl: getPlacePhoto(place),
+        raw: place,
+      });
+      if (placeItems.length >= 10) break;
+    }
+
+    if (placeItems.length > 0) {
+      groups.push({
+        key: 'places',
+        label: 'Places',
+        items: placeItems,
+      });
+    }
   }
 
   return groups;
@@ -159,4 +219,3 @@ export function isSlashShortcutTarget(target: {
   const tag = (target.tagName || '').toUpperCase();
   return tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT';
 }
-

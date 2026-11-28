@@ -188,3 +188,41 @@ test('buildMapsUrl deterministic generation', async (t) => {
   });
 });
 
+test('heritage label and null-safe metadata formatting', async (t) => {
+  const mod = await import('../src/lib/destinationView.ts');
+
+  await t.test('detects ASI/SOI heritage places and returns authority label', () => {
+    assert.equal(
+      mod.isHeritagePlace({ name: 'Virupaksha Temple', source: 'asi-soi-heritage' }),
+      true
+    );
+    assert.equal(
+      mod.isHeritagePlace({ name: 'Konark', heritage: { protectedBy: 'ASI' } }),
+      true
+    );
+    assert.equal(
+      mod.isHeritagePlace({ name: 'Baga Beach', isCurated: true }),
+      false
+    );
+    assert.equal(
+      mod.getPlaceAuthorityLabel({ name: 'Konark', source: 'asi-soi-heritage' }),
+      'Protected monument (ASI / Survey of India)'
+    );
+  });
+
+  await t.test('formats null/undefined rating, fee, and time without null, NaN, or fake 0', () => {
+    assert.equal(mod.formatPlaceRating(null), null);
+    assert.equal(mod.formatPlaceRating(undefined), null);
+    assert.equal(mod.formatPlaceRating(4.65), '4.7');
+
+    assert.equal(mod.formatEntranceFee(null), 'Not listed');
+    assert.equal(mod.formatEntranceFee(undefined), 'Not listed');
+    assert.equal(mod.formatEntranceFee(0), 'Free');
+    assert.equal(mod.formatEntranceFee(40), '₹40');
+
+    assert.equal(mod.formatTimeNeeded(null), 'Time varies');
+    assert.equal(mod.formatTimeNeeded(undefined), 'Time varies');
+    assert.equal(mod.formatTimeNeeded(2.5), '2.5 hrs');
+  });
+});
+

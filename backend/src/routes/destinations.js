@@ -1,12 +1,25 @@
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { searchPlaces } from '../services/placesService.js';
 import { getPhotoForDestination } from '../services/pexelsService.js';
 import embedText from '../services/embeddingService.js';
 import findTaggedPlaces from '../services/overpassService.js';
 import TouristPlace from '../models/TouristPlace.js';
+import City from '../models/City.js';
+import Region from '../models/Region.js';
+import { normalizeSearchKey, escapeRegex, levenshtein } from '../utils/cityNormalizer.js';
 import getWeatherForecast from '../services/weatherService.js';
 
 const router = express.Router();
+
+export const citySearchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many city search requests. Please slow down.' },
+});
 
 // Static list of 18 trending Indian destinations (fixed content)
 export const TRENDING_DESTINATIONS = [
@@ -310,6 +323,7 @@ export const fetchExplorePlaces = async (destinationQuery, options = {}) => {
             entranceFeeINR: 1,
             timeNeededHours: 1,
             bestTimeToVisit: 1,
+            heritage: 1,
             score: { $meta: 'vectorSearchScore' },
           },
         },
@@ -338,28 +352,31 @@ export const fetchExplorePlaces = async (destinationQuery, options = {}) => {
       const placeId = (tp._id || '').toString();
       const lat = tp.lat ?? tp.latitude ?? null;
       const lon = tp.lon ?? tp.longitude ?? null;
+      const addressParts = [rest.city, rest.state].filter(Boolean).join(', ');
       return {
         ...rest,
         placeId,
         _id: tp._id,
         name: rest.name,
-        address: `${rest.city}, ${rest.state}${rest.type ? ` • ${rest.type}` : ''}`,
+        address: `${addressParts}${rest.type ? ` • ${rest.type}` : ''}`,
         city: rest.city,
-        state: rest.state,
-        zone: rest.zone,
+        state: rest.state ?? null,
+        zone: rest.zone ?? null,
         type: rest.type,
-        significance: rest.significance,
-        rating: rest.googleRating,
-        entranceFeeINR: rest.entranceFeeINR,
-        timeNeededHours: rest.timeNeededHours,
-        bestTimeToVisit: rest.bestTimeToVisit,
+        significance: rest.significance ?? null,
+        rating: rest.googleRating ?? null,
+        googleRating: rest.googleRating ?? null,
+        entranceFeeINR: rest.entranceFeeINR ?? null,
+        timeNeededHours: rest.timeNeededHours ?? null,
+        bestTimeToVisit: rest.bestTimeToVisit ?? null,
+        heritage: rest.heritage || null,
         category: category || null,
         lat,
         lon,
         latitude: lat,
         longitude: lon,
         isCurated: true,
-        source: rest.score != null ? 'tourist_places_vector' : 'tourist_places',
+        source: rest.score != null ? 'tourist_places_vector' : (rest.source || 'tourist_places'),
       };
     });
   }
@@ -476,6 +493,249 @@ const searchDestinations = async (req, res, next) => {
   }
 };
 
+function comparePopulationNullsLast(a, b) {
+  const popA = a.population;
+  const popB = b.population;
+  if (popA == null && popB == null) return 0;
+  if (popA == null) return 1;
+  if (popB == null) return -1;
+  return popB - popA;
+}
+
+function formatCitySuggestion(doc) {
+  return {
+    id: String(doc.sourceId ?? doc.id ?? ''),
+    name: doc.name,
+    admin: doc.admin || '',
+    country: doc.country,
+    iso2: doc.iso2 || '',
+    lat: doc.lat,
+    lng: doc.lng,
+    population: doc.population ?? null,
+    type: 'city',
+  };
+}
+
+function formatRegionSuggestion(doc) {
+  return {
+    id: `region:${String(doc.sourceKey ?? doc.id ?? '')}`,
+    name: doc.name,
+    admin: '',
+    country: doc.country,
+    iso2: doc.iso2 || '',
+    lat: doc.lat,
+    lng: doc.lng,
+    population: null,
+    type: 'region',
+  };
+}
+
+/**
+ * Combines city and region prefix matches, sorting cities by population desc (nulls last),
+ * placing regions after cities, deduplicating identical display text, and capping at `limit`.
+ */
+export function mergeCityAndRegionSuggestions(cityDocs, regionDocs, limit) {
+  const sortedCities = [...(cityDocs || [])].sort(comparePopulationNullsLast);
+  const seenLabels = new Set();
+  const cityNameCountryKeys = new Set();
+  const dedupedCities = [];
+
+  for (const doc of sortedCities) {
+    if (!doc || !doc.name || !doc.country) continue;
+    const item = formatCitySuggestion(doc);
+    const labelKey = [
+      normalizeSearchKey(item.name),
+      normalizeSearchKey(item.admin),
+      normalizeSearchKey(item.country),
+    ].join('|');
+    if (seenLabels.has(labelKey)) continue;
+    seenLabels.add(labelKey);
+    cityNameCountryKeys.add(`${normalizeSearchKey(item.name)}|${normalizeSearchKey(item.country)}`);
+    dedupedCities.push(item);
+  }
+
+  const dedupedRegions = [];
+  for (const doc of regionDocs || []) {
+    if (!doc || !doc.name || !doc.country) continue;
+    const item = formatRegionSuggestion(doc);
+    const nameCountryKey = `${normalizeSearchKey(item.name)}|${normalizeSearchKey(item.country)}`;
+    if (cityNameCountryKeys.has(nameCountryKey)) continue;
+    const labelKey = `${normalizeSearchKey(item.name)}||${normalizeSearchKey(item.country)}`;
+    if (seenLabels.has(labelKey)) continue;
+    seenLabels.add(labelKey);
+    dedupedRegions.push(item);
+  }
+
+  const regionReserve =
+    limit >= 4
+      ? Math.min(2, dedupedRegions.length)
+      : dedupedCities.length === 0
+        ? Math.min(limit, dedupedRegions.length)
+        : 0;
+  const maxCities = Math.max(0, limit - regionReserve);
+  const selectedCities = dedupedCities.slice(0, maxCities);
+  const remainingSlots = Math.max(0, limit - selectedCities.length);
+  const selectedRegions = dedupedRegions.slice(0, remainingSlots);
+
+  return [...selectedCities, ...selectedRegions];
+}
+
+/**
+ * GET /destinations/cities?q=&limit=
+ * Fast prefix autocomplete over our own City & Region collections.
+ * No external HTTP calls, no query logging, strict min-length (2) and limit (1..10) clamps.
+ */
+export const searchCities = async (req, res, next) => {
+  try {
+    const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const searchKey = normalizeSearchKey(rawQ);
+
+    if (rawQ.length < 2 || searchKey.length < 2) {
+      return res.status(400).json({ error: 'Query parameter "q" must be at least 2 characters' });
+    }
+
+    const parsedLimit = Number.parseInt(String(req.query.limit ?? '8'), 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(10, Math.max(1, parsedLimit)) : 8;
+
+    const prefixRegex = new RegExp('^' + escapeRegex(searchKey));
+
+    const [cityDocs, regionDocs] = await Promise.all([
+      City.find({ searchKey: prefixRegex })
+        .select('sourceId name admin country iso2 lat lng population')
+        .sort({ population: -1 })
+        .limit(limit)
+        .lean(),
+      Region.find({ searchKey: prefixRegex })
+        .select('sourceKey name country iso2 lat lng')
+        .sort({ name: 1 })
+        .limit(Math.min(limit, 5))
+        .lean(),
+    ]);
+
+    const cities = mergeCityAndRegionSuggestions(cityDocs, regionDocs, limit);
+    return res.status(200).json({ cities });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /destinations/check?q=
+ * Checks whether a destination matches a City, Region, or TouristPlace (city/name).
+ * If unknown, computes up to 3 closest city/region names via local edit distance (no external calls).
+ */
+export const checkDestinationKnown = async (req, res, next) => {
+  try {
+    const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const normQ = normalizeSearchKey(rawQ);
+
+    if (rawQ.length < 2 || normQ.length < 2) {
+      return res.status(200).json({ known: true, suggestions: [] });
+    }
+
+    const exactSearchKeyRegex = new RegExp('^' + escapeRegex(normQ) + '$');
+    const exactRawRegex = new RegExp('^' + escapeRegex(rawQ) + '$', 'i');
+
+    const [cityHit, regionHit, placeHit] = await Promise.all([
+      City.findOne({ searchKey: exactSearchKeyRegex }).select('sourceId').lean(),
+      Region.findOne({ searchKey: exactSearchKeyRegex }).select('sourceKey').lean(),
+      TouristPlace.findOne({
+        hidden: { $ne: true },
+        $or: [{ city: exactRawRegex }, { name: exactRawRegex }],
+      })
+        .select('_id')
+        .lean(),
+    ]);
+
+    if (cityHit || regionHit || placeHit) {
+      return res.status(200).json({ known: true, suggestions: [] });
+    }
+
+    // Gather top prefix and inner-substring candidates locally for edit-distance ranking
+    const prefix2 = normQ.slice(0, 2);
+    const prefixRegex = new RegExp('^' + escapeRegex(prefix2));
+    const midSlice = normQ.length >= 3 ? normQ.slice(1, Math.min(4, normQ.length)) : '';
+
+    const queries = [
+      City.find({ searchKey: prefixRegex })
+        .select('sourceId name admin country iso2 lat lng population searchKey')
+        .sort({ population: -1 })
+        .limit(40)
+        .lean(),
+      Region.find({ searchKey: prefixRegex })
+        .select('sourceKey name country iso2 lat lng searchKey')
+        .limit(15)
+        .lean(),
+    ];
+
+    if (midSlice && midSlice.length >= 2) {
+      queries.push(
+        City.find({ searchKey: new RegExp(escapeRegex(midSlice)) })
+          .select('sourceId name admin country iso2 lat lng population searchKey')
+          .sort({ population: -1 })
+          .limit(40)
+          .lean()
+      );
+    }
+
+    const [prefixCities, prefixRegions, containsCities = []] = await Promise.all(queries);
+
+    const candidateMap = new Map();
+    for (const c of [...prefixCities, ...containsCities]) {
+      if (!c || !c.name) continue;
+      const key = `${c.searchKey || normalizeSearchKey(c.name)}|${normalizeSearchKey(c.country)}`;
+      if (!candidateMap.has(key)) {
+        candidateMap.set(key, {
+          key: c.searchKey || normalizeSearchKey(c.name),
+          population: c.population ?? null,
+          item: formatCitySuggestion(c),
+        });
+      }
+    }
+    for (const r of prefixRegions) {
+      if (!r || !r.name) continue;
+      const key = `${r.searchKey || normalizeSearchKey(r.name)}|${normalizeSearchKey(r.country)}`;
+      if (!candidateMap.has(key)) {
+        candidateMap.set(key, {
+          key: r.searchKey || normalizeSearchKey(r.name),
+          population: null,
+          item: formatRegionSuggestion(r),
+        });
+      }
+    }
+
+    const maxDist = Math.max(2, Math.floor(normQ.length * 0.5));
+    const scored = [];
+    for (const entry of candidateMap.values()) {
+      const dist = levenshtein(normQ, entry.key);
+      if (dist <= maxDist) {
+        scored.push({ dist, population: entry.population, item: entry.item });
+      }
+    }
+
+    scored.sort((a, b) => {
+      if (a.dist !== b.dist) return a.dist - b.dist;
+      return comparePopulationNullsLast(a, b);
+    });
+
+    const seenNames = new Set();
+    const suggestions = [];
+    for (const s of scored) {
+      const nameKey = normalizeSearchKey(s.item.name);
+      if (seenNames.has(nameKey)) continue;
+      seenNames.add(nameKey);
+      suggestions.push(s.item);
+      if (suggestions.length >= 3) break;
+    }
+
+    return res.status(200).json({ known: false, suggestions });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get('/cities', citySearchLimiter, searchCities);
+router.get('/check', citySearchLimiter, checkDestinationKnown);
 router.get('/trending', getTrendingDestinations);
 router.get('/search', searchDestinations);
 

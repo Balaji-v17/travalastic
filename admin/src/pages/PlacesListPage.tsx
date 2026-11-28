@@ -50,7 +50,8 @@ export function PlacesListPage() {
           prev.city === parsed.city &&
           prev.state === parsed.state &&
           prev.type === parsed.type &&
-          prev.hidden === parsed.hidden
+          prev.hidden === parsed.hidden &&
+          prev.hiddenReason === parsed.hiddenReason
         ) {
           return prev;
         }
@@ -77,6 +78,9 @@ export function PlacesListPage() {
         if (currentFilters.type.trim()) queryParams.set('type', currentFilters.type.trim());
         if (currentFilters.hidden === 'true' || currentFilters.hidden === 'false') {
           queryParams.set('hidden', currentFilters.hidden);
+        }
+        if (currentFilters.hiddenReason.trim()) {
+          queryParams.set('hiddenReason', currentFilters.hiddenReason.trim());
         }
         queryParams.set('limit', '25');
 
@@ -113,6 +117,9 @@ export function PlacesListPage() {
       if (filters.type.trim()) queryParams.set('type', filters.type.trim());
       if (filters.hidden === 'true' || filters.hidden === 'false') {
         queryParams.set('hidden', filters.hidden);
+      }
+      if (filters.hiddenReason.trim()) {
+        queryParams.set('hiddenReason', filters.hiddenReason.trim());
       }
       queryParams.set('limit', '25');
       queryParams.set('cursor', nextCursor);
@@ -232,7 +239,7 @@ export function PlacesListPage() {
       <div className="bg-white p-4 rounded-xl shadow-xs border border-slate-200 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           {/* Search Box */}
-          <div className="md:col-span-4">
+          <div className="md:col-span-2">
             <label htmlFor="search-places" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
               Search name or city
             </label>
@@ -315,10 +322,31 @@ export function PlacesListPage() {
               <option value="true">Hidden only</option>
             </select>
           </div>
+
+          {/* Hidden Reason Filter */}
+          <div className="md:col-span-2">
+            <label htmlFor="filter-hidden-reason" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Hidden reason
+            </label>
+            <select
+              id="filter-hidden-reason"
+              value={filters.hiddenReason}
+              onChange={(e) => handleFilterChange('hiddenReason', e.target.value)}
+              className="block w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+            >
+              <option value="">All reasons</option>
+              <option value="pending_review">pending_review</option>
+              <option value="duplicate">duplicate</option>
+              <option value="already_curated">already_curated</option>
+              <option value="rejected">rejected</option>
+              <option value="Hidden by admin">Hidden by admin</option>
+              <option value="none">None</option>
+            </select>
+          </div>
         </div>
 
         {/* Clear Filters Helper Link */}
-        {(filters.q || filters.city || filters.state || filters.type || filters.hidden !== 'all') && (
+        {(filters.q || filters.city || filters.state || filters.type || filters.hidden !== 'all' || filters.hiddenReason) && (
           <div className="flex justify-end pt-1">
             <button
               type="button"
@@ -434,7 +462,7 @@ export function PlacesListPage() {
 
                       {/* Location */}
                       <td className="px-6 py-4 whitespace-nowrap text-slate-600">
-                        {place.city}, {place.state}
+                        {[place.city, place.state].filter(Boolean).join(', ') || '—'}
                         {place.zone && <span className="text-slate-400 text-xs block">{place.zone}</span>}
                       </td>
 
@@ -455,9 +483,16 @@ export function PlacesListPage() {
                       {/* Status badge */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         {isHidden ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                            Hidden
-                          </span>
+                          <div>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                              Hidden
+                            </span>
+                            {place.hiddenReason && (
+                              <span className="block text-[11px] text-slate-400 mt-0.5">
+                                {place.hiddenReason}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
                             Visible

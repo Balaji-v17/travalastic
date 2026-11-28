@@ -9,6 +9,8 @@
     "dev": "nodemon src/server.js",
     "lint": "oxlint",
     "seed:styles": "node scripts/seedStyleCollections.js",
+    "seed:cities": "node scripts/seedCities.js",
+    "seed:heritage": "node scripts/seedHeritage.js",
     "test": "node --test"
   },
   "engines": {
